@@ -106,7 +106,7 @@ var DshXiaozhi = (() => {
         llm: llmStage("https://ark.cn-beijing.volces.com/api/v3", "doubao-1.5-pro-32k"),
         tts: {
           fields: [
-            secret("apiKey"),
+            { ...secret("apiKey"), note: "volcTtsKeyNote" },
             // 火山 OpenAPI 的 AK/SK：只用于拉官方音色列表（ListSpeakers），不参与合成。
             // 复用 appId/apiSecret 两个通用槽位，避免再动 settings 的字段/掩码契约。
             {
@@ -131,19 +131,21 @@ var DshXiaozhi = (() => {
         },
         asr: {
           fields: [
-            secret("apiKey"),
+            { ...secret("apiKey"), note: "volcAsrKeyNote" },
             {
               key: "resourceId",
               type: "model",
               modelKind: "asrResource",
               label: "resourceId",
-              placeholder: "volc.seedasr.sauc.duration"
+              placeholder: "volc.seedasr.sauc.duration",
+              note: "volcAsrResourceNote"
             },
             {
               key: "url",
               type: "url",
               label: "asrUrl",
-              placeholder: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
+              placeholder: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async",
+              note: "asrUrlNote"
             }
           ],
           summary: ["url", "resourceId"],
@@ -166,7 +168,7 @@ var DshXiaozhi = (() => {
         tts: {
           name: "\u8BAF\u98DE\u8BED\u97F3\u5408\u6210",
           fields: [
-            { key: "appId", type: "text", label: "appId", placeholder: "5f1b\u2026" },
+            { key: "appId", type: "text", label: "appId", placeholder: "5f1b\u2026", required: true, note: "xunfeiAuthNote" },
             secret("apiKey"),
             secret("apiSecret")
           ],
@@ -177,10 +179,10 @@ var DshXiaozhi = (() => {
         asr: {
           name: "\u8BAF\u98DE\u8BED\u97F3\u542C\u5199",
           fields: [
-            { key: "appId", type: "text", label: "appId", placeholder: "5f1b\u2026" },
+            { key: "appId", type: "text", label: "appId", placeholder: "5f1b\u2026", required: true, note: "xunfeiAuthNote" },
             secret("apiKey"),
             secret("apiSecret"),
-            { key: "language", type: "text", label: "asrLanguage", placeholder: "zh_cn" }
+            { key: "language", type: "text", label: "asrLanguage", placeholder: "zh_cn", note: "asrLanguageNote" }
           ],
           summary: ["language"],
           secretFields: ["apiKey", "apiSecret"],
@@ -213,7 +215,7 @@ var DshXiaozhi = (() => {
           // 本地 SenseVoice：使用 Harness 内置识别服务，不需要地址与密钥。
           keyless: true,
           note: "localAsrNote",
-          fields: [{ key: "language", type: "text", label: "asrLanguage", placeholder: "zh_cn" }],
+          fields: [{ key: "language", type: "text", label: "asrLanguage", placeholder: "zh_cn", note: "asrLanguageNote" }],
           summary: ["language"],
           secretFields: [],
           probe: { kind: "asr", labelKey: "backupTestAsr" }
@@ -561,6 +563,14 @@ var DshXiaozhi = (() => {
     asrLanguage: "\u8BC6\u522B\u8BED\u79CD",
     baseUrl: "Base URL",
     apiKey: "API Key",
+    requiredHint: "\u5E26 * \u4E3A\u5FC5\u586B\uFF1B\u5176\u4F59\u53EF\u7559\u7A7A\uFF0C\u4F7F\u7528\u5382\u5546\u9ED8\u8BA4\u503C",
+    requiredFields: "\u8BF7\u586B\u5199\u5FC5\u586B\u9879",
+    volcTtsKeyNote: "\u706B\u5C71\u65B0\u7248\u63A7\u5236\u53F0 API Key\uFF08X-Api-Key\uFF09\uFF1B\u5408\u6210\u53EA\u9700\u5B83 + \u667A\u80FD\u4F53\u97F3\u8272",
+    volcAsrKeyNote: "\u706B\u5C71\u65B0\u7248\u63A7\u5236\u53F0 API Key\uFF08X-Api-Key\uFF09",
+    volcAsrResourceNote: "\u7559\u7A7A = volc.seedasr.sauc.duration\uFF082.0 \u5C0F\u65F6\u7248\uFF09",
+    asrUrlNote: "\u7559\u7A7A = \u5B98\u65B9 bigmodel_async \u7AEF\u70B9",
+    asrLanguageNote: "\u7559\u7A7A = zh_cn",
+    xunfeiAuthNote: "\u8BAF\u98DE\u63A7\u5236\u53F0 \u2192 \u5E94\u7528\u4FE1\u606F\uFF1AAPPID / APIKey / APISecret",
     apiKeyKeep: "\u5DF2\u914D\u7F6E\uFF0C\u7559\u7A7A\u8868\u793A\u4E0D\u4FEE\u6539",
     gatewayToken: "\u7F51\u5173 Token",
     // 服务商配置（docs/backup-providers.md 第 5 节）：主用卡 + 备用卡 + 统一编辑弹窗。
@@ -794,6 +804,14 @@ var DshXiaozhi = (() => {
     asrLanguage: "Language",
     baseUrl: "Base URL",
     apiKey: "API Key",
+    requiredHint: "Fields marked * are required; leave the rest empty to use vendor defaults",
+    requiredFields: "Please fill in the required fields",
+    volcTtsKeyNote: "Volcengine new-console API Key (X-Api-Key); synthesis only needs this plus the agent voice",
+    volcAsrKeyNote: "Volcengine new-console API Key (X-Api-Key)",
+    volcAsrResourceNote: "Empty = volc.seedasr.sauc.duration (2.0 hourly)",
+    asrUrlNote: "Empty = the official bigmodel_async endpoint",
+    asrLanguageNote: "Empty = zh_cn",
+    xunfeiAuthNote: "iFlytek console \u2192 App info: APPID / APIKey / APISecret",
     apiKeyKeep: "configured \u2014 blank keeps it",
     gatewayToken: "Gateway token",
     // Provider configuration (docs/backup-providers.md §5): primary card + backup cards + one shared dialog.
@@ -1001,6 +1019,7 @@ var DshXiaozhi = (() => {
 
 .xz-pill-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xz-pill-label.xz-pill-placeholder{color:var(--xz-text-3)}
+.xz-required{color:var(--xz-danger);margin-left:2px}
 /* \u60AC\u6D6E\u9762\u677F\u6539\u6210 position:fixed\uFF08left/top/width/maxHeight/z-index \u7531 PillSelect \u5185\u8054\u8BA1\u7B97\uFF09\u3002
    \u7EDD\u5BF9\u5B9A\u4F4D\u4F1A\u53C2\u4E0E\u9875\u9762\u53EF\u6EDA\u52A8\u9AD8\u5EA6\u7684\u8BA1\u7B97\uFF1A\u9875\u9762\u5E95\u90E8\u5C55\u5F00\u65F6\u51FA\u73B0\u6EDA\u52A8\u6761\u3001\u6574\u9875\u6A2A\u5411\u4F4D\u79FB\uFF0C
    \u8FD9\u6B63\u662F\u7528\u6237\u53CD\u9988\u7684\u300C\u70B9\u5F00\u4E0B\u62C9\u6846\u5176\u4ED6\u5185\u5BB9\u4E5F\u53D8\u4E86\u300D\u3002fixed \u4E0D\u5360\u5E03\u5C40\uFF0C\u83DC\u5355\u518D\u957F\u4E5F\u4E0D\u6539\u9875\u9762\u5C3A\u5BF8\u3002 */
@@ -3008,7 +3027,12 @@ var DshXiaozhi = (() => {
         return h(
           "div",
           { key: field.key || `field-${position}`, className: "xz-field" },
-          h("label", null, t(field.label)),
+          h(
+            "label",
+            null,
+            t(field.label),
+            field.required ? h("span", { className: "xz-required", "aria-hidden": "true" }, " *") : null
+          ),
           render(field, value[field.key], (next) => onChange({ ...value, [field.key]: next }), context),
           note ? h("span", { className: "note" }, note) : null
         );
@@ -3059,6 +3083,7 @@ var DshXiaozhi = (() => {
               onChange: switchProvider
             })
           ),
+          h("p", { className: "xz-hint", style: { margin: "0 0 10px" } }, t("requiredHint")),
           desc ? h(SchemaForm, {
             stage,
             provider,
@@ -3215,6 +3240,14 @@ var DshXiaozhi = (() => {
       const { stage, mode, index, draft } = editor;
       const next = { ...draft };
       if (!next.provider) next.provider = stageProviders(stage)[0];
+      const missing = (stageDescriptor(next.provider, stage)?.fields || []).filter((field) => field.required).filter((field) => {
+        const value = next[field.key];
+        return !(typeof value === "string" ? value.trim() : value);
+      });
+      if (missing.length) {
+        notify(`${t("requiredFields")}\uFF1A${missing.map((field) => t(field.label)).join("\u3001")}`, "bad");
+        return;
+      }
       setProvidersDirty(true);
       if (mode === "primary") {
         const stageSettings = { ...settings.voice?.[stage] || {} };

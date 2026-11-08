@@ -106,7 +106,7 @@ export const PROVIDERS = [
       llm: llmStage('https://ark.cn-beijing.volces.com/api/v3', 'doubao-1.5-pro-32k'),
       tts: {
         fields: [
-          secret('apiKey'),
+          { ...secret('apiKey'), note: 'volcTtsKeyNote' },
           // 火山 OpenAPI 的 AK/SK：只用于拉官方音色列表（ListSpeakers），不参与合成。
           // 复用 appId/apiSecret 两个通用槽位，避免再动 settings 的字段/掩码契约。
           {
@@ -131,19 +131,21 @@ export const PROVIDERS = [
       },
       asr: {
         fields: [
-          secret('apiKey'),
+          { ...secret('apiKey'), note: 'volcAsrKeyNote' },
           {
             key: 'resourceId',
             type: 'model',
             modelKind: 'asrResource',
             label: 'resourceId',
             placeholder: 'volc.seedasr.sauc.duration',
+            note: 'volcAsrResourceNote',
           },
           {
             key: 'url',
             type: 'url',
             label: 'asrUrl',
             placeholder: 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async',
+            note: 'asrUrlNote',
           },
         ],
         summary: ['url', 'resourceId'],
@@ -166,7 +168,7 @@ export const PROVIDERS = [
       tts: {
         name: '讯飞语音合成',
         fields: [
-          { key: 'appId', type: 'text', label: 'appId', placeholder: '5f1b…' },
+          { key: 'appId', type: 'text', label: 'appId', placeholder: '5f1b…', required: true, note: 'xunfeiAuthNote' },
           secret('apiKey'),
           secret('apiSecret'),
         ],
@@ -177,10 +179,10 @@ export const PROVIDERS = [
       asr: {
         name: '讯飞语音听写',
         fields: [
-          { key: 'appId', type: 'text', label: 'appId', placeholder: '5f1b…' },
+          { key: 'appId', type: 'text', label: 'appId', placeholder: '5f1b…', required: true, note: 'xunfeiAuthNote' },
           secret('apiKey'),
           secret('apiSecret'),
-          { key: 'language', type: 'text', label: 'asrLanguage', placeholder: 'zh_cn' },
+          { key: 'language', type: 'text', label: 'asrLanguage', placeholder: 'zh_cn', note: 'asrLanguageNote' },
         ],
         summary: ['language'],
         secretFields: ['apiKey', 'apiSecret'],
@@ -213,7 +215,7 @@ export const PROVIDERS = [
         // 本地 SenseVoice：使用 Harness 内置识别服务，不需要地址与密钥。
         keyless: true,
         note: 'localAsrNote',
-        fields: [{ key: 'language', type: 'text', label: 'asrLanguage', placeholder: 'zh_cn' }],
+        fields: [{ key: 'language', type: 'text', label: 'asrLanguage', placeholder: 'zh_cn', note: 'asrLanguageNote' }],
         summary: ['language'],
         secretFields: [],
         probe: { kind: 'asr', labelKey: 'backupTestAsr' },

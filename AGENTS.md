@@ -177,6 +177,10 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   `src/voice/volc-sign.js` + `src/voice/volc-speakers.js`，分页 + 10 分钟缓存）；没配或调用失败时回
   `src/voice/voices.js` 的内置清单，响应带 `source:'catalog'`（失败还带 `error`），前端在音色下拉下标注。
   AK/SK 只用于拉列表，**合成仍用 `apiKey`**；签名按官方 GET/POST 向量单测，真实 AK/SK 线上调用未实测。
+- **ASR/TTS 表单必填项（2026-11-08 核对官方鉴权）**：火山新版控制台 TTS/ASR 只需 **`X-Api-Key` +
+  `X-Api-Resource-Id`**（TTS 默认 `seed-tts-2.0`、ASR 默认 `volc.seedasr.sauc.duration`），不需要
+  APPID/AccessKey；讯飞 = **APPID + APIKey + APISecret**（三者都必填）；Edge / 本地 SenseVoice 免密钥。
+  `SchemaForm` 用 `*` 标必填，`commitEditor` 拦空并提示；其余字段留空走厂商默认。
 - 控制台滚动（2026-11-07 修）：宿主面板高度不固定，`.xz-app` 由 JS 按「视口高度 - 顶端偏移」量测并设 inline height（`Console` 里的 effect，resize/view 切换时重算），`.xz-main` 加 `min-height:0;overflow:hidden`，`.xz-content` 成为唯一滚动容器（`flex:1 1 auto;min-height:0;overflow-y:auto`）。**不要再依赖宿主页面滚动**：单页配置变长后宿主不会替我们滚，表现为整页滑不动。
 - 对话历史（2026-11-07 起，2026-11-08 起按智能体合并展示）：控制台「智能体 → 历史」= 绑定设备的会话合并列表 + 消息气泡 + 音频播放/下载。存储 `history/<device>.jsonl`（每条消息一行，`session` = 一条 WS 连接的 session_id）+ `history/audio/<device>/<audioId>.wav`（用户 16k / 助手 24k）。文本每设备 5000 条、音频 30 天 + 500MB 上限、单条 120s 截断；旧 `{at,user,assistant}` 行按 10 分钟间隔迁移成 legacy 会话（无音频）。写盘是 fire-and-forget，失败只 warn，不影响语音。契约 `docs/history.md`。
 - **死代码**：`src/client/views/CapabilitiesView.js`（原独立「能力」页）仍存在但**已无渲染点**，`navCapabilities` 文案同样未接（页签已并入「智能体 → 配置 → 扩展能力」）。按"未接入模块不默认删"处理：保留原状并登记为待评估，清理要单独确认。

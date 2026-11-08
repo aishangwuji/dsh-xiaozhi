@@ -351,3 +351,17 @@ Service=`speech_saas_prod`，Region=`cn-beijing`）——已核对官方文档�
 - 官方列表是「该账号/资源下可用的音色」，不是「已购买」的精确账单；1.x 资源（`multi_*` 等）仍需账号实际开通。
 - 真实 AK/SK 的线上 `ListSpeakers` 调用**未在本次环境实测**（单测覆盖签名向量、分页、缓存、错误分支）；
   配好后点开智能体「角色」页即可验证。
+
+## 附录 G：ASR/TTS 表单必填项（2026-11-08 按官方鉴权核对）
+
+| 厂商 | 环节 | 必填 | 可留空（默认） | 官方依据 |
+|---|---|---|---|---|
+| 火山引擎豆包 | TTS | `X-Api-Key` + `X-Api-Resource-Id` | 资源版本默认 `seed-tts-2.0`；音色在智能体级选 | [双向流式 TTS](https://docs.volcengine.com/docs/doubao-voice/bidirectional-streaming-text-to-speech-websocket?lang=zh) |
+| 火山引擎豆包 | ASR | `X-Api-Key` + `X-Api-Resource-Id` | 资源默认 `volc.seedasr.sauc.duration`；端点默认 `bigmodel_async` | [旧版控制台鉴权说明](https://docs.volcengine.com/docs/doubao-voice/old-version-console-authentication-reference-example?lang=en)（新版控制台只需 `X-Api-Key`） |
+| 讯飞 | TTS | APPID + APIKey + APISecret | 发音人（智能体级） | [在线语音合成 API](https://www.xfyun.cn/doc/tts/online_tts/API.html) |
+| 讯飞 | ASR | APPID + APIKey + APISecret | `language` 默认 `zh_cn` | [语音听写大模型 API](https://www.xfyun.cn/doc/spark/spark_zh_iat.html) |
+| 微软 Edge | TTS | 无（免密钥） | — | edge-tts 公共端点 |
+| 本地 SenseVoice | ASR | 无（Harness 内置） | `language` 默认 `zh_cn` | 本机服务 |
+
+**注意**：火山 TTS 主用里的 `AccessKey ID` / `SecretAccessKey` **不是**合成必填项，只用于拉官方音色列表；
+表单里标为「可选」，不填也能正常合成。表单用红色 `*` 标必填，`commitEditor` 会拦下缺失的必填项并提示。

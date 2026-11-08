@@ -178,6 +178,18 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
         const { stage, mode, index, draft } = editor;
         const next = { ...draft };
         if (!next.provider) next.provider = stageProviders(stage)[0];
+        // 必填校验：描述符里 required 的字段（如讯飞 APPID/APIKey/APISecret、火山 API Key）
+        // 不能为空；掩码算已填（编辑已保存条目时输入框里是 ••••）。
+        const missing = (stageDescriptor(next.provider, stage)?.fields || [])
+          .filter((field) => field.required)
+          .filter((field) => {
+            const value = next[field.key];
+            return !(typeof value === 'string' ? value.trim() : value);
+          });
+        if (missing.length) {
+          notify(`${t('requiredFields')}：${missing.map((field) => t(field.label)).join('、')}`, 'bad');
+          return;
+        }
         setProvidersDirty(true);
         if (mode === 'primary') {
           const stageSettings = { ...(settings.voice?.[stage] || {}) };

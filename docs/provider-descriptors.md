@@ -68,9 +68,9 @@
 | `select` | `PillSelect` | `options` 静态；动态枚举后续可加 `optionsEndpoint` |
 | `model` | `ModelField` | `modelKind: 'llm'` 拉 `/v1/models`；`modelKind: 'asrResource'` 拉 ASR 资源。当前值不在清单里时仍回显（补进选项）；空值用描述符 `modelHint` 占位 |
 
-字段级可选：`placeholder`、`placeholderKey`（i18n）、`note`（i18n）、`required`、
-`showWhen: { key, equals }`（同表单条件显示）、`primaryOnly: true`（只在主用编辑弹窗出现，
-备用条目编辑时隐藏——火山 AK/SK 拉音色就属于这种）。
+字段级可选：`placeholder`、`placeholderKey`（i18n）、`note`（i18n）、`required`（表单显示 `*`，
+`commitEditor` 会拦下空值）、`showWhen: { key, equals }`（同表单条件显示）、`primaryOnly: true`
+（只在主用编辑弹窗出现，备用条目编辑时隐藏——火山 AK/SK 拉音色就属于这种）。
 
 ### 段级元数据（`stages`）
 

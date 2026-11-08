@@ -100,6 +100,21 @@ const addModelTrigger = [...addDialog.querySelectorAll('.xz-pillselect-trigger')
 const addModelText = addModelTrigger ? addModelTrigger.textContent.trim() : ''
 console.log('add model placeholder:', addModelText)
 
+// 必填校验：不填 API Key 点保存应被拦下（弹窗不关）；填了才允许提交。
+const confirmBeforeKey = [...addDialog.querySelectorAll('.xz-btn.primary')][0]
+confirmBeforeKey.click()
+await new Promise((resolve) => setTimeout(resolve, 100))
+const requiredBlocked = !!document.querySelector('.xz-modal-lg')
+console.log('required blocked:', requiredBlocked)
+
+const keyInput = [...addDialog.querySelectorAll('input[type="password"]')][0]
+if (keyInput) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+  setter.call(keyInput, 'sk-check-123456')
+  keyInput.dispatchEvent(new window.Event('input', { bubbles: true }))
+  await new Promise((resolve) => setTimeout(resolve, 50))
+}
+
 // 编辑弹窗「保存」只改本地状态 → dirty；主用测试应变成「保存并测试」并先 POST /settings。
 const dialog = document.querySelector('.xz-modal-lg')
 const confirm = [...dialog.querySelectorAll('.xz-btn.primary')][0]
@@ -150,6 +165,7 @@ console.log('asr test result:', asrResult)
 
 const failures = []
 if (addModelText !== 'deepseek-chat') failures.push(`add model placeholder = ${addModelText || '(empty)'}`)
+if (!requiredBlocked) failures.push('required-field validation did not block the empty API Key')
 if (editModelText !== 'gpt-4o-mini') failures.push(`edit model label = ${editModelText || '(empty)'}`)
 if (postsAfter <= postsBefore) failures.push('auto-save did not POST /settings')
 if (!asrTestButton) failures.push('ASR primary test button missing')

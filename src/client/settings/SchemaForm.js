@@ -91,7 +91,10 @@ function SchemaForm({ stage, provider, mode, index, fields, value, onChange, bas
       const render = FIELD_RENDERERS[field.type] || FIELD_RENDERERS.text
       const note = field.type === 'secret' ? secretNote(field, value) : (field.note ? t(field.note) : '')
       return h('div', { key: field.key || `field-${position}`, className: 'xz-field' },
-        h('label', null, t(field.label)),
+        h('label', null,
+          t(field.label),
+          field.required ? h('span', { className: 'xz-required', 'aria-hidden': 'true' }, ' *') : null
+        ),
         render(field, value[field.key], (next) => onChange({ ...value, [field.key]: next }), context),
         note ? h('span', { className: 'note' }, note) : null
       )

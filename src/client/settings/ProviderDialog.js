@@ -55,6 +55,7 @@ import { SchemaForm } from './SchemaForm.js'
                 onChange: switchProvider
               })
             ),
+            h('p', { className: 'xz-hint', style: { margin: '0 0 10px' } }, t('requiredHint')),
             desc
               ? h(SchemaForm, {
                   stage,
