@@ -216,6 +216,19 @@ desktop\operator
   Search 无结果、请求失败、超时不收费。语音链路最多 3 轮工具（`MAX_TOOL_ROUNDS`），
   搜一次再看 1–2 个页面刚好在预算内。
 
+### 设备侧 MCP / IoT（2026-11-08 首阶段）
+
+- **设备侧 MCP**：设备 hello 里带 `features.mcp === true` 时，服务端在 hello 之后按官方顺序发
+  `{type:'mcp', payload:{jsonrpc:'2.0', id:1, method:'initialize'}}` 和 `id:2 tools/list`；
+  设备回 `tools/list` 后，工具动态进入语音会话，模型调用时服务端发 `tools/call`（id 从 3 起，30s 超时），
+  结果以 `content[0].text` 回灌。工具名按官方规则清洗，调用时映射回设备原名。
+- **设备侧 IoT**：设备发 `{type:'iot', descriptors:[...]}` 注册属性/方法，服务端生成
+  `get_<device>_<property>`（查询）和 `<device>_<method>`（控制）两类工具；设备发
+  `{type:'iot', states:[...]}` 更新属性值；控制时服务端回 `{type:'iot', commands:[...]}`。
+- 两类动态工具与内置工具合并，同名时内置优先；控制台「扩展能力」的总开关仍生效。
+- **尚未接**：外部 MCP server（stdio/SSE/streamable-http）、MCP 接入点、入站 `/mcp`、
+  官方 weather/music/hass/ragflow/exit 等服务端插件工具。
+
 ## 对话历史（会话 / 消息 / 音频）
 
 控制台「智能体 → `历史`」打开，对齐官方 manager 的「手表 · 历史对话」：左侧是**一段一段的会话**
@@ -329,7 +342,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 智能体「角色」页选「跟随音色」会删除该智能体的 `language` 覆盖、撤掉语种指令；如果只在 `cordis.patch.yml` 里写过默认语种，需要智能体上显式选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，208 项）：
+实测（`node --test "test/*.test.mjs"`，215 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -385,7 +398,7 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 208 项
+node --test "test/*.test.mjs"   # 215 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 

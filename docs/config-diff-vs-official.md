@@ -16,7 +16,7 @@
 
 ## 一、TL;DR（最影响体验的 5 条）
 
-1. **工具面整体缺位**：官方有 15+ 服务端插件工具、设备侧 IoT、设备侧 MCP、外部 MCP server、MCP 接入点（`官方 config.yaml:132-188, 281-292`、`plugins_func/functions/*.py`、`helloHandle.py:56-73`、`mcp_server_settings.json:9-55`）；插件只有 `get_current_time` / `web_search` / `web_fetch` / `get_news_from_chinanews` 四个（`插件 src/tools.js:157-337`）。音乐、家电、天气、设备控制、外部工具全部不可用。
+1. **工具面整体仍缺位（设备侧 MCP/IoT 已补首阶段）**：官方有 15+ 服务端插件工具、设备侧 IoT、设备侧 MCP、外部 MCP server、MCP 接入点（`官方 config.yaml:132-188, 281-292`、`plugins_func/functions/*.py`、`helloHandle.py:56-73`、`mcp_server_settings.json:9-55`）；插件服务端工具只有 `get_current_time` / `web_search` / `web_fetch` / `get_news_from_chinanews` 四个（`插件 src/tools.js:157-337`），但**设备侧 MCP**（`src/voice/device-mcp.js`）与**设备侧 IoT**（`src/voice/device-iot.js`）已实现；外部 MCP server / MCP 接入点 / 入站 `/mcp` 仍未接。音乐、家电、天气、设备控制、外部工具仍不完整。
 2. **判停/VAD 完全不是同一套**：官方是 Silero 神经 VAD（阈值 0.5/0.3、静音 200ms，`官方 config.yaml:606-612`、`silero.py:26-37,88-113`）；插件默认「设备判停」（等固件发 `listen stop`），兜底能量 VAD 是 RMS 0.05/静音 400ms（`插件 index.js:280-290,282`、`src/voice/vad.js:19-37`）。两套阈值量纲不同、不可换算，句尾时延与环境音误触发的表现不同。
 3. **回答长度与上下文被压得很短**：官方同类模型 `max_tokens: 500`（`官方 config.yaml:625`），插件默认 `max_tokens: 120` 并追加 `<voice_reply_limits>` 强制 1–2 句（`插件 index.js:321,62-67`）；会话历史官方全量进 LLM（`官方 core/utils/dialogue.py:151-161`），插件裁到 8 轮（`插件 index.js:295`、`src/voice/session.js:563`）。**这是设计取舍而非缺陷**，但会直接让「讲长故事 / 连续追问」类对话变差。
 4. **音频下行参数不同**：官方下行 24kHz/单声道/**60ms** 帧（`官方 config.yaml:92-97`、`sendAudioHandle.py:15`），插件下行 24kHz/**20ms** 帧（`插件 index.js:305,309`，并在 hello 里如实声明，`src/ingress.js:329-342`）。同样时长语音的 WS 帧数是官方 3 倍，设备缓冲与网络抖动敏感度不同。
@@ -134,10 +134,10 @@
 |---|---|---|---|---|---|
 | 63 | 服务端插件工具 | 15+ `@register_function`：change_role / get_weather / get_news×2 / play_music / handle_exit_intent / get_lunar / hass×3 / search_from_ragflow / web_search / call_device（`plugins_func/functions/*.py` 各装饰器行；`plugins_func/register.py:85-100`） | 4 个：get_current_time / web_search / web_fetch / get_news_from_chinanews（`tools.js:157-337`） | ❌ | 音乐、家电、天气、角色切换、退出、知识库全部缺失 |
 | 64 | 外部 MCP server | `data/.mcp_server_settings.json`，支持 stdio / sse / streamable-http（`mcp_server_settings.json:9-55`） | 无 | ❌ | 外部工具生态 |
-| 65 | 设备侧 MCP | `features.mcp` → `MCPClient`，hello 后发 initialize + tools/list（`helloHandle.py:56-73`；`core/providers/tools/device_mcp/mcp_handler.py:148-203`） | 无实现（全仓库 `grep mcp` 只命中注释与配置键名：`index.js:174,181`；`client.js:216`） | ❌ | 设备/游戏上报工具（本项目 lingxi 链路的核心） |
+| 65 | 设备侧 MCP | `features.mcp` → `MCPClient`，hello 后发 initialize + tools/list（`helloHandle.py:56-73`；`core/providers/tools/device_mcp/mcp_handler.py:148-203`） | **已实现**：`src/voice/device-mcp.js`；hello 后发 `type:'mcp'` initialize/tools/list，工具名清洗、tools/call 从 id=3、30s 超时（`test/device-mcp.test.mjs`） | ⚠️ | 设备/游戏上报工具已可接入；外部 MCP server 仍缺 |
 | 66 | MCP 接入点（出站） | `mcp_endpoint` 配置 + `connect_mcp_endpoint`（`config.yaml:119-121`；`core/providers/tools/unified_tool_handler.py:81-101`） | 无 | ❌ | 对接小智 MCP 接入点 |
-| 67 | IoT 设备控制 | iot descriptors/status/commands（`core/providers/tools/device_iot/iot_handler.py:50-63`；`iot_executor.py:102-135`） | 无；仅本机命令网关 `/health`/`/commands`/`/exec`（`src/gateway.js:104-149`） | ❌ | 智能家居/设备属性控制 |
-| 68 | 工具白名单 | `Intent.functions` 列表（服务端统一）（`config.yaml:281-292`） | 设备级 `toolsDisabled`/`toolsEnabled` 开关（`tools.js:105-107`；`control.js:319`；`index.js:582`） | ⚠️ | 粒度更细但可列的工具极少 |
+| 67 | IoT 设备控制 | iot descriptors/status/commands（`core/providers/tools/device_iot/iot_handler.py:50-63`；`iot_executor.py:102-135`） | **已实现**：`src/voice/device-iot.js`；descriptors/states 注册 `get_*` / `<device>_<method>`，控制回 `type:'iot'` commands（`test/device-iot.test.mjs`） | ⚠️ | 智能家居/设备属性控制已可用；尚无官方 IoT 描述符生态/示例 |
+| 68 | 工具白名单 | `Intent.functions` 列表（服务端统一）（`config.yaml:281-292`） | 设备级 `toolsDisabled`/`toolsEnabled` 开关（`tools.js:105-107`；`control.js:319`；`index.js:582`） | ⚠️ | 粒度更细但可列的工具仍少 |
 | 69 | 工具调用超时/轮次 | 见 #38/#39 | 见 #38/#39 | ❌ | — |
 
 ### 2.10 打断 / 静音 / 重连 / 并发 / 后处理
@@ -176,8 +176,8 @@
 
 | 风险 | 能力 | 官方证据 | 插件现状 | 不补齐会怎样 |
 |---|---|---|---|---|
-| **高** | 设备侧 MCP（`features.mcp`） | `helloHandle.py:56-73`、`device_mcp/mcp_handler.py:148-203` | 无实现（`grep mcp` 只命中注释/配置键名） | 设备/游戏上报的工具模型看不到、调不到；本项目的 lingxi 工具链路无法接入这条通道 |
-| **高** | 设备 IoT 控制 | `device_iot/iot_handler.py:50-63`、`iot_executor.py:102-135` | 无 | 「把灯调暗」类指令完全不可用；也无法复用现成 IoT 设备描述符 |
+| **高** | 设备侧 MCP（`features.mcp`） | `helloHandle.py:56-73`、`device_mcp/mcp_handler.py:148-203` | **已实现首阶段**：`src/voice/device-mcp.js`（initialize/tools/list/tools/call，30s 超时） | 设备/游戏上报的工具已能被模型看到并调用；外部 MCP server / 接入点仍未接 |
+| **高** | 设备 IoT 控制 | `device_iot/iot_handler.py:50-63`、`iot_executor.py:102-135` | **已实现**：`src/voice/device-iot.js`（descriptors/states/commands） | 「把灯调暗」类指令可用；尚无官方 IoT 描述符生态/示例 |
 | **高** | 服务端插件工具集 | `plugins_func/functions/*.py`、`config.yaml:281-292` | 仅 4 个工具（时/搜/网页/新闻） | 音乐播放、天气、家电、角色切换、知识库问答、退出意图全部缺失 |
 | **高** | 意图识别模块 | `config.yaml:252-292`、`intentHandler.py:20-50` | 无，仅 function calling | 无法前置拦截系统指令、无法用独立小模型做意图路由；工具多时更慢更贵 |
 | **高** | 外部 MCP server / MCP 接入点 | `mcp_server_settings.json:9-55`、`unified_tool_handler.py:81-101` | 无 | 无法把第三方 MCP 工具接进语音；也无法对外提供接入点 |
@@ -220,7 +220,7 @@
 > 原则：插件是「个人/局域网语音终端」定位，不是官方服务端的替代品。以下区分「建议补」与「属设计取舍、不用改」。
 
 ### P0（不补会直接挡功能）
-1. **补设备侧 MCP 通道**（`features.mcp` 握手 + `tools/list` + `tools/call` 回灌），或明确声明本插件不支持设备工具，避免下游（如 lingxi）以为能用。**插件侧改**（`src/tools.js` + `session.js`）。参考 `官方 helloHandle.py:56-73`、`device_mcp/mcp_handler.py`。
+1. **设备侧 MCP / IoT 已补首阶段**（`src/voice/device-mcp.js`、`device-iot.js`）；下一步是**外部 MCP server（stdio/SSE/streamable-http）与 MCP 接入点**，以及入站 `/mcp`。参考 `官方 helloHandle.py:56-73`、`device_mcp/mcp_handler.py`、`mcp_server_settings.json`。
 2. **补最小工具集**：`play_music`/`stop`、退出意图（`exit_commands` + 告别）、天气（先走上下文注入即可）。**插件侧改**（`tools.js` + 提示词）。参考 `官方 config.yaml:84-86,281-292`。
 3. **ASR endpointing 可配**：把 `endWindowSize` 暴露到设置（官方同类为 200ms，插件硬编码 800ms）。**插件侧改**（`settings.js` + `adapters/index.js:216`），预计直接降低每轮尾包延迟。
 4. **WS 鉴权补齐**：启用 `endpoints.token` 校验或至少设备白名单，公网暴露前必须做。**插件侧改**（`ingress.js:179-206`）。参考 `官方 websocket_server.py:210-231`。
@@ -374,5 +374,5 @@
    - 旧数据按 10 分钟间隔聚合迁移（实测 48 行旧记录 → 9 段会话），旧会话无音频；
    - 保留：文本 5000 条/设备、音频 30 天 + 500MB、单条 120s 截断，启动 + 每日清理；
    - 与官方的差距（未做）：LLM 生成的会话标题/摘要（官方 `AgentChatTitle/SummaryService`），当前标题取首条用户消息。
-6. 其余差异（工具面缺位中的音乐/家电/IoT/MCP 部分、ASR endpointing 800ms、VAD 语义、下行 20ms 帧、
+6. 其余差异（服务端插件工具、外部 MCP server / 接入点、ASR endpointing 800ms、VAD 语义、下行 20ms 帧、
    90s 空闲断开等）**未在本轮修复**，仍是后续整改建议里的 P0/P1 项。

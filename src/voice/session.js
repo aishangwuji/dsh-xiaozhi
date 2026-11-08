@@ -21,6 +21,8 @@ import { EnergyVad } from './vad.js'
 import { OutputSegmenter } from './segmenter.js'
 import { withMemory, extractFact } from '../memory.js'
 import { MAX_TOOL_ROUNDS } from '../tools.js'
+import { DeviceMcpClient } from './device-mcp.js'
+import { DeviceIotRegistry } from './device-iot.js'
 import { trace } from './trace.js'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -80,6 +82,13 @@ export class VoiceSession {
     this.config = config
     this.logger = logger ?? {}
     this.clock = clock
+    // 设备侧 MCP / IoT：两者都复用同一条 WS，工具在 hello / iot 消息后动态出现。
+    this.features = {}
+    this.mcp = null
+    this.iot = new DeviceIotRegistry({
+      sendJson: (message) => this.sink.sendJson(message),
+      logger: this.logger,
+    })
     this.createDecoder = createDecoder
     this.encodeSpeech = encodeSpeech
     // 调试用：把每段上行 PCM 存成 WAV（%TEMP%\dsh-xiaozhi-pcm），并在 trace 里记
@@ -158,9 +167,39 @@ export class VoiceSession {
     this.#cancelTurn('session closed')
     this.asrStream?.abort?.()
     this.asrStream = null
+    this.mcp?.close?.()
     this.decoder?.close?.()
     this.decoder = null
     await this.player.stop()
+  }
+
+  /**
+   * hello 之后调用：设备声明 `features.mcp` 时启动设备侧 MCP 握手。
+   * 官方顺序是「先回 hello，再发 initialize / tools/list」。
+   */
+  handleHello(features) {
+    this.features = features && typeof features === 'object' ? features : {}
+    if (this.features.mcp && !this.mcp) {
+      this.mcp = new DeviceMcpClient({
+        sendJson: (payload) => this.sink.sendJson({ type: 'mcp', payload }),
+        logger: this.logger,
+      })
+      this.mcp.initialize()
+    }
+  }
+
+  /** 设备回的 MCP JSON-RPC 消息。 */
+  handleMcp(payload) {
+    const changed = this.mcp?.handlePayload(payload) === true
+    if (changed) {
+      this.logger.info?.(`dsh-xiaozhi: device MCP tools updated (${this.mcp.definitions().length})`)
+    }
+  }
+
+  /** 设备 IoT 描述符 / 状态。 */
+  handleIot(message) {
+    const changed = this.iot.handleMessage(message)
+    if (changed) this.logger.info?.(`dsh-xiaozhi: device IoT tools updated (${this.iot.definitions().length})`)
   }
 
   // --------------------------------------------------------------- device I/O
@@ -528,7 +567,13 @@ export class VoiceSession {
       }
       const messages = [...this.history, { role: 'user', content: userText }]
       const answerParts = []
-      const tools = this.config.toolsEnabled === false ? [] : (this.adapters.tools?.definitions?.(this.deviceId) ?? [])
+      const globalTools = this.config.toolsEnabled === false ? [] : (this.adapters.tools?.definitions?.(this.deviceId) ?? [])
+      const dynamicTools = this.config.toolsEnabled === false
+        ? []
+        : [...(this.mcp?.definitions() ?? []), ...this.iot.definitions()]
+      // 动态工具与内置工具重名时内置优先（官方对冲突只告警，这里选更稳的一侧）。
+      const seenNames = new Set(globalTools.map((tool) => tool?.function?.name).filter(Boolean))
+      const tools = [...globalTools, ...dynamicTools.filter((tool) => !seenNames.has(tool?.function?.name))]
       const supportsTools = tools.length > 0 && typeof this.adapters.llm.streamWithTools === 'function'
       // 工具循环：拿到的 tool_calls 执行后作为 role:"tool" 回灌，再让模型续写。
       // 最多 MAX_TOOL_ROUNDS 轮，避免模型自问自答绕圈（Go 侧同样是有限轮次）。
@@ -568,7 +613,11 @@ export class VoiceSession {
           } catch {
             args = {}
           }
-          const output = await this.adapters.tools.execute(call.name, args, { signal: controller.signal, deviceId: this.deviceId })
+          const output = this.mcp?.has(call.name)
+            ? await this.mcp.callTool(call.name, args, { signal: controller.signal })
+            : this.iot.has(call.name)
+              ? await this.iot.execute(call.name, args)
+              : await this.adapters.tools.execute(call.name, args, { signal: controller.signal, deviceId: this.deviceId })
           this.logger.info?.(`dsh-xiaozhi: tool ${call.name} -> ${String(output).slice(0, 80)}`)
           messages.push({
             role: 'tool',

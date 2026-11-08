@@ -323,6 +323,7 @@ export function createIngress({ config, store, hub, logger, clock = () => Date.n
           case 'hello': {
             session.hello = true
             clearTimeout(helloTimeout)
+            session.features = message.features && typeof message.features === 'object' ? message.features : {}
             const audio = sanitizeAudioParams(message.audio_params)
             session.frameMs = audio.frame_duration
             // The reply must announce what *this* server will send, not echo the
@@ -342,6 +343,8 @@ export function createIngress({ config, store, hub, logger, clock = () => Date.n
               session_id: session.id,
               audio_params: downlink,
             })
+            // 官方顺序：先回 hello，再发 MCP initialize / tools/list。
+            session.voice?.handleHello?.(session.features)
             logger.info?.(
               `dsh-xiaozhi: device ${session.deviceId} hello v${message.version ?? '?'} ` +
                 `(uplink ${audio.format}/${audio.sample_rate}Hz/${audio.frame_duration}ms, ` +
@@ -349,6 +352,12 @@ export function createIngress({ config, store, hub, logger, clock = () => Date.n
             )
             return
           }
+          case 'mcp':
+            session.voice?.handleMcp?.(message.payload)
+            return
+          case 'iot':
+            session.voice?.handleIot?.(message)
+            return
           case 'listen':
             session.voice?.handleListen(message)
             return

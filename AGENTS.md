@@ -71,14 +71,14 @@
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"          # 全量 208 项，必须全绿
+node --test "test/*.test.mjs"          # 全量 215 项，必须全绿
 npm run build                          # src/client/** → client.js（esbuild，React 保持 external）
 npm run smoke                          # 真实 React SSR 渲染主要页面 + slot 注册校验
 npm run check:ui                       # jsdom 交互检查：概览卡 → 弹窗 → 添加 → ⋯ → 模型回显 → 自动保存
 node --check client.js                 # 构建产物语法检查
 ```
 
-当前 208 项，覆盖分句、VAD、Ogg/Opus 往返、mock 整轮、打断、20 轮、语种、音色族、**TTS 默认音色**（全局只存凭据可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留）、设备级覆盖合并（含「设备 hostProvider 不再强切 host」）、全局设置（人设/静音收口、`applyRuntimeSettings` 的 hostProvider/backups 叠加回归）、备用服务商（持久化/掩码/留空保留/整次失败/**条数不设上限**/`/test/provider`）、**服务商描述符**（描述符与 `BACKUP_SPEC` 白名单一致、字段可存储、stage 级名字覆盖、`hidden` 只存不展示、`GET /providers` 路由，`test/providers.test.mjs` 6 项）、**ASR 在线测试**（TTS→ASR 编排：分块喂 PCM、TTS mock/无音频/ASR error 的报错，`test/asr-probe.test.mjs` 5 项）、**火山官方音色列表**（HMAC 签名按官方 GET/POST 向量验证、ListSpeakers 分页/缓存/错误、无 AK/SK 回退内置清单，`test/volc-sign.test.mjs` 4 项 + `test/volc-speakers.test.mjs` 4 项）、三段 failover（LLM 未出字前切换、TTS 整句重试、ASR 回放不推 partial、abort 不切换、粘性回落）、mDNS 报文与地址过滤、小米 MiMo（api-key 认证头 / thinking / SSE / 工具调用 / 模型清单走 /v1/models 无内置兜底）、联网工具（Search 带正文与截断预算 / web_fetch 正文与 403·404 语义 / 动态 Key / 无 Key 回退）、对话历史（会话聚合与标题 / 旧格式 10 分钟迁移 / WAV 读写与路径安全 / 30 天保留与容量清理 / clear 粒度 / 4 条 HTTP 路由）、**智能体/设备绑定**（旧设备迁移与记忆复制 / 多设备绑定与移动 / 解绑 / 配置共享 / 级联删除 / 历史合并，`test/agents.test.mjs` 6 项）。
+当前 215 项，覆盖分句、VAD、Ogg/Opus 往返、mock 整轮、打断、20 轮、语种、音色族、**TTS 默认音色**（全局只存凭据可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留）、设备级覆盖合并（含「设备 hostProvider 不再强切 host」）、全局设置（人设/静音收口、`applyRuntimeSettings` 的 hostProvider/backups 叠加回归）、备用服务商（持久化/掩码/留空保留/整次失败/**条数不设上限**/`/test/provider`）、**服务商描述符**（描述符与 `BACKUP_SPEC` 白名单一致、字段可存储、stage 级名字覆盖、`hidden` 只存不展示、`GET /providers` 路由，`test/providers.test.mjs` 6 项）、**ASR 在线测试**（TTS→ASR 编排：分块喂 PCM、TTS mock/无音频/ASR error 的报错，`test/asr-probe.test.mjs` 5 项）、**火山官方音色列表**（HMAC 签名按官方 GET/POST 向量验证、ListSpeakers 分页/缓存/错误、无 AK/SK 回退内置清单，`test/volc-sign.test.mjs` 4 项 + `test/volc-speakers.test.mjs` 4 项）、**设备侧 MCP/IoT**（MCP initialize/tools/list/tools/call 与工具名清洗、IoT descriptors/states/commands，`test/device-mcp.test.mjs` 5 项 + `test/device-iot.test.mjs` 2 项）、三段 failover（LLM 未出字前切换、TTS 整句重试、ASR 回放不推 partial、abort 不切换、粘性回落）、mDNS 报文与地址过滤、小米 MiMo（api-key 认证头 / thinking / SSE / 工具调用 / 模型清单走 /v1/models 无内置兜底）、联网工具（Search 带正文与截断预算 / web_fetch 正文与 403·404 语义 / 动态 Key / 无 Key 回退）、对话历史（会话聚合与标题 / 旧格式 10 分钟迁移 / WAV 读写与路径安全 / 30 天保留与容量清理 / clear 粒度 / 4 条 HTTP 路由）、**智能体/设备绑定**（旧设备迁移与记忆复制 / 多设备绑定与移动 / 解绑 / 配置共享 / 级联删除 / 历史合并，`test/agents.test.mjs` 6 项）。
 
 **不接手表也能做的三种探针**：
 
@@ -172,6 +172,14 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   （契约仍是「只测已保存的配置」，只是把两步合成一次点击）；已自动保存时直接测。
 - 弹窗尺寸（2026-11-08 修）：控制台 4 个弹窗**一律固定外框**、只有内部区域滚动，不要再退回「max-height + 内容撑开」（父层 `align-items:center`，高度一变标题与页签就上下跳）：智能体配置 `.xz-config-modal` 720×600（页签条固定，只有 `.xz-pane` 滚动）、历史对话 `.xz-history-modal` 920×720、服务商编辑 `.xz-modal-lg` 560×460（表单区滚动）、播报测试 `.xz-inject-modal` 520×320。高度统一写 `height:min(Xpx,86~88vh)` 兜底小视口；切页签 / 换厂商 / 消息增减都不得改变外框尺寸。
 - **TTS 归属（2026-11-08）**：全局设置 → TTS 合成只配「厂商 + 凭据」（volc = API Key；xunfei = APPID/APIKey/APISecret；edge 免密钥），不配音色 / 模型 / Resource ID / API URL——全局保存时这三项显式清空。音色（= TTS 模型族）只在「智能体 → 配置 → 角色」按智能体选，首项「默认音色」= 不覆盖，留空 = 厂商默认（`src/voice/voices.js` 的 `DEFAULT_TTS_VOICES`：火山 `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan`）；`resolveTtsVoice` 负责空音色→厂商默认、跨厂商残留→回落本厂商默认、自定义 ID 原样保留。智能体级音色只覆盖主用，备用 TTS 条目只存凭据、运行时用各自厂商默认音色。**输出语种同样只在智能体「角色」页**（全局设置里的那一项已删除，2026-11-08），同一智能体的设备共用；`cordis.patch.yml` 的 `voice.tts.language` 仅作服务端兜底。
+- **设备侧 MCP / IoT（2026-11-08 首阶段）**：`src/voice/device-mcp.js` 在 hello 的
+  `features.mcp===true` 后发 `{type:'mcp',payload:{jsonrpc,id,method}}`（initialize id=1、
+  tools/list id=2、tools/call 从 3 起），工具名按官方 `sanitize_tool_name` 清洗并映射回原名；
+  `src/voice/device-iot.js` 处理设备 `{type:'iot',descriptors|states}`，把属性/方法注册成
+  `get_<device>_<property>` / `<device>_<method>`，控制回 `{type:'iot',commands:[...]}`。
+  `VoiceSession` 把这两类动态工具与内置工具合并（同名内置优先），`close()` 拒绝未完成 MCP 调用。
+  **仍未接**：外部 MCP server（stdio/SSE/streamable-http）、MCP 接入点、入站 `/mcp`、
+  官方 15+ 服务端插件工具（weather/music/hass/ragflow/exit 等）。
 - **音色列表来源（2026-11-08）**：`GET /voices?provider=volc&resourceId=...` 在火山 TTS 主用配置了
   `appId`（AccessKey ID）/ `apiSecret`（SecretAccessKey）时调官方 **`ListSpeakers`**（AK/SK HMAC 签名，
   `src/voice/volc-sign.js` + `src/voice/volc-speakers.js`，分页 + 10 分钟缓存）；没配或调用失败时回
@@ -303,7 +311,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 - 控制台：三个平级视图 **概览 / 智能体 / 全局设置**。卡片 = 智能体（名字/在线/绑定设备列表/音色/设备数/最近在线 +
   配置/设备(N)/历史/播报/删除）；「设备(N)」弹窗里绑定/解绑、改设备别名、OTA/封禁/断开/删除设备；
   「播报」发给该智能体所有在线设备（一台都不在线时提示「这个智能体没有在线设备」）。
-- 验证：`node --test "test/*.test.mjs"`（208 项，含 `test/agents.test.mjs` 6 项）。
+- 验证：`node --test "test/*.test.mjs"`（215 项，含 `test/agents.test.mjs` 6 项）。
 
 ## 十一、改代码时最容易漏的几处
 
@@ -330,7 +338,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
    `devices.json` 的 `agentId` 全为空 → 说明迁移还没跑（推测：正在跑的 DSH 仍是智能体改造前的实例，
    未直接验证进程内代码版本）；重启后 `adoptLegacyDevices` 会给每台旧设备各建一个智能体并复制记忆
    （幂等，重复重启不会重复建）。
-8. **改完的验收底线**：`node --test "test/*.test.mjs"` 208 项全绿 + `npm run build` 成功 + `npm run smoke` 通过 + `npm run check:ui` 通过 + `node --check client.js` 通过 +
+8. **改完的验收底线**：`node --test "test/*.test.mjs"` 215 项全绿 + `npm run build` 成功 + `npm run smoke` 通过 + `npm run check:ui` 通过 + `node --check client.js` 通过 +
    需要时 `curl http://127.0.0.1:8989/healthz` 看设备面是否还活着。
 
 ## 十二、文档地图
