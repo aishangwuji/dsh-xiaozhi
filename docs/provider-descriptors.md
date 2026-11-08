@@ -66,7 +66,7 @@
 | `secret` | `<input type=password>` | 掩码/留空保留/密钥状态只看它 |
 | `number` / `checkbox` | 原生 | 预留 |
 | `select` | `PillSelect` | `options` 静态；动态枚举后续可加 `optionsEndpoint` |
-| `model` | `ModelField` | `modelKind: 'llm'` 拉 `/v1/models`；`modelKind: 'asrResource'` 拉 ASR 资源 |
+| `model` | `ModelField` | `modelKind: 'llm'` 拉 `/v1/models`；`modelKind: 'asrResource'` 拉 ASR 资源。当前值不在清单里时仍回显（补进选项）；空值用描述符 `modelHint` 占位 |
 
 字段级可选：`placeholder`、`placeholderKey`（i18n）、`note`（i18n）、`required`、
 `showWhen: { key, equals }`（同表单条件显示）。

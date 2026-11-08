@@ -65,7 +65,9 @@ const FIELD_RENDERERS = {
     source: context.mode === 'primary' ? 'primary' : 'backup',
     index: context.mode === 'primary' ? undefined : (Number.isInteger(context.index) ? context.index : undefined),
     value: value || '',
-    placeholder: field.placeholderKey ? t(field.placeholderKey) : (field.placeholder || ''),
+    // 空值时给一个厂商常见的模型名做占位（描述符的 modelHint），比「未选择」有信息量；
+    // 真正选过/存过的值由 ModelField 自己回显，不靠占位。
+    placeholder: field.placeholderKey ? (context.modelHint || t(field.placeholderKey)) : (field.placeholder || ''),
     baseUrl: context.draft.baseUrl || context.baseUrlHint || '',
     probeKey: context.draft.apiKey || '',
     onChange
@@ -79,8 +81,8 @@ function secretNote(field, draft) {
   return t('backupKeyHint')
 }
 
-function SchemaForm({ stage, provider, mode, index, fields, value, onChange, baseUrlHint }) {
-  const context = { stage, provider, mode, index, draft: value, baseUrlHint }
+function SchemaForm({ stage, provider, mode, index, fields, value, onChange, baseUrlHint, modelHint }) {
+  const context = { stage, provider, mode, index, draft: value, baseUrlHint, modelHint }
   return h('div', { className: 'xz-grid xz-dialog-grid' },
     (fields || []).map((field, position) => {
       if (field.showWhen && value[field.showWhen.key] !== field.showWhen.equals) return null

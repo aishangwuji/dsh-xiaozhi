@@ -946,6 +946,7 @@ var DshXiaozhi = (() => {
 .xz-field .xz-pillselect-chevron{right:12px;border-top-width:5px}
 
 .xz-pill-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-pill-label.xz-pill-placeholder{color:var(--xz-text-3)}
 /* \u60AC\u6D6E\u9762\u677F\u6539\u6210 position:fixed\uFF08left/top/width/maxHeight/z-index \u7531 PillSelect \u5185\u8054\u8BA1\u7B97\uFF09\u3002
    \u7EDD\u5BF9\u5B9A\u4F4D\u4F1A\u53C2\u4E0E\u9875\u9762\u53EF\u6EDA\u52A8\u9AD8\u5EA6\u7684\u8BA1\u7B97\uFF1A\u9875\u9762\u5E95\u90E8\u5C55\u5F00\u65F6\u51FA\u73B0\u6EDA\u52A8\u6761\u3001\u6574\u9875\u6A2A\u5411\u4F4D\u79FB\uFF0C
    \u8FD9\u6B63\u662F\u7528\u6237\u53CD\u9988\u7684\u300C\u70B9\u5F00\u4E0B\u62C9\u6846\u5176\u4ED6\u5185\u5BB9\u4E5F\u53D8\u4E86\u300D\u3002fixed \u4E0D\u5360\u5E03\u5C40\uFF0C\u83DC\u5355\u518D\u957F\u4E5F\u4E0D\u6539\u9875\u9762\u5C3A\u5BF8\u3002 */
@@ -1316,7 +1317,7 @@ var DshXiaozhi = (() => {
     }
     return null;
   }
-  function PillSelect({ value, options, onChange, disabled, alignEnd, label, ariaLabel, width, badge }) {
+  function PillSelect({ value, options, onChange, disabled, alignEnd, label, ariaLabel, width, badge, placeholder }) {
     const [open, setOpen] = useState2(false);
     const [pos, setPos] = useState2(null);
     const rootRef = useRef2(null);
@@ -1460,9 +1461,9 @@ var DshXiaozhi = (() => {
           "aria-haspopup": "listbox",
           "aria-expanded": open ? "true" : "false",
           "aria-label": ariaLabel || label,
-          title: current ? current.label : label
+          title: current ? current.label : placeholder || label
         },
-        h("span", { className: "xz-pill-label" }, current ? current.label : t("selectPlaceholder")),
+        h("span", { className: `xz-pill-label${current ? "" : " xz-pill-placeholder"}` }, current ? current.label : placeholder || t("selectPlaceholder")),
         badge ? h("span", { className: "xz-pillselect-badge" }, String(badge)) : null,
         h("span", { className: "xz-pillselect-chevron", "aria-hidden": "true" })
       ),
@@ -2819,10 +2820,13 @@ var DshXiaozhi = (() => {
     if (options.length === 0) {
       return h("input", { className: "xz-input", value, placeholder, onChange: (e) => onChange(e.target.value) });
     }
+    const text = typeof value === "string" ? value : "";
+    const merged = text.trim() && !options.some((option) => option.value === value) ? [{ value, label: text }, ...options] : options;
     return h(PillSelect, {
       value,
-      options,
+      options: merged,
       ariaLabel: placeholder,
+      placeholder,
       onChange
     });
   }
@@ -2878,7 +2882,9 @@ var DshXiaozhi = (() => {
       source: context.mode === "primary" ? "primary" : "backup",
       index: context.mode === "primary" ? void 0 : Number.isInteger(context.index) ? context.index : void 0,
       value: value || "",
-      placeholder: field.placeholderKey ? t(field.placeholderKey) : field.placeholder || "",
+      // 空值时给一个厂商常见的模型名做占位（描述符的 modelHint），比「未选择」有信息量；
+      // 真正选过/存过的值由 ModelField 自己回显，不靠占位。
+      placeholder: field.placeholderKey ? context.modelHint || t(field.placeholderKey) : field.placeholder || "",
       baseUrl: context.draft.baseUrl || context.baseUrlHint || "",
       probeKey: context.draft.apiKey || "",
       onChange
@@ -2889,8 +2895,8 @@ var DshXiaozhi = (() => {
     if (isMasked(draft[field.key]) || draft.hasApiKey || draft.hasApiSecret) return t("apiKeyKeep");
     return t("backupKeyHint");
   }
-  function SchemaForm({ stage, provider, mode, index, fields, value, onChange, baseUrlHint }) {
-    const context = { stage, provider, mode, index, draft: value, baseUrlHint };
+  function SchemaForm({ stage, provider, mode, index, fields, value, onChange, baseUrlHint, modelHint }) {
+    const context = { stage, provider, mode, index, draft: value, baseUrlHint, modelHint };
     return h(
       "div",
       { className: "xz-grid xz-dialog-grid" },
@@ -2960,7 +2966,8 @@ var DshXiaozhi = (() => {
             fields: desc.fields || [],
             value: draft,
             onChange: onDraft,
-            baseUrlHint: desc.baseUrlHint || ""
+            baseUrlHint: desc.baseUrlHint || "",
+            modelHint: desc.modelHint || ""
           }) : h("div", { className: "xz-empty" }, t("providerUnsupported")),
           desc?.note ? h("div", { className: "note" }, t(desc.note)) : null
         ),

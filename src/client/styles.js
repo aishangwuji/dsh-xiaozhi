@@ -119,6 +119,7 @@
 .xz-field .xz-pillselect-chevron{right:12px;border-top-width:5px}
 
 .xz-pill-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-pill-label.xz-pill-placeholder{color:var(--xz-text-3)}
 /* 悬浮面板改成 position:fixed（left/top/width/maxHeight/z-index 由 PillSelect 内联计算）。
    绝对定位会参与页面可滚动高度的计算：页面底部展开时出现滚动条、整页横向位移，
    这正是用户反馈的「点开下拉框其他内容也变了」。fixed 不占布局，菜单再长也不改页面尺寸。 */

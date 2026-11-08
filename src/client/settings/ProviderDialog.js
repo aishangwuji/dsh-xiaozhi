@@ -64,7 +64,8 @@ import { SchemaForm } from './SchemaForm.js'
                   fields: desc.fields || [],
                   value: draft,
                   onChange: onDraft,
-                  baseUrlHint: desc.baseUrlHint || ''
+                  baseUrlHint: desc.baseUrlHint || '',
+                  modelHint: desc.modelHint || ''
                 })
               : h('div', { className: 'xz-empty' }, t('providerUnsupported')),
             desc?.note ? h('div', { className: 'note' }, t(desc.note)) : null

@@ -44,6 +44,9 @@ globalThis.fetch = async (url, options = {}) => {
   if (path.endsWith('/settings') && method === 'GET') return json({ settings, defaults: { systemPrompt: '', silenceMs: 400 } })
   if (path.endsWith('/settings') && method === 'POST') return json({ settings, defaults: { systemPrompt: '', silenceMs: 400 } })
   if (path.includes('/voices')) return json({ options: {} })
+  // 模型清单故意**不包含**已保存的 gpt-4o-mini：验证「当前值不在清单里」时仍能回显，
+  // 而不是显示「未选择」。
+  if (path.includes('/models')) return json({ options: [{ value: 'some-other-model', label: 'some-other-model' }] })
   if (path.includes('/test/')) return json({ ok: true, totalMs: 100, firstTokenMs: 30 })
   return json({})
 }
@@ -86,8 +89,14 @@ console.log('delete confirm text:', deleteButton.textContent)
 
 const add = document.querySelector('.xz-backup-add-row')
 add.click()
-await new Promise((resolve) => setTimeout(resolve, 100))
+await new Promise((resolve) => setTimeout(resolve, 200))
 console.log('provider dialog open:', !!document.querySelector('.xz-modal-lg'))
+
+// 空模型时显示厂商的 modelHint 占位（deepseek-chat），不再显示「未选择」。
+const addDialog = document.querySelector('.xz-modal-lg')
+const addModelTrigger = [...addDialog.querySelectorAll('.xz-pillselect-trigger')][1]
+const addModelText = addModelTrigger ? addModelTrigger.textContent.trim() : ''
+console.log('add model placeholder:', addModelText)
 
 // 编辑弹窗「保存」只改本地状态 → dirty；主用测试应变成「保存并测试」并先 POST /settings。
 const dialog = document.querySelector('.xz-modal-lg')
@@ -101,6 +110,24 @@ console.log('primary test label:', testButton ? testButton.textContent : 'MISSIN
 testButton.click()
 await new Promise((resolve) => setTimeout(resolve, 300))
 console.log('calls after save-and-test:', calls.join(' | '))
+
+// 已保存的模型不在厂商返回的清单里：必须回显原值，不能显示「未选择」。
+const row = document.querySelector('.xz-provider-row')
+const editButton = [...row.querySelectorAll('.xz-btn')].find((button) => button.textContent.trim() === '编辑')
+editButton.click()
+await new Promise((resolve) => setTimeout(resolve, 250))
+const editDialog = document.querySelector('.xz-modal-lg')
+const editModelTrigger = [...editDialog.querySelectorAll('.xz-pillselect-trigger')][1]
+const editModelText = editModelTrigger ? editModelTrigger.textContent.trim() : ''
+console.log('edit model label:', editModelText)
+
+const failures = []
+if (addModelText !== 'deepseek-chat') failures.push(`add model placeholder = ${addModelText || '(empty)'}`)
+if (editModelText !== 'gpt-4o-mini') failures.push(`edit model label = ${editModelText || '(empty)'}`)
+if (failures.length) {
+  console.log('FAILURES:\n' + failures.join('\n'))
+  process.exit(1)
+}
 
 console.log('calls:', calls.join(' | '))
 const realErrors = errors.filter((text) => !text.includes('not wrapped in act'))

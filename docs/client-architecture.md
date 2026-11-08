@@ -139,3 +139,6 @@ node --test "test/*.test.mjs"   # 196 项
   `ProviderDialog` 换成 `SchemaForm`，`core.js` 的 provider 辅助全部读描述符；
   `settings.js` 的备用白名单由描述符派生。加厂商 = 描述符 + 适配器，前端 0 改动。
   详见 `docs/provider-descriptors.md`。
+- **2026-11-08（修）**：模型下拉回显。`ModelField` 把「当前值不在厂商 `/models` 清单里」的情况
+  补成选项（否则显示「未选择」，看起来像模型丢了）；`PillSelect` 新增 `placeholder`，
+  空值显示描述符 `modelHint`（如 `deepseek-chat`）。`npm run check:ui` 增加了这两条断言。

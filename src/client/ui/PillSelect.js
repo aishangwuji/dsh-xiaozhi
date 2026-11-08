@@ -49,7 +49,7 @@ import { MenuItem } from './menu.js'
      * - 触发器 `badge`：胶囊右端的计数徽标（如该段已配置的备用数量）。
      * `width` 保留为「最大宽度」提示，`alignEnd` 保留为右对齐语义（坐标在 JS 里算）。
      */
-    function PillSelect({ value, options, onChange, disabled, alignEnd, label, ariaLabel, width, badge }) {
+    function PillSelect({ value, options, onChange, disabled, alignEnd, label, ariaLabel, width, badge, placeholder }) {
       const [open, setOpen] = useState(false);
       const [pos, setPos] = useState(null);
       const rootRef = useRef(null);
@@ -212,9 +212,9 @@ import { MenuItem } from './menu.js'
           'aria-haspopup': 'listbox',
           'aria-expanded': open ? 'true' : 'false',
           'aria-label': ariaLabel || label,
-          title: current ? current.label : label
+          title: current ? current.label : (placeholder || label)
         },
-          h('span', { className: 'xz-pill-label' }, current ? current.label : t('selectPlaceholder')),
+          h('span', { className: `xz-pill-label${current ? '' : ' xz-pill-placeholder'}` }, current ? current.label : (placeholder || t('selectPlaceholder'))),
           badge ? h('span', { className: 'xz-pillselect-badge' }, String(badge)) : null,
           h('span', { className: 'xz-pillselect-chevron', 'aria-hidden': 'true' })
         ),

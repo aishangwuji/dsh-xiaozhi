@@ -49,10 +49,17 @@ import { PillSelect } from '../ui/PillSelect.js'
       if (options.length === 0) {
         return h('input', { className: 'xz-input', value, placeholder, onChange: (e) => onChange(e.target.value) });
       }
+      // 当前值可能不在厂商刚返回的清单里（模型下线 / 手工填的自定义 id / 清单接口只返回一部分）。
+      // 直接交给 PillSelect 会显示「未选择」，看起来像配置丢了；把当前值补进选项，保证回显。
+      const text = typeof value === 'string' ? value : '';
+      const merged = text.trim() && !options.some((option) => option.value === value)
+        ? [{ value, label: text }, ...options]
+        : options;
       return h(PillSelect, {
         value,
-        options,
+        options: merged,
         ariaLabel: placeholder,
+        placeholder,
         onChange
       });
     }

@@ -148,6 +148,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 | 只能聊一轮，之后一直「聆听中」 | 第一轮 `asr.result` 后，后续每句 `asr.empty`（甚至 `45000002 No audio was received`）；串口反复 `VAD end of speech, sending listen stop` | 固件只在 Speaking 收到 `tts stop` 才回 Listening；服务端对空 ASR 不回包，固件停在 Listening 反复发 stop，服务端 `capturing=false` 丢音频 → 死锁。长回答（TTS 念十几秒）时用户插话最容易触发。已修空回合收尾（`turn.empty_close`），并把默认回答长度压到 120 tokens |
 | 控制台「扩展能力」里出现英文工具名 | 卡片显示 `web_fetch`，旁边几个都是中文 | `src/client/core.js` 的 `toolLabel()` 是白名单映射，新工具没登记就原样显示工具名。2026-11-08 补了 `web_fetch → 网页抓取`；新增工具时 § 十一 第 1 条那几处要一起改 |
 | 智能体页点「+ 新建」后整页白屏 | 控制台没弹错误，页面直接空白；`crash.log` 无新记录（React 19 卸载根树不抛 window error） | `src/client/agents/AgentConfigDialog.js` 用了 `toolLabel` 却没从 `core.js` 导入。配置弹窗一打开就提前构造「扩展能力」页签，`toolLabel(tool.name)` 抛 ReferenceError → React 卸载整棵树。已修：补 import；`npm run smoke` 的 `AgentConfigDialog` 改成非空 `tools`（空数组会把 `map` 里的调用短路掉，正是这次漏检的原因） |
+| 服务商编辑弹窗里「模型」下拉显示「未选择」，已保存的模型看起来丢了 | 编辑一条备用 LLM，模型触发器是「未选择」；直接保存后值其实还在（`draft.model` 没变） | `ModelField` 只在厂商 `/models` 返回的 `options` 里找当前值。厂商清单没包含该 id（模型下线 / 手填自定义 id / 接口只返回一部分）时，`PillSelect` 回退到 `selectPlaceholder`（未选择）。2026-11-08 修：`ModelField` 把当前值补进选项（同 `AgentConfigDialog` 音色的做法）；`PillSelect` 新增 `placeholder`，空值显示描述符 `modelHint`（DeepSeek = `deepseek-chat`）而不是「未选择」；`npm run check:ui` 用「清单故意不含 `gpt-4o-mini`」回归 |
 
 ## 八、当前的边界和未定项
 
