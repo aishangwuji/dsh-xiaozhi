@@ -180,6 +180,18 @@
       configAccessTitle: 'Access & gateway',
       configSaveHint: 'Applies on the device’s next connection',
       configBackupCount: '{n} backups',
+      // Global settings (2026-11-08): three stage overview cards, manage in a modal.
+      back: 'Back',
+      configStageAsrDesc: 'Speech recognition: turn device audio into text',
+      configStageLlmDesc: 'LLM: understand the conversation and write replies',
+      configStageTtsDesc: 'Speech synthesis: turn replies into audio',
+      stageManage: 'Manage',
+      stageHealthOk: 'Ready',
+      stageHealthWarn: 'API key missing',
+      stageHealthDirty: 'Unsaved changes',
+      backupEmpty: 'No backup provider; nothing switches over if the primary fails',
+      backupChain: 'Failover chain',
+      saveAndTest: 'Save and test',
       ttsVoicePerDevice: 'Voice is chosen per device in “Devices → Configure”.',
       // Conversation history dialog (device card "History"): session list + message bubbles.
       history: 'History',

@@ -179,6 +179,18 @@
       configAccessTitle: '接入与网关',
       configSaveHint: '保存后设备下次连接生效',
       configBackupCount: '备用 {n} 个',
+      // 全局设置（2026-11-08）：三个环节概览卡 + 点进去管理；弹窗里的返回/保存并测试。
+      back: '返回',
+      configStageAsrDesc: '语音识别：把设备上传的语音转成文字',
+      configStageLlmDesc: '大模型：理解对话并生成回复',
+      configStageTtsDesc: '语音合成：把回复文本转成语音',
+      stageManage: '管理',
+      stageHealthOk: '已就绪',
+      stageHealthWarn: '密钥未配置',
+      stageHealthDirty: '有未保存修改',
+      backupEmpty: '没有备用服务商；主用不可用时不会自动切换',
+      backupChain: '降级链',
+      saveAndTest: '保存并测试',
       ttsVoicePerDevice: '音色在「智能体 → 配置」里按智能体选择',
       // 历史对话弹窗（设备卡片「历史」）：左会话列表 + 右消息气泡。
       history: '历史',
