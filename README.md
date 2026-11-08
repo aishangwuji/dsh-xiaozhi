@@ -207,6 +207,7 @@ desktop\operator
 | `get_news_from_newsnow` | 热榜新闻（澎湃/百度热搜/财联社/知乎/微博/36氪/IT之家等）；可抓上一条详情 | NewsNow 公共 API（`voice.tools.newsnow`） |
 | `get_weather` | 未来 3 天天气（城市查询 + QWeather 3d） | QWeather API（`voice.tools.weather.key`） |
 | `get_lunar` | 农历日期、干支年、生肖、星期（宜忌/节气暂不支持） | 本地 `Intl` 中国农历 |
+| `handle_exit_intent` | 用户说“再见/结束对话”时播告别语并断开连接 | 无 |
 
 要点：
 
@@ -232,8 +233,7 @@ desktop\operator
   `get_<device>_<property>`（查询）和 `<device>_<method>`（控制）两类工具；设备发
   `{type:'iot', states:[...]}` 更新属性值；控制时服务端回 `{type:'iot', commands:[...]}`。
 - 两类动态工具与内置工具合并，同名时内置优先；控制台「扩展能力」的总开关仍生效。
-- **尚未接**：外部 MCP server（SSE/streamable-http）、MCP 接入点、入站 `/mcp`、
-  官方 weather/music/hass/ragflow/exit 等服务端插件工具。
+- **尚未接**：音乐 `play_music`、HASS 三个工具、RAGFlow、`change_role`、`call_device` 等服务端插件工具。
 
 ### 外部 MCP server（stdio / SSE / Streamable HTTP）
 
@@ -388,7 +388,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 智能体「角色」页选「跟随音色」会删除该智能体的 `language` 覆盖、撤掉语种指令；如果只在 `cordis.patch.yml` 里写过默认语种，需要智能体上显式选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，224 项）：
+实测（`node --test "test/*.test.mjs"`，225 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -444,7 +444,7 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 224 项
+node --test "test/*.test.mjs"   # 225 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 

@@ -38,6 +38,7 @@
       toolNewsnow: 'Trending news',
       toolWeather: 'Weather',
       toolLunar: 'Lunar calendar',
+      toolExit: 'End conversation',
       toolNews: 'News',
       cancel: 'Cancel',
       overview: 'Overview',

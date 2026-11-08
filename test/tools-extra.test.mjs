@@ -2,6 +2,16 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createToolRegistry } from '../src/tools.js'
 
+test('handle_exit_intent returns a close action with the goodbye line', async () => {
+  const registry = createToolRegistry()
+  const result = await registry.invoke('handle_exit_intent', { say_goodbye: '拜拜，下次见' })
+  assert.equal(result.action, 'close')
+  assert.equal(result.response, '拜拜，下次见')
+  assert.match(result.output, /退出意图已处理/)
+  const fallback = await registry.invoke('handle_exit_intent', {})
+  assert.match(fallback.response, /再见/)
+})
+
 test('get_lunar returns lunar date, sexagenary year and zodiac', async () => {
   const registry = createToolRegistry({ clock: () => new Date('2026-11-08T12:00:00+08:00') })
   const out = await registry.execute('get_lunar', {})

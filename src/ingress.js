@@ -299,6 +299,9 @@ export function createIngress({ config, store, hub, logger, inboundMcp, clock = 
           logger,
           createDecoder: config.voice.createDecoder,
           encodeSpeech: config.voice.encodeSpeech,
+          onClose: () => {
+            if (connection.isOpen) connection.close(CLOSE_CODE.normal, 'exit intent')
+          },
         })
         session.voice = voice
         logger.info?.(`dsh-xiaozhi: device ${session.deviceId} voice session ready`)

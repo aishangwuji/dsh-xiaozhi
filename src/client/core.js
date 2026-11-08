@@ -210,7 +210,8 @@ import { PROVIDERS as BUNDLED_PROVIDERS, STAGE_META as BUNDLED_STAGE_META } from
         get_news_from_chinanews: t('toolNews'),
         get_news_from_newsnow: t('toolNewsnow'),
         get_weather: t('toolWeather'),
-        get_lunar: t('toolLunar')
+        get_lunar: t('toolLunar'),
+        handle_exit_intent: t('toolExit')
       };
       return map[name] || name;
     };

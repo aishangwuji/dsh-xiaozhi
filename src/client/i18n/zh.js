@@ -38,6 +38,7 @@
       toolNewsnow: '热榜新闻',
       toolWeather: '天气',
       toolLunar: '农历',
+      toolExit: '结束对话',
       toolNews: '新闻播报',
       cancel: '取消',
       overview: '概览',

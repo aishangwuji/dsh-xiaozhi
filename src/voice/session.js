@@ -48,6 +48,7 @@ export class VoiceSession {
     sessionId = '',
     createDecoder,
     encodeSpeech,
+    onClose = null,
     clock = () => Date.now(),
   }) {
     this.deviceId = deviceId
@@ -122,6 +123,8 @@ export class VoiceSession {
     // 本轮所有句子的下行 PCM（24k），closing 后拼成一条 WAV 写进历史对话。
     this.turnAudioChunks = []
     this.turnAbort = null
+    this.closeAfterChat = false
+    this.onClose = onClose
     this.asrStream = null
     this.utterance = null
     this.preRoll = []
@@ -171,6 +174,11 @@ export class VoiceSession {
     this.decoder?.close?.()
     this.decoder = null
     await this.player.stop()
+    try {
+      this.onClose?.()
+    } catch {
+      // 连接可能已经断了；退出流程不因此报错。
+    }
   }
 
   /**
@@ -577,7 +585,7 @@ export class VoiceSession {
       const supportsTools = tools.length > 0 && typeof this.adapters.llm.streamWithTools === 'function'
       // 工具循环：拿到的 tool_calls 执行后作为 role:"tool" 回灌，再让模型续写。
       // 最多 MAX_TOOL_ROUNDS 轮，避免模型自问自答绕圈（Go 侧同样是有限轮次）。
-      for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+      toolLoop: for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
         const pending = []
         const stream = supportsTools
           ? this.adapters.llm.streamWithTools({ messages, tools, signal: controller.signal })
@@ -613,11 +621,27 @@ export class VoiceSession {
           } catch {
             args = {}
           }
-          const output = this.mcp?.has(call.name)
-            ? await this.mcp.callTool(call.name, args, { signal: controller.signal })
+          const result = this.mcp?.has(call.name)
+            ? { output: await this.mcp.callTool(call.name, args, { signal: controller.signal }), action: 'reqlm', response: '' }
             : this.iot.has(call.name)
-              ? await this.iot.execute(call.name, args)
-              : await this.adapters.tools.execute(call.name, args, { signal: controller.signal, deviceId: this.deviceId })
+              ? { output: await this.iot.execute(call.name, args), action: 'reqlm', response: '' }
+              : await this.adapters.tools.invoke(call.name, args, { signal: controller.signal, deviceId: this.deviceId })
+          const output = result.output
+          if (result.action === 'close') {
+            // handle_exit_intent：直接播告别语，不再让模型续写；TTS 播完后关连接。
+            this.closeAfterChat = true
+            const goodbye = String(result.response || result.output || '').trim()
+            if (goodbye) {
+              answerParts.push(goodbye)
+              speak(goodbye)
+            }
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id || `call_${round}_${call.name}`,
+              content: String(result.output ?? ''),
+            })
+            break toolLoop
+          }
           this.logger.info?.(`dsh-xiaozhi: tool ${call.name} -> ${String(output).slice(0, 80)}`)
           messages.push({
             role: 'tool',
@@ -658,6 +682,13 @@ export class VoiceSession {
       .catch(() => {})
     await closing
     if (this.turnAbort === controller) this.turnAbort = null
+    if (this.closeAfterChat) {
+      this.closeAfterChat = false
+      void this.player
+        .whenDrained()
+        .then(() => this.close())
+        .catch(() => {})
+    }
     if (this.capturing && !this.asrStream) this.#openAsr()
   }
 

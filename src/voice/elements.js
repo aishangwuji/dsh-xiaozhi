@@ -152,6 +152,8 @@ export class AudioPlayer {
     this.playbackTail = 0
     this.stats = { sentFrames: 0, droppedFrames: 0, sentBytes: 0, controlEvents: 0, lastSendAt: 0 }
     this.loop = null
+    this.drained = false
+    this.drainWaiters = []
   }
 
   start() {
@@ -165,7 +167,19 @@ export class AudioPlayer {
   }
 
   push(element) {
+    if (element?.kind === KIND.TTS_START) this.drained = false
     this.queue.push(element)
+  }
+
+  /** Resolves once the final `tts stop` of the current turn has been sent. */
+  whenDrained() {
+    if (this.drained) return Promise.resolve()
+    return new Promise((resolve) => this.drainWaiters.push(resolve))
+  }
+
+  #resolveDrained() {
+    this.drained = true
+    for (const waiter of this.drainWaiters.splice(0)) waiter()
   }
 
   /**
@@ -199,6 +213,7 @@ export class AudioPlayer {
     this.running = false
     this.abortController.abort()
     this.queue.close()
+    this.#resolveDrained()
     if (this.loop) await this.loop.catch(() => {})
     this.loop = null
   }
@@ -237,6 +252,7 @@ export class AudioPlayer {
         this.playbackTail = 0
       }
       this.#sendControl(element)
+      if (element.kind === KIND.TTS_STOP && this.queue.size === 0) this.#resolveDrained()
     }
   }
 

@@ -214,6 +214,27 @@ export function createToolRegistry({
   }
 
   register({
+    name: 'handle_exit_intent',
+    description:
+      '当用户明确表示要结束对话、说再见或要关闭设备时调用。调用后直接播报告别语并断开连接，' +
+      '不要再用普通回复继续聊天。',
+    parameters: {
+      type: 'object',
+      properties: {
+        say_goodbye: { type: 'string', description: '和用户友好结束对话的告别语' },
+      },
+      additionalProperties: false,
+    },
+    run({ say_goodbye } = {}) {
+      return {
+        output: '退出意图已处理',
+        action: 'close',
+        response: String(say_goodbye ?? '').trim() || '再见，祝您生活愉快！',
+      }
+    },
+  })
+
+  register({
     name: 'get_lunar',
     description:
       '查询农历日期、干支年、生肖与星期。用户问“今天农历多少”“某天农历”时用；' +
