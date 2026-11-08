@@ -211,7 +211,11 @@ import { PROVIDERS as BUNDLED_PROVIDERS, STAGE_META as BUNDLED_STAGE_META } from
         get_news_from_newsnow: t('toolNewsnow'),
         get_weather: t('toolWeather'),
         get_lunar: t('toolLunar'),
-        handle_exit_intent: t('toolExit')
+        handle_exit_intent: t('toolExit'),
+        hass_get_state: t('toolHassGet'),
+        hass_set_state: t('toolHassSet'),
+        hass_play_music: t('toolHassMusic'),
+        search_from_ragflow: t('toolRagflow')
       };
       return map[name] || name;
     };

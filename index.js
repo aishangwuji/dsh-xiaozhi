@@ -190,6 +190,13 @@ export function resolveConfig(config = {}) {
 
   const voiceRaw = gateway.voice && typeof gateway.voice === 'object' ? gateway.voice : {}
   const voiceTools = voiceRaw.tools && typeof voiceRaw.tools === 'object' ? voiceRaw.tools : {}
+  const ragflowConfig = voiceTools.ragflow && typeof voiceTools.ragflow === 'object' ? voiceTools.ragflow : {}
+  const ragflowDatasetIds = Array.isArray(ragflowConfig.datasetIds ?? ragflowConfig.dataset_ids)
+    ? (ragflowConfig.datasetIds ?? ragflowConfig.dataset_ids).map((id) => String(id).trim()).filter(Boolean)
+    : String(ragflowConfig.datasetIds ?? ragflowConfig.dataset_ids ?? '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean)
   const voiceSampleRate = voiceRaw.sampleRate && typeof voiceRaw.sampleRate === 'object' ? voiceRaw.sampleRate : {}
   const voiceFrameMs = voiceRaw.frameMs && typeof voiceRaw.frameMs === 'object' ? voiceRaw.frameMs : {}
   const number = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback)
@@ -290,6 +297,16 @@ export function resolveConfig(config = {}) {
         weather: {
           key: text(field(voiceTools.weather ?? {}, ['key', 'apiKey', 'api_key'], '')),
           host: text(field(voiceTools.weather ?? {}, ['host', 'apiHost', 'api_host'], 'devapi.qweather.com')),
+        },
+        hass: {
+          baseUrl: text(field(voiceTools.hass ?? {}, ['baseUrl', 'base_url'], '')),
+          apiKey: text(field(voiceTools.hass ?? {}, ['apiKey', 'api_key'], '')),
+          devices: text(field(voiceTools.hass ?? {}, ['devices'], '')),
+        },
+        ragflow: {
+          baseUrl: text(field(ragflowConfig, ['baseUrl', 'base_url'], '')),
+          apiKey: text(field(ragflowConfig, ['apiKey', 'api_key'], '')),
+          datasetIds: ragflowDatasetIds,
         },
       },
       systemPrompt: text(

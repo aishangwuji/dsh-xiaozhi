@@ -60,6 +60,16 @@
             weather:
               key: ''
               host: 'devapi.qweather.com'
+            # Home Assistant：baseUrl + 长期访问令牌；devices 只用于提示词展示，可留空。
+            hass:
+              baseUrl: ''
+              apiKey: ''
+              devices: ''
+            # RAGFlow 知识库检索：baseUrl + API Key + dataset ids。
+            ragflow:
+              baseUrl: ''
+              apiKey: ''
+              datasetIds: []
           # 判停模式：device = 用固件 AFE 的 VAD（固件侧 VAD_MODE_2 + vad_min_noise_ms=300，
           # 抗环境音；固件判到静音就发 listen stop）；energy = 老固件退回插件自判。
           vadMode: 'device'

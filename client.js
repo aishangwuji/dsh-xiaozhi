@@ -407,7 +407,11 @@ var DshXiaozhi = (() => {
       get_news_from_newsnow: t("toolNewsnow"),
       get_weather: t("toolWeather"),
       get_lunar: t("toolLunar"),
-      handle_exit_intent: t("toolExit")
+      handle_exit_intent: t("toolExit"),
+      hass_get_state: t("toolHassGet"),
+      hass_set_state: t("toolHassSet"),
+      hass_play_music: t("toolHassMusic"),
+      search_from_ragflow: t("toolRagflow")
     };
     return map[name] || name;
   };
@@ -460,6 +464,10 @@ var DshXiaozhi = (() => {
     toolWeather: "\u5929\u6C14",
     toolLunar: "\u519C\u5386",
     toolExit: "\u7ED3\u675F\u5BF9\u8BDD",
+    toolHassGet: "\u5BB6\u7535\u72B6\u6001",
+    toolHassSet: "\u63A7\u5236\u5BB6\u7535",
+    toolHassMusic: "\u97F3\u7BB1\u64AD\u653E",
+    toolRagflow: "\u77E5\u8BC6\u5E93",
     toolNews: "\u65B0\u95FB\u64AD\u62A5",
     cancel: "\u53D6\u6D88",
     overview: "\u6982\u89C8",
@@ -705,6 +713,10 @@ var DshXiaozhi = (() => {
     toolWeather: "Weather",
     toolLunar: "Lunar calendar",
     toolExit: "End conversation",
+    toolHassGet: "Device state",
+    toolHassSet: "Control device",
+    toolHassMusic: "Play on speaker",
+    toolRagflow: "Knowledge base",
     toolNews: "News",
     cancel: "Cancel",
     overview: "Overview",

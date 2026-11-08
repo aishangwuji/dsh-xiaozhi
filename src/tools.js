@@ -192,7 +192,7 @@ export function createToolRegistry({
       .replace(/\s+/g, ' ')
       .trim()
 
-  const fetchJson = async (url, { signal, timeoutMs = 8000 } = {}) => {
+  const fetchJson = async (url, { signal, timeoutMs = 8000, method = 'GET', body, headers } = {}) => {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     timer.unref?.()
@@ -200,7 +200,13 @@ export function createToolRegistry({
     signal?.addEventListener?.('abort', onAbort, { once: true })
     try {
       const response = await doFetch(url, {
-        headers: { 'user-agent': 'Mozilla/5.0 (compatible; dsh-xiaozhi/1.0)' },
+        method,
+        headers: {
+          'user-agent': 'Mozilla/5.0 (compatible; dsh-xiaozhi/1.0)',
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+          ...(headers ?? {}),
+        },
+        body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
         signal: controller.signal,
       })
       if (!response.ok) return { error: `HTTP ${response.status}` }
@@ -398,6 +404,203 @@ export function createToolRegistry({
           .join('\n')
       },
     })
+
+    const hassConfig = toolsConfig.hass ?? {}
+    const hassBase = String(hassConfig.baseUrl ?? '').replace(/\/$/, '')
+    const hassKey = String(hassConfig.apiKey ?? '').trim()
+    if (hassBase && hassKey) {
+      const hassHeaders = { authorization: `Bearer ${hassKey}` }
+      const hassCall = (path, { method = 'GET', body } = {}) =>
+        fetchJson(`${hassBase}${path}`, { method, body, headers: hassHeaders, timeoutMs: 10_000 })
+      const describeState = (data) => {
+        if (!data || typeof data !== 'object') return '没有取到设备状态'
+        const attributes = data.attributes && typeof data.attributes === 'object' ? data.attributes : {}
+        const bits = [`状态：${data.state ?? '未知'}`]
+        if (attributes.friendly_name) bits.push(`名称：${attributes.friendly_name}`)
+        if (Number.isFinite(Number(attributes.brightness))) {
+          bits.push(`亮度：${Math.round((Number(attributes.brightness) / 255) * 100)}%`)
+        }
+        if (Number.isFinite(Number(attributes.color_temp_kelvin))) bits.push(`色温：${attributes.color_temp_kelvin}K`)
+        if (Number.isFinite(Number(attributes.volume_level))) {
+          bits.push(`音量：${Math.round(Number(attributes.volume_level) * 100)}%`)
+        }
+        if (attributes.media_title) bits.push(`正在播放：${attributes.media_title}`)
+        return bits.join('，')
+      }
+
+      register({
+        name: 'hass_get_state',
+        description:
+          '获取 Home Assistant 里设备的状态（灯光亮度/颜色/色温、媒体播放器音量、播放内容、开关状态）。',
+        parameters: {
+          type: 'object',
+          properties: { entity_id: { type: 'string', description: 'Home Assistant 的 entity_id' } },
+          required: ['entity_id'],
+          additionalProperties: false,
+        },
+        async run({ entity_id } = {}, { signal } = {}) {
+          const entity = String(entity_id ?? '').trim()
+          if (!entity) return '请提供 Home Assistant 的 entity_id'
+          const result = await fetchJson(`${hassBase}/api/states/${encodeURIComponent(entity)}`, {
+            headers: hassHeaders,
+            signal,
+            timeoutMs: 8000,
+          })
+          if (result.error) return `获取设备状态失败：${result.error}`
+          return describeState(result.data)
+        },
+      })
+
+      register({
+        name: 'hass_set_state',
+        description:
+          '设置 Home Assistant 设备状态：开/关、亮度、颜色、色温、音量、静音、暂停/继续。',
+        parameters: {
+          type: 'object',
+          properties: {
+            entity_id: { type: 'string', description: 'Home Assistant 的 entity_id' },
+            state: {
+              type: 'object',
+              properties: {
+                type: {
+                  type: 'string',
+                  description:
+                    'turn_on / turn_off / brightness_up / brightness_down / brightness_value / volume_up / volume_down / volume_set / volume_mute / set_kelvin / set_color / pause / continue',
+                },
+                input: { type: 'integer', description: '亮度或音量 1-100；色温用 Kelvin' },
+                is_muted: { type: 'boolean', description: '静音时为 true，取消静音为 false' },
+                rgb_color: { type: 'array', items: { type: 'integer' }, description: 'RGB 三元组' },
+              },
+              required: ['type'],
+            },
+          },
+          required: ['entity_id', 'state'],
+          additionalProperties: false,
+        },
+        async run({ entity_id, state } = {}, { signal } = {}) {
+          const entity = String(entity_id ?? '').trim()
+          const type = String(state?.type ?? '').trim()
+          if (!entity) return '请提供 Home Assistant 的 entity_id'
+          if (!type) return '请提供要执行的动作类型'
+          const input = Number(state?.input)
+          const service = async (domain, name, body) => {
+            const result = await hassCall(`/api/services/${domain}/${name}`, { method: 'POST', body })
+            if (result.error) throw new Error(result.error)
+            return result.data
+          }
+          try {
+            if (type === 'turn_on' || type === 'turn_off') {
+              await service('homeassistant', type, { entity_id: entity })
+            } else if (type === 'brightness_up' || type === 'brightness_down') {
+              const current = await fetchJson(`${hassBase}/api/states/${encodeURIComponent(entity)}`, {
+                headers: hassHeaders,
+                signal,
+                timeoutMs: 8000,
+              })
+              const raw = Number(current.data?.attributes?.brightness)
+              const base = Number.isFinite(raw) ? Math.round((raw / 255) * 100) : 50
+              const pct = Math.max(1, Math.min(100, base + (type === 'brightness_up' ? 10 : -10)))
+              await service('light', 'turn_on', { entity_id: entity, brightness_pct: pct })
+            } else if (type === 'brightness_value') {
+              if (!Number.isFinite(input)) return 'brightness_value 需要 1-100 的 input'
+              await service('light', 'turn_on', { entity_id: entity, brightness_pct: Math.max(1, Math.min(100, input)) })
+            } else if (type === 'set_kelvin') {
+              if (!Number.isFinite(input)) return 'set_kelvin 需要 Kelvin 数值'
+              await service('light', 'turn_on', { entity_id: entity, kelvin: input })
+            } else if (type === 'set_color') {
+              const rgb = Array.isArray(state?.rgb_color) ? state.rgb_color.map(Number) : null
+              if (!rgb || rgb.length !== 3) return 'set_color 需要 rgb_color 三元组'
+              await service('light', 'turn_on', { entity_id: entity, rgb_color: rgb })
+            } else if (type === 'volume_up' || type === 'volume_down') {
+              await service('media_player', type, { entity_id: entity })
+            } else if (type === 'volume_set') {
+              if (!Number.isFinite(input)) return 'volume_set 需要 1-100 的 input'
+              await service('media_player', 'volume_set', {
+                entity_id: entity,
+                volume_level: Math.max(0, Math.min(1, input / 100)),
+              })
+            } else if (type === 'volume_mute') {
+              await service('media_player', 'volume_mute', {
+                entity_id: entity,
+                is_volume_muted: state?.is_muted === true || String(state?.is_muted) === 'true',
+              })
+            } else if (type === 'pause') {
+              await service('media_player', 'media_pause', { entity_id: entity })
+            } else if (type === 'continue') {
+              await service('media_player', 'media_play', { entity_id: entity })
+            } else {
+              return `不支持的动作：${type}`
+            }
+            return `已执行 ${type}：${entity}`
+          } catch (error) {
+            return `Home Assistant 操作失败：${error?.message ?? error}`
+          }
+        },
+      })
+
+      register({
+        name: 'hass_play_music',
+        description: '让 Home Assistant 的 media_player 播放指定音乐/有声书。',
+        parameters: {
+          type: 'object',
+          properties: {
+            entity_id: { type: 'string', description: 'media_player 的 entity_id' },
+            media_content_id: { type: 'string', description: '歌曲/专辑/有声书名称；随机播放填 random' },
+          },
+          required: ['entity_id', 'media_content_id'],
+          additionalProperties: false,
+        },
+        async run({ entity_id, media_content_id } = {}, { signal } = {}) {
+          const entity = String(entity_id ?? '').trim()
+          if (!entity) return '请提供 media_player 的 entity_id'
+          const media = String(media_content_id ?? 'random').trim() || 'random'
+          const result = await hassCall('/api/services/music_assistant/play_media', {
+            method: 'POST',
+            body: { entity_id: entity, media_id: media },
+          })
+          if (result.error) return `播放失败：${result.error}`
+          return `正在播放：${media}`
+        },
+      })
+    }
+
+    const ragflowConfig = toolsConfig.ragflow ?? {}
+    const ragflowBase = String(ragflowConfig.baseUrl ?? '').replace(/\/$/, '')
+    const ragflowKey = String(ragflowConfig.apiKey ?? '').trim()
+    if (ragflowBase && ragflowKey) {
+      register({
+        name: 'search_from_ragflow',
+        description: '从 RAGFlow 知识库中检索信息来回答问题。',
+        parameters: {
+          type: 'object',
+          properties: { question: { type: 'string', description: '要查询的问题' } },
+          required: ['question'],
+          additionalProperties: false,
+        },
+        async run({ question } = {}, { signal } = {}) {
+          const text = String(question ?? '').trim()
+          if (!text) return '请提供要查询的问题'
+          const result = await fetchJson(`${ragflowBase}/api/v1/retrieval`, {
+            method: 'POST',
+            headers: { authorization: `Bearer ${ragflowKey}` },
+            body: { question: text, dataset_ids: Array.isArray(ragflowConfig.datasetIds) ? ragflowConfig.datasetIds : [] },
+            signal,
+            timeoutMs: 10_000,
+          })
+          if (result.error) return `RAGFlow 请求失败：${result.error}`
+          if (result.data?.code !== 0) {
+            return `RAGFlow 返回异常（code=${result.data?.code ?? '未知'}）：${result.data?.message ?? result.data?.error?.message ?? ''}`
+          }
+          const chunks = Array.isArray(result.data?.data?.chunks) ? result.data.data.chunks : []
+          const contents = chunks
+            .map((chunk) => (typeof chunk?.content === 'string' ? chunk.content : ''))
+            .filter(Boolean)
+            .slice(0, 5)
+          if (contents.length === 0) return '根据知识库查询结果，没有相关信息。'
+          return `# 关于问题【${text}】查到知识库如下\n\`\`\`\n${contents.join('\n\n')}\n\`\`\``
+        },
+      })
+    }
   }
 
   function register(tool) {
