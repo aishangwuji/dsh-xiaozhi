@@ -212,6 +212,7 @@ desktop\operator
 | `search_from_ragflow` | 从 RAGFlow 知识库检索并回答 | RAGFlow retrieval API（`voice.tools.ragflow`） |
 | `change_role` | 切换内置角色（机车女友 / 英语老师 / 好奇小男孩）并改本会话人设 | 无（会话内生效，不落盘） |
 | `call_device` | 按备注名呼叫另一台设备（manager 通讯录） | manager API（`voice.tools.callDevice`） |
+| `play_music` | 从本地音乐目录按歌名匹配/随机播放；先 TTS 说“正在为您播放…”，再播音频 | 本地目录（`voice.tools.music`，ffmpeg 解码） |
 
 要点：
 
@@ -237,7 +238,7 @@ desktop\operator
   `get_<device>_<property>`（查询）和 `<device>_<method>`（控制）两类工具；设备发
   `{type:'iot', states:[...]}` 更新属性值；控制时服务端回 `{type:'iot', commands:[...]}`。
 - 两类动态工具与内置工具合并，同名时内置优先；控制台「扩展能力」的总开关仍生效。
-- **尚未接**：音乐 `play_music`。
+- 官方 Python 版服务端插件工具已全部覆盖；`play_music` 需要本地音乐目录和 ffmpeg，目录不存在时工具不注册。
 
 ### 外部 MCP server（stdio / SSE / Streamable HTTP）
 
@@ -392,7 +393,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 智能体「角色」页选「跟随音色」会删除该智能体的 `language` 覆盖、撤掉语种指令；如果只在 `cordis.patch.yml` 里写过默认语种，需要智能体上显式选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，229 项）：
+实测（`node --test "test/*.test.mjs"`，231 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -448,7 +449,7 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 229 项
+node --test "test/*.test.mjs"   # 231 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 

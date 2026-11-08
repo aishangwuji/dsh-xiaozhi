@@ -45,6 +45,7 @@
       toolRagflow: 'Knowledge base',
       toolChangeRole: 'Change role',
       toolCallDevice: 'Call device',
+      toolPlayMusic: 'Play music',
       toolNews: 'News',
       cancel: 'Cancel',
       overview: 'Overview',

@@ -23,6 +23,7 @@ import { withMemory, extractFact } from '../memory.js'
 import { MAX_TOOL_ROUNDS } from '../tools.js'
 import { DeviceMcpClient } from './device-mcp.js'
 import { DeviceIotRegistry } from './device-iot.js'
+import { decodeAudioToPcm } from './music.js'
 import { trace } from './trace.js'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -657,6 +658,26 @@ export class VoiceSession {
             })
             break toolLoop
           }
+          if (result.action === 'play_music') {
+            // 先让 TTS 说“正在为您播放…”，再把本地音频解码成 Opus 帧接在同一条 player 上。
+            const reply = String(result.response || result.output || '').trim()
+            if (reply) speak(reply)
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id || `call_${round}_${call.name}`,
+              content: String(result.output ?? ''),
+            })
+            await this.synthesisChain
+            if (!controller.signal.aborted && result.file) {
+              await this.#playMusicFile({
+                file: result.file,
+                title: result.title || call.name,
+                generation,
+                signal: controller.signal,
+              })
+            }
+            break toolLoop
+          }
           this.logger.info?.(`dsh-xiaozhi: tool ${call.name} -> ${String(output).slice(0, 80)}`)
           messages.push({
             role: 'tool',
@@ -737,6 +758,37 @@ export class VoiceSession {
       await history.appendMessages(this.deviceId, sessionId, messages)
     } catch (error) {
       this.logger.warn?.(`dsh-xiaozhi: history write failed: ${error.message}`)
+    }
+  }
+
+  async #playMusicFile({ file, title, generation, signal }) {
+    if (!file || signal.aborted || generation !== this.generation.current) return
+    if (typeof this.encodeSpeech !== 'function') {
+      this.logger.warn?.('dsh-xiaozhi: play_music skipped because the Opus encoder is unavailable')
+      return
+    }
+    try {
+      const pcm = await decodeAudioToPcm(file, {
+        ffmpegPath: this.config.ffmpegPath,
+        sampleRate: this.config.sampleRate?.downlink ?? 24_000,
+        signal,
+      })
+      if (signal.aborted || generation !== this.generation.current) return
+      const encoded = await this.encodeSpeech(pcm, {
+        sampleRate: this.config.sampleRate?.downlink ?? 24_000,
+        frameMs: this.config.frameMs?.downlink ?? 20,
+      })
+      if (!encoded?.packets?.length || signal.aborted || generation !== this.generation.current) return
+      const sentenceId = `music:${this.clock()}`
+      this.state = 'speaking'
+      this.player.push(controlElement(KIND.SENTENCE_START, { generation, text: title, sentenceId }))
+      encoded.packets.forEach((packet, index) => {
+        this.player.push(audioFrame({ data: packet, generation, frameMs: encoded.frameMs, sentenceId }))
+        if (index === 0) this.#markFirstAudio(generation)
+      })
+      this.player.push(controlElement(KIND.SENTENCE_END, { generation, sentenceId }))
+    } catch (error) {
+      if (!signal.aborted) this.logger.warn?.(`dsh-xiaozhi: play_music failed: ${error.message}`)
     }
   }
 

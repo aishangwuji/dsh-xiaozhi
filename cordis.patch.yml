@@ -74,6 +74,10 @@
             callDevice:
               url: ''
               secret: ''
+            # 本地音乐：play_music 从该目录递归找音频文件；目录不存在时不注册工具。
+            music:
+              dir: './music'
+              extensions: ['.mp3', '.wav', '.p3']
           # 判停模式：device = 用固件 AFE 的 VAD（固件侧 VAD_MODE_2 + vad_min_noise_ms=300，
           # 抗环境音；固件判到静音就发 listen stop）；energy = 老固件退回插件自判。
           vadMode: 'device'

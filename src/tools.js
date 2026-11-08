@@ -11,7 +11,7 @@
  */
 
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 
 /** 一次对话里最多跑几轮工具，防止模型自己绕圈。 */
 export const MAX_TOOL_ROUNDS = 3
@@ -288,6 +288,70 @@ export function createToolRegistry({
       }
     },
   })
+
+  const musicConfig = toolsConfig.music ?? {}
+  const musicDir = String(musicConfig.dir ?? './music')
+  const musicExtensions = (Array.isArray(musicConfig.extensions) ? musicConfig.extensions : ['.mp3', '.wav', '.p3'])
+    .map((ext) => String(ext).toLowerCase())
+  const similarity = (left, right) => {
+    const a = String(left).toLowerCase().trim()
+    const b = String(right).toLowerCase().trim()
+    if (!a || !b) return 0
+    if (a === b) return 1
+    if (b.includes(a) || a.includes(b)) return 0.8
+    const chars = new Set(b)
+    let hit = 0
+    for (const char of a) if (chars.has(char)) hit += 1
+    return hit / Math.max(a.length, b.length)
+  }
+  if (musicDir && existsSync(musicDir)) {
+    register({
+      name: 'play_music',
+      description: '当用户要求播放音乐、歌曲时调用。可以从本地音乐目录里按歌名匹配，未指定歌名时随机播放。',
+      parameters: {
+        type: 'object',
+        properties: {
+          song_name: {
+            type: 'string',
+            description: '歌曲名称；用户没指定具体歌名时填 random',
+          },
+        },
+        required: ['song_name'],
+        additionalProperties: false,
+      },
+      run({ song_name } = {}) {
+        let files = []
+        try {
+          files = readdirSync(musicDir, { recursive: true })
+            .map((entry) => String(entry))
+            .filter((entry) => musicExtensions.includes(extname(entry).toLowerCase()))
+        } catch (error) {
+          return `读取音乐目录失败：${error?.message ?? error}`
+        }
+        if (files.length === 0) return '音乐目录里没有找到音频文件'
+        const requested = String(song_name ?? 'random').trim()
+        let picked = ''
+        if (!requested || requested.toLowerCase() === 'random') {
+          picked = files[Math.floor(Math.random() * files.length)]
+        } else {
+          const scored = files
+            .map((file) => ({ file, score: similarity(requested, basename(file, extname(file))) }))
+            .sort((left, right) => right.score - left.score)
+          if (!scored[0] || scored[0].score < 0.4) return `没有找到《${requested}》`
+          picked = scored[0].file
+        }
+        const title = basename(picked, extname(picked))
+        const file = join(musicDir, picked)
+        return {
+          output: `正在为您播放《${title}》`,
+          action: 'play_music',
+          response: `正在为您播放《${title}》`,
+          file,
+          title,
+        }
+      },
+    })
+  }
 
   register({
     name: 'get_lunar',
@@ -973,6 +1037,8 @@ export function createToolRegistry({
             action: value.action ?? tool.action,
             response: value.response ?? '',
             ...(typeof value.prompt === 'string' ? { prompt: value.prompt } : {}),
+            ...(typeof value.file === 'string' ? { file: value.file } : {}),
+            ...(typeof value.title === 'string' ? { title: value.title } : {}),
           }
         }
         return { output: String(value ?? '').slice(0, 4000), action: tool.action, response: '' }
@@ -987,7 +1053,7 @@ export function createToolRegistry({
   }
 }
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 
 /** 同步读取（apply() 不是 async，启动时没有 await 的机会）。 */
 export function loadToolPrefsSync(file) {

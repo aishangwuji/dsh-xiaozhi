@@ -1,5 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createToolRegistry } from '../src/tools.js'
 
 test('handle_exit_intent returns a close action with the goodbye line', async () => {
@@ -99,6 +102,21 @@ test('search_from_ragflow posts the question and formats chunks', async () => {
   assert.equal(request.url, 'http://rag.local/api/v1/retrieval')
   assert.deepEqual(JSON.parse(request.init.body), { question: '怎么退货', dataset_ids: ['ds-1'] })
   assert.equal(request.init.headers.authorization, 'Bearer rag-key')
+})
+
+test('play_music finds a local file and returns the play_music action', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-music-'))
+  writeFileSync(join(dir, '晴天.mp3'), 'not-real-audio')
+  try {
+    const registry = createToolRegistry({ toolsConfig: { music: { dir, extensions: ['.mp3'] } } })
+    const result = await registry.invoke('play_music', { song_name: '晴天' })
+    assert.equal(result.action, 'play_music')
+    assert.equal(result.title, '晴天')
+    assert.match(result.file, /晴天\.mp3$/)
+    assert.match(result.output, /正在为您播放/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('get_news_from_newsnow reads the newsnow items shape', async () => {

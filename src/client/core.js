@@ -217,7 +217,8 @@ import { PROVIDERS as BUNDLED_PROVIDERS, STAGE_META as BUNDLED_STAGE_META } from
         hass_play_music: t('toolHassMusic'),
         search_from_ragflow: t('toolRagflow'),
         change_role: t('toolChangeRole'),
-        call_device: t('toolCallDevice')
+        call_device: t('toolCallDevice'),
+        play_music: t('toolPlayMusic')
       };
       return map[name] || name;
     };

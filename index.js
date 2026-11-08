@@ -191,6 +191,15 @@ export function resolveConfig(config = {}) {
   const voiceRaw = gateway.voice && typeof gateway.voice === 'object' ? gateway.voice : {}
   const voiceTools = voiceRaw.tools && typeof voiceRaw.tools === 'object' ? voiceRaw.tools : {}
   const ragflowConfig = voiceTools.ragflow && typeof voiceTools.ragflow === 'object' ? voiceTools.ragflow : {}
+  const musicConfig = voiceTools.music && typeof voiceTools.music === 'object' ? voiceTools.music : {}
+  const musicExtensions = (
+    Array.isArray(musicConfig.extensions ?? musicConfig.musicExt ?? musicConfig.music_ext)
+      ? (musicConfig.extensions ?? musicConfig.musicExt ?? musicConfig.music_ext)
+      : String(musicConfig.extensions ?? musicConfig.musicExt ?? musicConfig.music_ext ?? '.mp3,.wav,.p3').split(',')
+  )
+    .map((ext) => String(ext).trim().toLowerCase())
+    .filter(Boolean)
+    .map((ext) => (ext.startsWith('.') ? ext : `.${ext}`))
   const ragflowDatasetIds = Array.isArray(ragflowConfig.datasetIds ?? ragflowConfig.dataset_ids)
     ? (ragflowConfig.datasetIds ?? ragflowConfig.dataset_ids).map((id) => String(id).trim()).filter(Boolean)
     : String(ragflowConfig.datasetIds ?? ragflowConfig.dataset_ids ?? '')
@@ -311,6 +320,10 @@ export function resolveConfig(config = {}) {
         callDevice: {
           url: text(field(voiceTools.callDevice ?? {}, ['url', 'baseUrl', 'base_url'], '')),
           secret: text(field(voiceTools.callDevice ?? {}, ['secret', 'apiKey', 'api_key'], '')),
+        },
+        music: {
+          dir: text(field(musicConfig, ['dir', 'musicDir', 'music_dir'], './music')),
+          extensions: musicExtensions,
         },
       },
       systemPrompt: text(
@@ -723,6 +736,7 @@ export function apply(ctx, config = {}) {
               sampleRate: resolved.voice.sampleRate,
               frameMs: resolved.voice.frameMs,
               pacingMarginMs: resolved.voice.pacingMarginMs,
+              ffmpegPath: resolved.voice.ffmpegPath,
               language: resolvedProfile.config.asr.language,
               // 判停模式随会话下发：device 时以固件 listen stop 收口。
               vadMode: resolved.voice.vadMode,

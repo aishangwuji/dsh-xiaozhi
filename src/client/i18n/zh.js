@@ -45,6 +45,7 @@
       toolRagflow: '知识库',
       toolChangeRole: '切换角色',
       toolCallDevice: '呼叫设备',
+      toolPlayMusic: '播放音乐',
       toolNews: '新闻播报',
       cancel: '取消',
       overview: '概览',
