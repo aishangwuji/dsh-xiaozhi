@@ -26,6 +26,7 @@ import { createHistoryStore } from './src/history.js'
 import { createMemoryStore } from './src/memory.js'
 import { AgentStore, adoptLegacyDevices, nextAgentName } from './src/agents.js'
 import { createToolRegistry } from './src/tools.js'
+import { createMcpManager } from './src/mcp/manager.js'
 import { createGateway } from './src/gateway.js'
 import { createIngress } from './src/ingress.js'
 import { startMdns } from './src/mdns.js'
@@ -396,6 +397,16 @@ export function apply(ctx, config = {}) {
     web: typeof ctx.get === 'function' ? ctx.get('web') : undefined,
     // Search 用 Search 端点，Fetch 用 Fetch 端点；两者都按成功请求计费。
     searchApiKey: deepSeekToolKey,
+  })
+
+  // 外部 MCP server（stdio）在后台初始化；配置文件不存在时静默跳过。
+  const mcpManager = createMcpManager({
+    file: join(resolved.dataRoot, 'mcp_servers.json'),
+    logger,
+  })
+  toolRegistry.setExternal(mcpManager)
+  void mcpManager.initialize().catch((error) => {
+    logger.warn?.(`dsh-xiaozhi: external MCP init failed: ${error.message}`)
   })
 
   const store = new DeviceStore({
@@ -944,6 +955,7 @@ export function apply(ctx, config = {}) {
     return async () => {
       clearInterval(sweeper)
       mdns?.stop()
+      mcpManager.close()
       hub.dispose()
       await ingress.close()
     }

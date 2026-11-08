@@ -138,6 +138,8 @@ export function createToolRegistry({
   isDisabled = () => false,
 } = {}) {
   const tools = new Map()
+  // 外部 MCP server 工具（`src/mcp/manager.js`）在启动后异步接入；这里只做合并。
+  let external = null
   const doFetch = fetchImpl ?? globalThis.fetch
   const hasLocalSearch = typeof web?.search === 'function'
   const hasLocalFetch = typeof web?.fetch === 'function'
@@ -342,23 +344,36 @@ export function createToolRegistry({
   }
 
   return {
-    names: () => [...tools.keys()],
+    names: () => [...tools.keys(), ...(external?.definitions?.() ?? []).map((tool) => tool.function?.name).filter(Boolean)],
+
+    /** 外部 MCP 管理器（可为空；启动后异步注入）。 */
+    setExternal(manager) {
+      external = manager
+    },
 
     /** 控制台展示用：名字、分类与说明。 */
     catalog(deviceId) {
-      return [...tools.values()].map((tool) => ({
+      const builtins = [...tools.values()].map((tool) => ({
         name: tool.name,
         toolType: tool.toolType,
         action: tool.action,
         description: tool.description,
         enabled: !isDisabled(tool.name, deviceId),
       }))
+      const externalTools = (external?.definitions?.() ?? []).map((tool) => ({
+        name: tool.function?.name ?? '',
+        toolType: 'mcp',
+        action: 'reqlm',
+        description: tool.function?.description ?? '',
+        enabled: true,
+      }))
+      return [...builtins, ...externalTools.filter((tool) => tool.name && !builtins.some((item) => item.name === tool.name))]
     },
 
     isEnabled: (name, deviceId) => !isDisabled(name, deviceId),
 
     definitions(deviceId) {
-      return [...tools.values()].filter((tool) => !isDisabled(tool.name, deviceId)).map((tool) => ({
+      const builtins = [...tools.values()].filter((tool) => !isDisabled(tool.name, deviceId)).map((tool) => ({
         type: 'function',
         function: {
           name: tool.name,
@@ -366,11 +381,22 @@ export function createToolRegistry({
           parameters: tool.parameters ?? { type: 'object', properties: {} },
         },
       }))
+      const names = new Set(builtins.map((tool) => tool.function.name))
+      const externalTools = (external?.definitions?.() ?? []).filter((tool) => !names.has(tool.function?.name))
+      return [...builtins, ...externalTools]
     },
 
     /** `{ output, action, response }`；失败也返回文本，让模型自己圆场。 */
     async invoke(name, args, options) {
       const tool = tools.get(name)
+      if (!tool && external?.has?.(name)) {
+        try {
+          const value = await external.execute(name, args ?? {})
+          return { output: String(value ?? '').slice(0, 4000), action: 'reqlm', response: '' }
+        } catch (error) {
+          return { output: `工具 ${name} 执行失败：${error?.message ?? error}`, action: 'reqlm', response: '' }
+        }
+      }
       if (!tool) return { output: `没有名为 ${name} 的工具`, action: 'reqlm', response: '' }
       try {
         const value = await tool.run(args ?? {}, options ?? {})

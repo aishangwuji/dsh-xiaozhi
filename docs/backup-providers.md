@@ -244,7 +244,7 @@
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"      # 全量 215 项必须全绿（2026-11-08）
+node --test "test/*.test.mjs"      # 全量 216 项必须全绿（2026-11-08）
 npm run build                      # src/client/** → client.js（esbuild，React external）
 npm run smoke                      # 真实 React SSR 渲染主要页面 + slot 注册校验
 node --check client.js             # UI 产物语法检查
