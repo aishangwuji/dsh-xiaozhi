@@ -105,7 +105,26 @@ var DshXiaozhi = (() => {
       stages: {
         llm: llmStage("https://ark.cn-beijing.volces.com/api/v3", "doubao-1.5-pro-32k"),
         tts: {
-          fields: [secret("apiKey")],
+          fields: [
+            secret("apiKey"),
+            // 火山 OpenAPI 的 AK/SK：只用于拉官方音色列表（ListSpeakers），不参与合成。
+            // 复用 appId/apiSecret 两个通用槽位，避免再动 settings 的字段/掩码契约。
+            {
+              key: "appId",
+              type: "text",
+              label: "volcAccessKey",
+              placeholder: "AKLT\u2026",
+              primaryOnly: true,
+              note: "volcAkSkNote"
+            },
+            {
+              key: "apiSecret",
+              type: "secret",
+              label: "volcSecretKey",
+              primaryOnly: true,
+              note: "volcAkSkNote"
+            }
+          ],
           summary: [],
           secretFields: ["apiKey"],
           probe: { kind: "tts" }
@@ -506,6 +525,11 @@ var DshXiaozhi = (() => {
     deviceModelPlaceholder: "\u7559\u7A7A = \u7528\u5168\u5C40\u9ED8\u8BA4",
     deviceConfigHint: "\u4FDD\u5B58\u540E\u5728\u8BE5\u667A\u80FD\u4F53\u7684\u8BBE\u5907\u4E0B\u6B21\u8FDE\u63A5\u751F\u6548",
     modelFromApi: "\u4ECE\u5382\u5546\u63A5\u53E3\u62C9\u53D6\uFF08\u5148\u586B Key\uFF09",
+    volcAccessKey: "AccessKey ID\uFF08\u62C9\u97F3\u8272\u7528\uFF09",
+    volcSecretKey: "SecretAccessKey\uFF08\u62C9\u97F3\u8272\u7528\uFF09",
+    volcAkSkNote: "\u53EF\u9009\uFF1A\u53EA\u7528\u4E8E\u62C9\u53D6\u706B\u5C71\u5B98\u65B9\u97F3\u8272\u5217\u8868\uFF0C\u5408\u6210\u4ECD\u7528\u4E0A\u9762\u7684 API Key",
+    voiceCatalogApi: "\u97F3\u8272\u6765\u81EA\u706B\u5C71\u5B98\u65B9\u63A5\u53E3\uFF08\u6309\u5F53\u524D\u8D44\u6E90\u65CF\uFF09",
+    voiceCatalogFallback: "\u672A\u914D\u7F6E\u706B\u5C71 AccessKey/SecretKey\uFF0C\u5F53\u524D\u4E3A\u5185\u7F6E\u6E05\u5355\uFF0C\u53EF\u80FD\u542B\u672A\u5F00\u901A\u97F3\u8272",
     voice: "\u97F3\u8272",
     voiceDefault: "\u9ED8\u8BA4\u97F3\u8272",
     outputLanguage: "\u8F93\u51FA\u8BED\u79CD",
@@ -730,6 +754,11 @@ var DshXiaozhi = (() => {
     deviceModelPlaceholder: "Empty = use the global default",
     deviceConfigHint: "Applies when this agent\u2019s devices next connect",
     modelFromApi: "Fetched from the vendor API (set the key first)",
+    volcAccessKey: "AccessKey ID (voice list)",
+    volcSecretKey: "SecretAccessKey (voice list)",
+    volcAkSkNote: "Optional: only used to fetch the official voice list; synthesis still uses the API Key above",
+    voiceCatalogApi: "Voices come from the official Volcengine API (current resource tier)",
+    voiceCatalogFallback: "Volcengine AccessKey/SecretKey not set; showing the built-in catalog, which may include unprovisioned voices",
     voice: "Voice",
     voiceDefault: "Default voice",
     outputLanguage: "Output language",
@@ -1628,14 +1657,26 @@ var DshXiaozhi = (() => {
     const [saving, setSaving] = useState2(false);
     const [draftModel, setDraftModel] = useState2(agent.overrides?.model ?? "");
     const [ttsGlobal, setTtsGlobal] = useState2({ provider: "volc", resourceId: "" });
+    const [voiceCatalog, setVoiceCatalog] = useState2(null);
+    const [voiceSource, setVoiceSource] = useState2("");
+    const [voiceError, setVoiceError] = useState2("");
     useEffect2(() => {
       let alive = true;
       callApi("/settings").then((data) => {
         if (!alive) return;
         const globalTts = data?.settings?.voice?.tts || {};
-        setTtsGlobal({
-          provider: globalTts.provider || "volc",
-          resourceId: globalTts.resourceId || ""
+        const provider = globalTts.provider || "volc";
+        const resourceId = globalTts.resourceId || "";
+        setTtsGlobal({ provider, resourceId });
+        return callApi(
+          `/voices?provider=${encodeURIComponent(provider)}&resourceId=${encodeURIComponent(resourceId)}`
+        ).then((voices2) => {
+          if (!alive) return;
+          const list = voices2?.options?.[provider];
+          setVoiceCatalog(Array.isArray(list) ? list : null);
+          setVoiceSource(voices2?.source || "");
+          setVoiceError(voices2?.error || "");
+        }).catch(() => {
         });
       }).catch(() => {
       });
@@ -1661,12 +1702,16 @@ var DshXiaozhi = (() => {
         setSaving(false);
       }
     };
+    const catalog = voiceCatalog ?? (VOICES[ttsGlobal.provider] || []);
+    const voices = voiceCatalog ? catalog : voicesForResource(catalog, ttsGlobal.resourceId);
     const voiceOptions = [{ value: "", label: t("voiceDefault") }].concat(
-      voicesForResource(VOICES[ttsGlobal.provider] || [], ttsGlobal.resourceId).map((voice) => ({ value: voice.value, label: voice.label }))
+      voices.map((voice) => ({ value: voice.value, label: voice.label }))
     );
     if (draftVoice && !voiceOptions.some((option) => option.value === draftVoice)) {
-      voiceOptions.push({ value: draftVoice, label: voiceLabel(draftVoice, ttsGlobal.provider) });
+      const known = voices.find((voice) => voice.value === draftVoice);
+      voiceOptions.push({ value: draftVoice, label: known?.label || voiceLabel(draftVoice, ttsGlobal.provider) });
     }
+    const voiceHint = !voiceSource ? "" : voiceSource === "api" ? t("voiceCatalogApi") : ttsGlobal.provider === "volc" ? voiceError ? `${t("voiceCatalogFallback")}\uFF1A${voiceError}` : t("voiceCatalogFallback") : "";
     const languageSelect = h(PillSelect, {
       value: draftLanguage,
       ariaLabel: t("outputLanguage"),
@@ -1685,7 +1730,8 @@ var DshXiaozhi = (() => {
           "div",
           { className: "xz-field" },
           h("label", null, t("voice")),
-          h(PillSelect, { value: draftVoice, ariaLabel: t("voice"), options: voiceOptions, onChange: setDraftVoice })
+          h(PillSelect, { value: draftVoice, ariaLabel: t("voice"), options: voiceOptions, onChange: setDraftVoice }),
+          voiceHint ? h("span", { className: "note" }, voiceHint) : null
         ),
         h(
           "div",
@@ -2920,6 +2966,7 @@ var DshXiaozhi = (() => {
       { className: "xz-grid xz-dialog-grid" },
       (fields || []).map((field, position) => {
         if (field.showWhen && value[field.showWhen.key] !== field.showWhen.equals) return null;
+        if (field.primaryOnly && context.mode !== "primary") return null;
         const render = FIELD_RENDERERS[field.type] || FIELD_RENDERERS.text;
         const note = field.type === "secret" ? secretNote(field, value) : field.note ? t(field.note) : "";
         return h(

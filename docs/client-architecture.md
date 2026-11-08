@@ -121,7 +121,7 @@ npm run build
 npm run smoke
 npm run check:ui
 node --check client.js
-node --test "test/*.test.mjs"   # 201 项
+node --test "test/*.test.mjs"   # 210 项
 ```
 
 ## 7. 变更记录
@@ -143,6 +143,10 @@ node --test "test/*.test.mjs"   # 201 项
 - **2026-11-08（自动保存）**：全局设置去掉底部「保存配置」和环节弹窗里的保存按钮；任何改动
   防抖 700ms 自动 `POST /settings`，底部只显示「保存中… / 已自动保存 / 失败重试」。保存期间
   有新改动时用 revision 判断，不用服务端回写覆盖本地；切视图卸载时立即 flush。
+- **2026-11-08（音色列表）**：智能体「角色」页的音色下拉改为按 `GET /voices?provider=&resourceId=`
+  拉取；火山配置了 AK/SK 时走官方 `ListSpeakers`（`source:'api'`），否则回内置清单
+  （`source:'catalog'`）并在下拉下标注。全局 TTS 主用编辑弹窗新增可选的 AccessKey/SecretAccessKey
+  （`primaryOnly` 字段，备用条目不显示）。
 - **2026-11-08（修）**：模型下拉回显。`ModelField` 把「当前值不在厂商 `/models` 清单里」的情况
   补成选项（否则显示「未选择」，看起来像模型丢了）；`PillSelect` 新增 `placeholder`，
   空值显示描述符 `modelHint`（如 `deepseek-chat`）。`npm run check:ui` 增加了这两条断言。

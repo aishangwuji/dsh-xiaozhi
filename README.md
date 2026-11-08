@@ -133,6 +133,8 @@
   音色（= TTS 模型族）在「智能体 → 配置 → 角色」按智能体选，留空 = 厂商默认（火山
   `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan`，见
   `src/voice/voices.js` 的 `DEFAULT_TTS_VOICES`）；备用条目运行时也用各自厂商默认音色；
+  **火山 TTS 主用可另填 AccessKey ID / SecretAccessKey（可选）**：只用于调官方 `ListSpeakers`
+  拉真实可用音色，合成仍用 API Key；不填时智能体「角色」页显示内置清单并标注「可能含未开通音色」；
 - 同一家可以填多条（多账号/多把 Key），顺序即优先级；备用条数**不设上限**（2026-11-08 起）；
 - 改动**自动保存**（2026-11-08 起）：任何字段改完防抖 700ms 落盘，底部只显示「保存中… / 已自动保存 /
   自动保存失败（可重试）」；保存中又有改动会等下一轮，服务端回写不会覆盖刚输入的内容。未落盘时测试按钮
@@ -325,7 +327,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 控制台的「跟随音色」会显式写入空串、把语种指令撤掉；如果只在 `cordis.patch.yml` 里写过默认语种，面板得先选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，201 项）：
+实测（`node --test "test/*.test.mjs"`，210 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -381,7 +383,7 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 201 项
+node --test "test/*.test.mjs"   # 210 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 

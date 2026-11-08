@@ -325,3 +325,29 @@ CREATE TABLE `ai_tts_voice` (
 粤语没有 `explicit_language` 码，因此只走提示词 + 音色本身。`multi_*` 这类 1.x 音色不仅需要把 Resource ID 换成 `seed-tts-1.0`，账号还必须真的开通该资源；本机账号只有 2.0（实测 `45000030`），所以那 4 条日语 `multi_*` 目前不可用。
 
 > **2026-11-08 归属调整**：全局设置 → TTS 合成只配「厂商 + 凭据」，原先「配置向导 TTS 步骤加全局默认音色」的说法作废。音色（= TTS 模型族）改在「设备 → 配置 → 角色」按设备选，留空 = 厂商默认（`src/voice/voices.js` 的 `DEFAULT_TTS_VOICES`：火山 `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan`）；设备残留的跨厂商音色由 `resolveTtsVoice` 回落为本厂商默认。输出语种仍是全局默认 + 设备级覆盖。
+
+## 附录 F：音色列表改为官方接口（2026-11-08）
+
+**之前**：`src/voice/voices.js` 的内置清单（105 条 volc 音色，按官方文档整理），`GET /voices` 只是把它发给前端；
+前端按 `resourceId` 过滤 1.x / 2.0。**无法知道某个音色在当前账号下是否真的开通**。
+
+**现在**：火山官方「大模型音色列表」`ListSpeakers`（Action=`ListSpeakers`，Version=`2025-05-20`，
+Service=`speech_saas_prod`，Region=`cn-beijing`）——已核对官方文档：
+<https://docs.volcengine.com/docs/doubao-voice/list-speakers-large-model-sound-list-new-interface>
+
+- 鉴权是 **AK/SK HMAC-SHA256 签名**（`open.volcengineapi.com`），不是 TTS 数据面的 `X-Api-Key`；
+  所以控制台的火山 TTS 主用配置里增加了**可选的** `AccessKey ID` / `SecretAccessKey`（复用
+  `appId` / `apiSecret` 两个存储槽位，只出现在主用编辑弹窗，备用条目不需要）。
+- 签名实现：`src/voice/volc-sign.js`；用官方文档里的 GET/POST 固定向量做了单测
+  （`test/volc-sign.test.mjs`），不是凭记忆写的。
+- 拉取/分页/缓存：`src/voice/volc-speakers.js`（`Limit=100`，最多 5 页，缓存 10 分钟）。
+- `GET /voices?provider=volc&resourceId=seed-tts-2.0`：配置了 AK/SK 就返回官方 `Speakers[]`
+  （`source:'api'`）；没配置/调用失败则回内置清单（`source:'catalog'`，带 `error`）。
+- 前端 `AgentConfigDialog` 打开时按「全局 TTS provider + resourceId」拉一次；`source==='api'`
+  显示「音色来自火山官方接口」，回退时显示「未配置 AccessKey/SecretKey，当前为内置清单，可能含未开通音色」。
+
+**边界**：
+- AK/SK 只用于拉音色列表，**合成仍然用 `X-Api-Key`**；两套凭据不要混。
+- 官方列表是「该账号/资源下可用的音色」，不是「已购买」的精确账单；1.x 资源（`multi_*` 等）仍需账号实际开通。
+- 真实 AK/SK 的线上 `ListSpeakers` 调用**未在本次环境实测**（单测覆盖签名向量、分页、缓存、错误分支）；
+  配好后点开智能体「角色」页即可验证。

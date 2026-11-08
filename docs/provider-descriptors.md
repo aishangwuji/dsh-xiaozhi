@@ -69,7 +69,8 @@
 | `model` | `ModelField` | `modelKind: 'llm'` 拉 `/v1/models`；`modelKind: 'asrResource'` 拉 ASR 资源。当前值不在清单里时仍回显（补进选项）；空值用描述符 `modelHint` 占位 |
 
 字段级可选：`placeholder`、`placeholderKey`（i18n）、`note`（i18n）、`required`、
-`showWhen: { key, equals }`（同表单条件显示）。
+`showWhen: { key, equals }`（同表单条件显示）、`primaryOnly: true`（只在主用编辑弹窗出现，
+备用条目编辑时隐藏——火山 AK/SK 拉音色就属于这种）。
 
 ### 段级元数据（`stages`）
 
@@ -135,7 +136,7 @@
 ## 8. 验收
 
 ```powershell
-node --test "test/*.test.mjs"   # 201 项，含 test/providers.test.mjs 6 项 + /providers 路由
+node --test "test/*.test.mjs"   # 210 项，含 test/providers.test.mjs 6 项 + /providers 路由
 npm run build
 npm run smoke                   # 描述符表单矩阵：llm/deepseek、tts/xunfei、tts/edge、asr/volc、asr/xunfei、asr/local
 npm run check:ui                # 全局设置交互

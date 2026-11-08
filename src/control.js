@@ -20,6 +20,7 @@ import { hostProviderIssue } from './voice/host-provider.js'
 import { modelsFor } from './models.js'
 import { openAiCompatiblePreset } from './voice/adapters/index.js'
 import { localProviders } from './voice/adapters/local-asr.js'
+import { listVolcSpeakersCached, speakerOptions } from './voice/volc-speakers.js'
 import { providersPayload } from './providers.js'
 
 const CONTROL_PREFIX = '/dsh-xiaozhi-7c3a'
@@ -697,9 +698,42 @@ export function createControlHandler({
     }
 
     if (method === 'GET' && path === '/voices') {
-      const options = {}
-      for (const provider of ['edge', 'xunfei', 'volc']) options[provider] = voiceOptionsFor(provider)
-      sendJson(res, 200, { options })
+      const provider = String(url.searchParams.get('provider') ?? '').trim()
+      const requestedResource = String(url.searchParams.get('resourceId') ?? '').trim()
+      // 不带 provider：保持旧契约，一次返回三段的内置清单（首屏兜底）。
+      if (!provider) {
+        const options = {}
+        for (const item of ['edge', 'xunfei', 'volc']) options[item] = voiceOptionsFor(item)
+        sendJson(res, 200, { options })
+        return
+      }
+      const catalog = voiceOptionsFor(provider)
+      // 火山 TTS 的 resourceId 全局被清空（音色归智能体），这里按默认 2.0 查。
+      const resourceId = requestedResource || (provider === 'volc' ? 'seed-tts-2.0' : '')
+      if (provider !== 'volc' || !resourceId) {
+        sendJson(res, 200, { options: { [provider]: catalog }, source: 'catalog' })
+        return
+      }
+      // 官方 ListSpeakers 要 AK/SK；TTS 合成仍用 X-Api-Key。没配 AK/SK 就回内置清单并标注。
+      const tts = settings.state?.voice?.tts ?? {}
+      if (!tts.appId || !tts.apiSecret) {
+        sendJson(res, 200, { options: { volc: catalog }, source: 'catalog' })
+        return
+      }
+      try {
+        const speakers = await listVolcSpeakersCached({
+          accessKey: tts.appId,
+          secretKey: tts.apiSecret,
+          resourceId,
+        })
+        const options = speakerOptions(speakers)
+        sendJson(res, 200, {
+          options: { volc: options.length ? options : catalog },
+          source: options.length ? 'api' : 'catalog',
+        })
+      } catch (error) {
+        sendJson(res, 200, { options: { volc: catalog }, source: 'catalog', error: error.message })
+      }
       return
     }
 

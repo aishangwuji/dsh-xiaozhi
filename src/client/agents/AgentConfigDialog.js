@@ -26,6 +26,11 @@ import { PillSelect } from '../ui/PillSelect.js'
       // 从 /state 猜（/state 里没有 voice.tts，早先取到 undefined 导致音色列表恒为火山）。
       // 资源族不匹配会回 55000000（有字没声），所以下拉要按资源族过滤。
       const [ttsGlobal, setTtsGlobal] = useState({ provider: 'volc', resourceId: '' });
+      // 音色清单：优先用后端 `/voices` 拉到的官方 ListSpeakers 结果；没有 AK/SK 时后端回
+      // 内置清单并标 source='catalog'，这里把差异显示出来，避免「以为都开通了」。
+      const [voiceCatalog, setVoiceCatalog] = useState(null);
+      const [voiceSource, setVoiceSource] = useState('');
+      const [voiceError, setVoiceError] = useState('');
 
       useEffect(() => {
         let alive = true;
@@ -33,10 +38,20 @@ import { PillSelect } from '../ui/PillSelect.js'
           .then((data) => {
             if (!alive) return;
             const globalTts = data?.settings?.voice?.tts || {};
-            setTtsGlobal({
-              provider: globalTts.provider || 'volc',
-              resourceId: globalTts.resourceId || ''
-            });
+            const provider = globalTts.provider || 'volc';
+            const resourceId = globalTts.resourceId || '';
+            setTtsGlobal({ provider, resourceId });
+            return callApi(
+              `/voices?provider=${encodeURIComponent(provider)}&resourceId=${encodeURIComponent(resourceId)}`
+            )
+              .then((voices) => {
+                if (!alive) return;
+                const list = voices?.options?.[provider];
+                setVoiceCatalog(Array.isArray(list) ? list : null);
+                setVoiceSource(voices?.source || '');
+                setVoiceError(voices?.error || '');
+              })
+              .catch(() => {});
           })
           .catch(() => {});
         return () => {
@@ -65,15 +80,26 @@ import { PillSelect } from '../ui/PillSelect.js'
       };
 
       // 第一项「默认音色」= 不覆盖（保存时 voice 传空串，服务端删掉该设备的音色覆盖）。
+      // voiceCatalog 来自官方 ListSpeakers 时已按 resourceId 过滤，不再二次过滤；回退内置
+      // 清单时才按资源族过滤（1.x / 2.0 混选会 55000000 有字没声）。
+      const catalog = voiceCatalog ?? (VOICES[ttsGlobal.provider] || []);
+      const voices = voiceCatalog ? catalog : voicesForResource(catalog, ttsGlobal.resourceId);
       const voiceOptions = [{ value: '', label: t('voiceDefault') }].concat(
-        voicesForResource(VOICES[ttsGlobal.provider] || [], ttsGlobal.resourceId)
-          .map((voice) => ({ value: voice.value, label: voice.label }))
+        voices.map((voice) => ({ value: voice.value, label: voice.label }))
       );
       // 设备已存的音色不在当前厂商/资源族的列表里（典型：全局刚换过 TTS 厂商）时，
       // 仍把当前值放进选项，否则下拉显示「未选择」，看起来像音色丢了；保存也不会丢值。
       if (draftVoice && !voiceOptions.some((option) => option.value === draftVoice)) {
-        voiceOptions.push({ value: draftVoice, label: voiceLabel(draftVoice, ttsGlobal.provider) });
+        const known = voices.find((voice) => voice.value === draftVoice);
+        voiceOptions.push({ value: draftVoice, label: known?.label || voiceLabel(draftVoice, ttsGlobal.provider) });
       }
+      const voiceHint = !voiceSource
+        ? ''
+        : voiceSource === 'api'
+          ? t('voiceCatalogApi')
+          : ttsGlobal.provider === 'volc'
+            ? (voiceError ? `${t('voiceCatalogFallback')}：${voiceError}` : t('voiceCatalogFallback'))
+            : '';
       const languageSelect = h(PillSelect, {
         value: draftLanguage,
         ariaLabel: t('outputLanguage'),
@@ -88,7 +114,8 @@ import { PillSelect } from '../ui/PillSelect.js'
         h('div', { className: 'xz-grid' },
           h('div', { className: 'xz-field' },
             h('label', null, t('voice')),
-            h(PillSelect, { value: draftVoice, ariaLabel: t('voice'), options: voiceOptions, onChange: setDraftVoice })
+            h(PillSelect, { value: draftVoice, ariaLabel: t('voice'), options: voiceOptions, onChange: setDraftVoice }),
+            voiceHint ? h('span', { className: 'note' }, voiceHint) : null
           ),
           h('div', { className: 'xz-field' },
             h('label', null, t('outputLanguage')),

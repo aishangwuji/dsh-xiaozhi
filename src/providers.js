@@ -105,7 +105,26 @@ export const PROVIDERS = [
     stages: {
       llm: llmStage('https://ark.cn-beijing.volces.com/api/v3', 'doubao-1.5-pro-32k'),
       tts: {
-        fields: [secret('apiKey')],
+        fields: [
+          secret('apiKey'),
+          // 火山 OpenAPI 的 AK/SK：只用于拉官方音色列表（ListSpeakers），不参与合成。
+          // 复用 appId/apiSecret 两个通用槽位，避免再动 settings 的字段/掩码契约。
+          {
+            key: 'appId',
+            type: 'text',
+            label: 'volcAccessKey',
+            placeholder: 'AKLT…',
+            primaryOnly: true,
+            note: 'volcAkSkNote',
+          },
+          {
+            key: 'apiSecret',
+            type: 'secret',
+            label: 'volcSecretKey',
+            primaryOnly: true,
+            note: 'volcAkSkNote',
+          },
+        ],
         summary: [],
         secretFields: ['apiKey'],
         probe: { kind: 'tts' },

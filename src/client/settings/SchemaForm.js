@@ -86,6 +86,8 @@ function SchemaForm({ stage, provider, mode, index, fields, value, onChange, bas
   return h('div', { className: 'xz-grid xz-dialog-grid' },
     (fields || []).map((field, position) => {
       if (field.showWhen && value[field.showWhen.key] !== field.showWhen.equals) return null
+      // 主用专属字段（如火山 AK/SK 只用于全局拉音色）不出现在备用条目编辑里。
+      if (field.primaryOnly && context.mode !== 'primary') return null
       const render = FIELD_RENDERERS[field.type] || FIELD_RENDERERS.text
       const note = field.type === 'secret' ? secretNote(field, value) : (field.note ? t(field.note) : '')
       return h('div', { key: field.key || `field-${position}`, className: 'xz-field' },

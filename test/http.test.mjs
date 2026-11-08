@@ -534,3 +534,19 @@ test('GET /providers serves the descriptor catalog to the console', async () => 
     await harness.dispose()
   }
 })
+
+test('GET /voices falls back to the built-in catalog without Volc AK/SK', async () => {
+  const harness = await startHarness()
+  try {
+    const response = await fetch(
+      `${harness.controlBase}${CONTROL}/voices?provider=volc&resourceId=seed-tts-2.0`,
+    )
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    // 测试环境没配 AK/SK：必须回内置清单，并明确标注来源，不能假装是官方列表。
+    assert.equal(body.source, 'catalog')
+    assert.ok(Array.isArray(body.options.volc) && body.options.volc.length > 0)
+  } finally {
+    await harness.dispose()
+  }
+})
