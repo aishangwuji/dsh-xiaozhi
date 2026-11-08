@@ -3647,19 +3647,6 @@ var DshXiaozhi = (() => {
           h(
             "div",
             { className: "xz-field" },
-            h("label", null, t("outputLanguage")),
-            h(PillSelect, {
-              value: settings.voice.tts.language || "",
-              ariaLabel: t("outputLanguage"),
-              options: [{ value: "", label: t("languageFollow") }].concat(
-                OUTPUT_LANGUAGE_VALUES.map((value) => ({ value, label: value }))
-              ),
-              onChange: (value) => nested("voice", "tts", { language: value })
-            })
-          ),
-          h(
-            "div",
-            { className: "xz-field" },
             h("label", null, t("replySpeed")),
             h("input", {
               className: "xz-input",

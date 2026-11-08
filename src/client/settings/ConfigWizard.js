@@ -1,9 +1,8 @@
 import { h, useState, useEffect, useRef } from '../react.js'
 import {
   t, callApi, stageProviders, stageProviderLabel, stageDescriptor, blankBackup, withBackups,
-  backupKeyState, backupTestText, primaryEditFields, OUTPUT_LANGUAGE_VALUES
+  backupKeyState, backupTestText, primaryEditFields
 } from '../core.js'
-import { PillSelect } from '../ui/PillSelect.js'
 import { ProviderSection } from './ProviderSection.js'
 import { ProviderDialog } from './ProviderDialog.js'
 
@@ -588,17 +587,6 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
                 }
               }),
               h('span', { className: 'note' }, t('replyMaxTokensHint'))
-            ),
-            h('div', { className: 'xz-field' },
-              h('label', null, t('outputLanguage')),
-              h(PillSelect, {
-                value: settings.voice.tts.language || '',
-                ariaLabel: t('outputLanguage'),
-                options: [{ value: '', label: t('languageFollow') }].concat(
-                  OUTPUT_LANGUAGE_VALUES.map((value) => ({ value, label: value }))
-                ),
-                onChange: (value) => nested('voice', 'tts', { language: value })
-              })
             ),
             h('div', { className: 'xz-field' },
               h('label', null, t('replySpeed')),

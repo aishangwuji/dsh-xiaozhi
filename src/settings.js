@@ -21,7 +21,6 @@
 import { randomUUID } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { normalizeOutputLanguage } from './voice/language.js'
 import { allProvidersForStage } from './providers.js'
 
 const STATE_VERSION = 3
@@ -235,9 +234,6 @@ function defaults() {
       tts: {
         provider: '',
         voice: '',
-        // 输出语种（模型说什么话），与 asr.language（识别语言）无关。
-        // null = 控制台还没设过（沿用 Loader 配置）；'' = 显式选「跟随音色」。
-        language: null,
         rate: '',
         speed: '',
         model: '',
@@ -361,7 +357,6 @@ export class SettingsStore {
         tts: {
           provider: state.voice.tts.provider,
           voice: state.voice.tts.voice,
-          language: state.voice.tts.language ?? '',
           rate: state.voice.tts.rate,
           speed: state.voice.tts.speed,
           model: state.voice.tts.model,
@@ -466,8 +461,6 @@ export class SettingsStore {
         }
         if (typeof tts.url === 'string') next.voice.tts.url = tts.url.trim().slice(0, 200)
         if (typeof tts.model === 'string') next.voice.tts.model = tts.model.trim().slice(0, 64)
-        // 语种只收白名单值：它会被拼进系统提示词，不能让任意字符串进去。
-        if (typeof tts.language === 'string') next.voice.tts.language = normalizeOutputLanguage(tts.language)
         if (typeof tts.resourceId === 'string') next.voice.tts.resourceId = tts.resourceId.trim().slice(0, 64)
         if (typeof tts.appId === 'string') next.voice.tts.appId = tts.appId.trim().slice(0, 64)
         if (typeof tts.apiKey === 'string' && tts.apiKey.trim()) next.voice.tts.apiKey = tts.apiKey.trim().slice(0, 200)

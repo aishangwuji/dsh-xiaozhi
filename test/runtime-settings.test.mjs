@@ -36,7 +36,7 @@ test('空值 / null 表示沿用 Loader 配置，不清空已有值', () => {
     systemPrompt: '',
     silenceMs: null,
     llm: { provider: '', hostProvider: '', model: '', baseUrl: '', apiKey: '', maxTokens: null },
-    tts: { provider: '', voice: '', language: null, rate: '' },
+    tts: { provider: '', voice: '', rate: '' },
     asr: { provider: '', language: '' },
   })
   assert.equal(voice.systemPrompt, 'Loader 人设')
@@ -45,7 +45,6 @@ test('空值 / null 表示沿用 Loader 配置，不清空已有值', () => {
   assert.equal(voice.llm.apiKey, 'sk-loader')
   assert.equal(voice.llm.maxTokens, 120)
   assert.equal(voice.tts.voice, 'zh-CN-XiaoxiaoNeural')
-  assert.equal(voice.tts.language, '', 'null = 没设过，沿用 Loader')
   assert.equal(voice.asr.language, 'zh_cn')
 })
 
@@ -56,13 +55,6 @@ test('maxTokens 只接受正整数；0 / 负数 / 非整数沿用 Loader', () =>
   assert.equal(voice.llm.maxTokens, 120)
   applyRuntimeVoiceSettings(voice, { llm: { maxTokens: 64 } })
   assert.equal(voice.llm.maxTokens, 64)
-})
-
-test('tts.language 用 null 表示没设过，设过空串才真的撤掉指令', () => {
-  const voice = loaderVoice()
-  voice.tts.language = '日语'
-  applyRuntimeVoiceSettings(voice, { tts: { language: '' } })
-  assert.equal(voice.tts.language, '', '设过就直接以 settings 为准')
 })
 
 test('backups 永远是覆盖式：删光备用必须真的清空', () => {

@@ -139,9 +139,6 @@ export function applyRuntimeVoiceSettings(resolvedVoice, stateVoice = {}) {
   const tts = state.tts && typeof state.tts === 'object' ? state.tts : {}
   if (tts.provider) target.tts.provider = tts.provider
   if (tts.voice) target.tts.voice = tts.voice
-  // 语种用 null 表示“控制台还没设过”：此时沿用 Loader 配置；设过（哪怕是 ''）
-  // 就以 settings 为准，这样在面板里选「跟随音色」能真的把指令撤掉。
-  if (tts.language !== null && tts.language !== undefined) target.tts.language = tts.language
   if (tts.rate) target.tts.rate = tts.rate
   if (tts.speed) target.tts.speed = tts.speed
   if (tts.model) target.tts.model = tts.model

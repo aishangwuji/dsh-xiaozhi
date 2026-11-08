@@ -112,7 +112,7 @@
 | 50 | 结构 | `config.yaml` 的 `prompt`（人设）+ `prompt_template: agent-base-prompt.txt` 模板渲染（`config.yaml:205-221`；`core/utils/prompt_manager.py:251-327`） | 单段 `systemPrompt` + 追加 `<voice_reply_limits>` + 时钟 + 可选语种指令（`index.js:272-281,493,535-537`） | ❌ | 提示词工程能力（插件无模板/分段） |
 | 51 | 时间注入 | `<context>` 中 `{{current_time}}` 每轮替换为 `HH:MM`，另有日期/星期/农历（`agent-base-prompt.txt:72-80`；`dialogue.py:109-112`；`prompt_manager.py:132-144`） | 末尾追加 `当前时间和日期: yyyy年MM月dd日 HH:mm:ss 星期X`（`index.js:73-80`） | ⚠️ | 「现在几点」两套都能答；插件无农历 |
 | 52 | 位置/天气/动态上下文 | `local_address`、`weather_info`、`dynamic_context` 注入（`agent-base-prompt.txt:76-79`；`prompt_manager.py:146-249`；`config.yaml:126-129`） | **无** | ❌ | 「明天天气」免工具直答、位置感知 |
-| 53 | 语种指令 | `<output_language_directive>`，取 `TTS.language`，缺省「中文」（`agent-base-prompt.txt:14-33`；`prompt_manager.py:291-297`） | 白名单 6 个值，空=不注入（`src/voice/language.js:14-21,56-68`；`index.js:493,535-537`） | ⚠️ | 多语种一致性（插件更安全，覆盖面略窄） |
+| 53 | 语种指令 | `<output_language_directive>`，取 `TTS.language`，缺省「中文」（`agent-base-prompt.txt:14-33`；`prompt_manager.py:291-297`） | 白名单 6 个值，空=不注入（`src/voice/language.js:14-21,56-68`；`index.js:493,535-537`）；全局 UI 已删，只在智能体 `overrides.language` | ⚠️ | 多语种一致性（插件更安全，覆盖面略窄） |
 | 54 | 语音输出格式约束 | `<tts_format_constraints>`：禁 Markdown/括号动作、emoji 白名单（`agent-base-prompt.txt:42-51`；`prompt_manager.py:29-51`） | `<voice_reply_limits>` 限长 + segmenter 剥离 Markdown/emoji（`index.js:62-67`；`segmenter.js:13-14,237`） | ⚠️ | 朗读质量（插件无 emoji 白名单，靠剥离） |
 | 55 | ASR 容错 / 告别工具约束 | `<core_rules>`：容忍同音字、告别时必须调 `handle_exit_intent`（`agent-base-prompt.txt:7-12`） | 无（也没有退出工具） | ❌ | 告别/退出体验 |
 | 56 | 声纹说话人注入 | `<speaker_recognition>` + `speakers_info`（`agent-base-prompt.txt:66-70`；`dialogue.py:123-146`） | 无 | ❌ | 多人区分（依赖缺失的声纹能力） |

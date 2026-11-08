@@ -315,8 +315,8 @@ CREATE TABLE `ai_tts_voice` (
 | 音色语种 | `src/voice/voices.js` | 105 条 volc 音色；38 条补上官方 `languages`，末尾新增 4 条 `multi_*` 日语音色 |
 | 语种白名单/指令 | `src/voice/language.js`（新增） | 普通话/英语/日语/粤语/韩语；`<output_language_directive>`；非白名单值退化为空 |
 | 提示词注入 | `index.js` | `withOutputLanguage(withClock(prompt), tts.language)`；adapter 缓存 key 补进 provider/voice/language |
-| 运行时配置 | `src/settings.js` | `voice.tts.language`（白名单）；顺手修掉 tts patch 里 `llm`/`asr` 越界引用会抛错的老问题 |
-| 智能体级覆盖 | `src/control.js` + `src/agents.js` | `/agents/update` 接受 `language`（`/devices/config` 为兼容入口），非白名单折叠为空（空 = 删覆盖、回落全局） |
+| 运行时配置 | `src/settings.js` | 全局 `voice.tts.language` 已删除（2026-11-08）；语种只在智能体 `overrides.language`，`src/settings.js` 不再存 TTS language |
+| 智能体级覆盖 | `src/control.js` + `src/agents.js` | `/agents/update` 接受 `language`（`/devices/config` 为兼容入口），非白名单折叠为空（空 = 删覆盖、回落 Loader 默认） |
 | 豆包参数 | `src/voice/adapters/volc-http-tts.js` | 非中文时补 `req_params.additions.explicit_language`（`en`/`ja`/`ko`）；`55000000` 翻成人话 |
 | 控制台 | `src/client/agents/AgentConfigDialog.js` | 设备「角色」页加输出语种；音色下拉按 Resource ID 过滤同代音色；2026-11-08 起音色只在设备级选（全局 TTS 不再配音色），下拉首项「默认音色」= 用厂商默认 |
 | 资源族护栏 | `src/voice/voices.js`、`index.js` | 每条 volc 音色标 `tier`（2.0 / 1.x）；会话建立时若音色与资源不同代，直接打 error 说明「有字没声」的原因 |
@@ -324,7 +324,7 @@ CREATE TABLE `ai_tts_voice` (
 
 粤语没有 `explicit_language` 码，因此只走提示词 + 音色本身。`multi_*` 这类 1.x 音色不仅需要把 Resource ID 换成 `seed-tts-1.0`，账号还必须真的开通该资源；本机账号只有 2.0（实测 `45000030`），所以那 4 条日语 `multi_*` 目前不可用。
 
-> **2026-11-08 归属调整**：全局设置 → TTS 合成只配「厂商 + 凭据」，原先「配置向导 TTS 步骤加全局默认音色」的说法作废。音色（= TTS 模型族）改在「设备 → 配置 → 角色」按设备选，留空 = 厂商默认（`src/voice/voices.js` 的 `DEFAULT_TTS_VOICES`：火山 `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan`）；设备残留的跨厂商音色由 `resolveTtsVoice` 回落为本厂商默认。输出语种仍是全局默认 + 设备级覆盖。
+> **2026-11-08 归属调整**：全局设置 → TTS 合成只配「厂商 + 凭据」，原先「配置向导 TTS 步骤加全局默认音色」的说法作废。音色（= TTS 模型族）改在「设备 → 配置 → 角色」按设备选，留空 = 厂商默认（`src/voice/voices.js` 的 `DEFAULT_TTS_VOICES`：火山 `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan`）；设备残留的跨厂商音色由 `resolveTtsVoice` 回落为本厂商默认。**输出语种也只在智能体「角色」页**（全局设置里的那一项已删除，2026-11-08），`cordis.patch.yml` 的 `voice.tts.language` 仅作服务端兜底。
 
 ## 附录 F：音色列表改为官方接口（2026-11-08）
 
