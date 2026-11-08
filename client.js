@@ -522,7 +522,11 @@ var DshXiaozhi = (() => {
     persona: "\u4EBA\u8BBE",
     llmProvider: "LLM",
     model: "\u6A21\u578B",
-    deviceModelPlaceholder: "\u7559\u7A7A = \u7528\u5168\u5C40\u9ED8\u8BA4",
+    agentModelLabel: "\u5BF9\u8BDD\u6A21\u578B\uFF08LLM\uFF09",
+    agentModelDefault: "\u9ED8\u8BA4\uFF08\u7528\u5168\u5C40\u6A21\u578B\uFF09",
+    agentModelPlaceholder: "\u7559\u7A7A = \u7528\u5168\u5C40\u9ED8\u8BA4",
+    agentModelHint: "\u53EA\u8986\u76D6\u6A21\u578B\u540D\uFF1B\u5382\u5546 / Key / \u7AEF\u70B9\u4ECD\u7528\u5168\u5C40\u8BBE\u7F6E",
+    agentModelManual: "\u672A\u62C9\u5230\u6A21\u578B\u6E05\u5355\uFF0C\u53EF\u76F4\u63A5\u624B\u586B\u6A21\u578B\u540D",
     deviceConfigHint: "\u4FDD\u5B58\u540E\u5728\u8BE5\u667A\u80FD\u4F53\u7684\u8BBE\u5907\u4E0B\u6B21\u8FDE\u63A5\u751F\u6548",
     modelFromApi: "\u4ECE\u5382\u5546\u63A5\u53E3\u62C9\u53D6\uFF08\u5148\u586B Key\uFF09",
     volcAccessKey: "AccessKey ID\uFF08\u62C9\u97F3\u8272\u7528\uFF09",
@@ -751,7 +755,11 @@ var DshXiaozhi = (() => {
     persona: "Persona",
     llmProvider: "LLM",
     model: "Model",
-    deviceModelPlaceholder: "Empty = use the global default",
+    agentModelLabel: "Chat model (LLM)",
+    agentModelDefault: "Default (global model)",
+    agentModelPlaceholder: "Empty = global default",
+    agentModelHint: "Only overrides the model name; provider / key / endpoint stay global",
+    agentModelManual: "No model list available; type the model id",
     deviceConfigHint: "Applies when this agent\u2019s devices next connect",
     modelFromApi: "Fetched from the vendor API (set the key first)",
     volcAccessKey: "AccessKey ID (voice list)",
@@ -1660,14 +1668,22 @@ var DshXiaozhi = (() => {
     const [voiceCatalog, setVoiceCatalog] = useState2(null);
     const [voiceSource, setVoiceSource] = useState2("");
     const [voiceError, setVoiceError] = useState2("");
+    const [llmGlobal, setLlmGlobal] = useState2({ provider: "", model: "" });
+    const [modelOptions, setModelOptions] = useState2(null);
     useEffect2(() => {
       let alive = true;
       callApi("/settings").then((data) => {
         if (!alive) return;
         const globalTts = data?.settings?.voice?.tts || {};
+        const globalLlm = data?.settings?.voice?.llm || {};
         const provider = globalTts.provider || "volc";
         const resourceId = globalTts.resourceId || "";
         setTtsGlobal({ provider, resourceId });
+        setLlmGlobal({ provider: globalLlm.provider || "", model: globalLlm.model || "" });
+        callApi("/models?kind=llm&source=primary").then((models) => {
+          if (alive) setModelOptions(Array.isArray(models?.options) ? models.options : []);
+        }).catch(() => {
+        });
         return callApi(
           `/voices?provider=${encodeURIComponent(provider)}&resourceId=${encodeURIComponent(resourceId)}`
         ).then((voices2) => {
@@ -1753,21 +1769,41 @@ var DshXiaozhi = (() => {
         })
       )
     );
+    const globalModel = llmGlobal.model || "";
+    const modelOptionList = Array.isArray(modelOptions) ? modelOptions : null;
+    const modelSelectOptions = [{
+      value: "",
+      label: globalModel ? `${t("agentModelDefault")}\uFF08${globalModel}\uFF09` : t("agentModelDefault")
+    }].concat((modelOptionList || []).map((option) => ({ value: option.value, label: option.label })));
+    if (draftModel && !modelSelectOptions.some((option) => option.value === draftModel)) {
+      modelSelectOptions.push({ value: draftModel, label: draftModel });
+    }
     const modelPane = h(
       "div",
       { key: "model", className: "xz-pane" },
-      // 直连语义：模型名手填（各厂商命名差异太大，不维护二级下拉），留空 = 全局默认。
-      // provider / Base URL / API Key 都在「全局设置 → LLM」里，设备上只覆盖模型名。
+      // 直连语义：provider / Base URL / API Key 都在「全局设置 → LLM」里，
+      // 这里只覆盖模型名；留空 = 用全局默认模型。模型清单来自全局 LLM 的 /models，
+      // 拉不到时退回手填（各厂商模型 id 命名差异大，不硬编码）。
       h(
         "div",
         { className: "xz-field" },
-        h("label", null, t("model")),
-        h("input", {
+        h("label", null, t("agentModelLabel")),
+        modelOptionList && modelOptionList.length ? h(PillSelect, {
+          value: draftModel,
+          ariaLabel: t("agentModelLabel"),
+          options: modelSelectOptions,
+          onChange: setDraftModel
+        }) : h("input", {
           className: "xz-input",
           value: draftModel,
-          placeholder: t("deviceModelPlaceholder"),
+          placeholder: t("agentModelPlaceholder"),
           onChange: (e) => setDraftModel(e.target.value)
-        })
+        }),
+        h(
+          "span",
+          { className: "note" },
+          `${t("agentModelHint")}${globalModel ? `\uFF08${globalModel}\uFF09` : ""}` + (modelOptionList && modelOptionList.length === 0 ? `\uFF1B${t("agentModelManual")}` : "")
+        )
       ),
       h(
         "div",

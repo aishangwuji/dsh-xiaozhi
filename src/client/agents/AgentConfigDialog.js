@@ -31,6 +31,10 @@ import { PillSelect } from '../ui/PillSelect.js'
       const [voiceCatalog, setVoiceCatalog] = useState(null);
       const [voiceSource, setVoiceSource] = useState('');
       const [voiceError, setVoiceError] = useState('');
+      // 对话模型：只覆盖「模型名」，provider / Key / 端点仍来自全局 LLM。
+      // 下拉选项来自全局 LLM 已保存配置的 `/models`；拉不到就退回手填。
+      const [llmGlobal, setLlmGlobal] = useState({ provider: '', model: '' });
+      const [modelOptions, setModelOptions] = useState(null);
 
       useEffect(() => {
         let alive = true;
@@ -38,9 +42,16 @@ import { PillSelect } from '../ui/PillSelect.js'
           .then((data) => {
             if (!alive) return;
             const globalTts = data?.settings?.voice?.tts || {};
+            const globalLlm = data?.settings?.voice?.llm || {};
             const provider = globalTts.provider || 'volc';
             const resourceId = globalTts.resourceId || '';
             setTtsGlobal({ provider, resourceId });
+            setLlmGlobal({ provider: globalLlm.provider || '', model: globalLlm.model || '' });
+            callApi('/models?kind=llm&source=primary')
+              .then((models) => {
+                if (alive) setModelOptions(Array.isArray(models?.options) ? models.options : []);
+              })
+              .catch(() => {});
             return callApi(
               `/voices?provider=${encodeURIComponent(provider)}&resourceId=${encodeURIComponent(resourceId)}`
             )
@@ -134,17 +145,39 @@ import { PillSelect } from '../ui/PillSelect.js'
         ),
       );
 
+      const globalModel = llmGlobal.model || '';
+      const modelOptionList = Array.isArray(modelOptions) ? modelOptions : null;
+      const modelSelectOptions = [{
+        value: '',
+        label: globalModel ? `${t('agentModelDefault')}（${globalModel}）` : t('agentModelDefault')
+      }].concat((modelOptionList || []).map((option) => ({ value: option.value, label: option.label })));
+      // 已保存的模型不在清单里（自定义 id / 厂商清单没返回）时仍回显，不能显示成空。
+      if (draftModel && !modelSelectOptions.some((option) => option.value === draftModel)) {
+        modelSelectOptions.push({ value: draftModel, label: draftModel });
+      }
+
       const modelPane = h('div', { key: 'model', className: 'xz-pane' },
-        // 直连语义：模型名手填（各厂商命名差异太大，不维护二级下拉），留空 = 全局默认。
-        // provider / Base URL / API Key 都在「全局设置 → LLM」里，设备上只覆盖模型名。
+        // 直连语义：provider / Base URL / API Key 都在「全局设置 → LLM」里，
+        // 这里只覆盖模型名；留空 = 用全局默认模型。模型清单来自全局 LLM 的 /models，
+        // 拉不到时退回手填（各厂商模型 id 命名差异大，不硬编码）。
         h('div', { className: 'xz-field' },
-          h('label', null, t('model')),
-          h('input', {
-            className: 'xz-input',
-            value: draftModel,
-            placeholder: t('deviceModelPlaceholder'),
-            onChange: (e) => setDraftModel(e.target.value)
-          })
+          h('label', null, t('agentModelLabel')),
+          modelOptionList && modelOptionList.length
+            ? h(PillSelect, {
+                value: draftModel,
+                ariaLabel: t('agentModelLabel'),
+                options: modelSelectOptions,
+                onChange: setDraftModel
+              })
+            : h('input', {
+                className: 'xz-input',
+                value: draftModel,
+                placeholder: t('agentModelPlaceholder'),
+                onChange: (e) => setDraftModel(e.target.value)
+              }),
+          h('span', { className: 'note' },
+            `${t('agentModelHint')}${globalModel ? `（${globalModel}）` : ''}` +
+              (modelOptionList && modelOptionList.length === 0 ? `；${t('agentModelManual')}` : ''))
         ),
         h('div', { className: 'xz-row', style: { justifyContent: 'space-between', marginTop: 6 } },
           h('span', { className: 'xz-devcard-label' }, t('memory')),

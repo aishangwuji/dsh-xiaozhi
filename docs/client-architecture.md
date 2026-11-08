@@ -147,6 +147,9 @@ node --test "test/*.test.mjs"   # 210 项
   拉取；火山配置了 AK/SK 时走官方 `ListSpeakers`（`source:'api'`），否则回内置清单
   （`source:'catalog'`）并在下拉下标注。全局 TTS 主用编辑弹窗新增可选的 AccessKey/SecretAccessKey
   （`primaryOnly` 字段，备用条目不显示）。
+- **2026-11-08（智能体模型字段）**：「模型与记忆」页的「模型」明确为 **LLM 模型名**，下拉选项来自
+  全局 LLM 的 `/models`（拉不到则手填），首项「默认（用全局模型）」= 不覆盖；下方注明
+  「只覆盖模型名，厂商 / Key / 端点仍用全局设置」。
 - **2026-11-08（修）**：模型下拉回显。`ModelField` 把「当前值不在厂商 `/models` 清单里」的情况
   补成选项（否则显示「未选择」，看起来像模型丢了）；`PillSelect` 新增 `placeholder`，
   空值显示描述符 `modelHint`（如 `deepseek-chat`）。`npm run check:ui` 增加了这两条断言。

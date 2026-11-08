@@ -291,6 +291,9 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   控制台改智能体名只写 `agents.json`，改设备别名只写 `devices.json`。旧迁移把设备昵称抄成
   智能体名字的，启动时 `adoptLegacyDevices` 对「单设备 + 名字==设备昵称 + 从未编辑
   （`updatedAt === createdAt`）」做一次改名（返回 `renamed`，幂等），用户改过的不动。
+- **智能体「模型」字段**：`overrides.model` 只是 **LLM 模型名**覆盖（如 `deepseek-chat`），
+  provider / Key / 端点仍由全局设置决定；下拉选项来自全局 LLM 已保存配置的 `/models`，拉不到则手填，
+  空 = 全局默认（`settings.voice.llm.model`）。不是 TTS 音色，也不是「智能体类型」。
 - **删智能体是级联删除**：绑定设备、它们的历史与记忆一起删（对齐参考 `deleteAgent`），
   控制台做成二次确认（第一次点击变「再次点击删除」）。
 - 控制台：三个平级视图 **概览 / 智能体 / 全局设置**。卡片 = 智能体（名字/在线/绑定设备列表/音色/设备数/最近在线 +
