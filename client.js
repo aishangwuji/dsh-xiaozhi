@@ -560,15 +560,19 @@ var DshXiaozhi = (() => {
     ttsEdgeKeyless: "\u514D\u5BC6\u94A5\uFF0C\u65E0\u9700\u914D\u7F6E",
     firstToken: "\u9996 token",
     bytes: "\u5B57\u8282",
-    saveConfig: "\u4FDD\u5B58\u914D\u7F6E",
     saved: "\u5DF2\u4FDD\u5B58",
+    autoSaving: "\u4FDD\u5B58\u4E2D\u2026",
+    autoSaved: "\u5DF2\u81EA\u52A8\u4FDD\u5B58",
+    autoSavePending: "\u6709\u4FEE\u6539\uFF0C\u6B63\u5728\u81EA\u52A8\u4FDD\u5B58\u2026",
+    autoSaveFailed: "\u81EA\u52A8\u4FDD\u5B58\u5931\u8D25",
+    retry: "\u91CD\u8BD5",
     loadFailed: "\u52A0\u8F7D\u5931\u8D25",
     actionFailed: "\u64CD\u4F5C\u5931\u8D25\uFF1A",
     // 全局设置单页 IA（2026-11-07）：服务商为主体，语音默认参数/接入与网关次之；人设只在智能体级。
     configProvidersTitle: "\u670D\u52A1\u5546",
     configVoiceTitle: "\u8BED\u97F3\u9ED8\u8BA4\u53C2\u6570",
     configAccessTitle: "\u63A5\u5165\u4E0E\u7F51\u5173",
-    configSaveHint: "\u4FDD\u5B58\u540E\u8BBE\u5907\u4E0B\u6B21\u8FDE\u63A5\u751F\u6548",
+    configSaveHint: "\u4FEE\u6539\u4F1A\u81EA\u52A8\u4FDD\u5B58\uFF0C\u8BBE\u5907\u4E0B\u6B21\u8FDE\u63A5\u751F\u6548",
     configBackupCount: "\u5907\u7528 {n} \u4E2A",
     // 全局设置（2026-11-08）：三个环节概览卡 + 点进去管理；弹窗里的返回/保存并测试。
     back: "\u8FD4\u56DE",
@@ -778,15 +782,19 @@ var DshXiaozhi = (() => {
     ttsEdgeKeyless: "No key required",
     firstToken: "first token",
     bytes: "bytes",
-    saveConfig: "Save configuration",
     saved: "Saved",
+    autoSaving: "Saving\u2026",
+    autoSaved: "Saved automatically",
+    autoSavePending: "Saving changes\u2026",
+    autoSaveFailed: "Auto-save failed",
+    retry: "Retry",
     loadFailed: "Load failed",
     actionFailed: "Action failed: ",
     // Global settings single-page IA (2026-11-07): providers first; voice defaults and access below; persona is device-level only.
     configProvidersTitle: "Providers",
     configVoiceTitle: "Voice defaults",
     configAccessTitle: "Access & gateway",
-    configSaveHint: "Applies on the device\u2019s next connection",
+    configSaveHint: "Changes save automatically and apply on the device\u2019s next connection",
     configBackupCount: "{n} backups",
     // Global settings (2026-11-08): three stage overview cards, manage in a modal.
     back: "Back",
@@ -3000,13 +3008,51 @@ var DshXiaozhi = (() => {
     const [primaryTests, setPrimaryTests] = useState2({});
     const [testingPrimary, setTestingPrimary] = useState2("");
     const [primaryClear, setPrimaryClear] = useState2({});
+    const [autoSaveError, setAutoSaveError] = useState2("");
+    const settingsRef = useRef2(null);
+    const primaryClearRef = useRef2({});
+    const applyingServerRef = useRef2(true);
+    const revisionRef = useRef2(0);
+    const saveTimerRef = useRef2(null);
+    const saveRef = useRef2(null);
+    const saveChainRef = useRef2(Promise.resolve());
+    const mountedRef = useRef2(true);
+    primaryClearRef.current = primaryClear;
+    useEffect2(() => {
+      mountedRef.current = true;
+      return () => {
+        mountedRef.current = false;
+      };
+    }, []);
     useEffect2(() => {
       callApi("/settings").then((data) => {
+        applyingServerRef.current = true;
         setSettings(withBackups(data.settings));
         if (data.defaults) setDefaults(data.defaults);
       }).catch((err) => setError(err.message));
     }, []);
+    useEffect2(() => {
+      if (!settings) return;
+      if (applyingServerRef.current) {
+        applyingServerRef.current = false;
+        return;
+      }
+      revisionRef.current += 1;
+      setProvidersDirty(true);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        saveTimerRef.current = null;
+        void saveRef.current?.({ auto: true });
+      }, 700);
+      return () => {
+        if (!saveTimerRef.current) return;
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        if (!mountedRef.current) void saveRef.current?.({ auto: true });
+      };
+    }, [settings]);
     if (!settings) return h("div", { className: "xz-empty" }, error || "\u2026");
+    settingsRef.current = settings;
     const patch = (group, values) => setSettings({ ...settings, [group]: { ...settings[group], ...values } });
     const nested = (group, key, values) => setSettings({ ...settings, [group]: { ...settings[group], [key]: { ...settings[group][key], ...values } } });
     const backupsOf = (stage) => {
@@ -3181,121 +3227,149 @@ var DshXiaozhi = (() => {
         setTestingPrimary("");
       }
     };
-    const save = async () => {
-      setSaving(true);
-      try {
-        const secret2 = (value) => typeof value === "string" && value.includes("\u2022") ? "" : value || "";
-        const backupBody = (stage) => backupsOf(stage).map((entry) => {
-          const base = { provider: entry.provider };
-          if (entry.id) base.id = entry.id;
-          if (stage === "llm") {
-            return {
-              ...base,
-              model: entry.model || "",
-              baseUrl: entry.baseUrl || "",
-              appId: entry.appId || "",
-              apiKey: secret2(entry.apiKey)
-            };
-          }
-          if (stage === "tts") {
-            return {
-              ...base,
-              appId: entry.appId || "",
-              apiKey: secret2(entry.apiKey),
-              apiSecret: secret2(entry.apiSecret)
-            };
-          }
+    const buildSettingsBody = (snapshot) => {
+      const secret2 = (value) => typeof value === "string" && value.includes("\u2022") ? "" : value || "";
+      const backupsOfSnapshot = (stage) => {
+        const list = snapshot.voice?.[stage]?.backups || [];
+        return Array.isArray(list) ? list : [];
+      };
+      const backupBody = (stage) => backupsOfSnapshot(stage).map((entry) => {
+        const base = { provider: entry.provider };
+        if (entry.id) base.id = entry.id;
+        if (stage === "llm") {
           return {
             ...base,
-            url: entry.url || "",
-            language: entry.language || "",
-            accent: entry.accent || "",
-            resourceId: entry.resourceId || "",
+            model: entry.model || "",
+            baseUrl: entry.baseUrl || "",
+            appId: entry.appId || "",
+            apiKey: secret2(entry.apiKey)
+          };
+        }
+        if (stage === "tts") {
+          return {
+            ...base,
             appId: entry.appId || "",
             apiKey: secret2(entry.apiKey),
             apiSecret: secret2(entry.apiSecret)
           };
-        });
-        const clearFlags = (stage) => {
-          const flags = primaryClear[stage] || {};
-          const apiKey = settings.voice[stage]?.apiKey;
-          const apiSecret = settings.voice[stage]?.apiSecret;
-          const out = {};
-          if (flags.apiKey && !apiKey) out.clearApiKey = true;
-          if (flags.apiSecret && !apiSecret) out.clearApiSecret = true;
-          return out;
+        }
+        return {
+          ...base,
+          url: entry.url || "",
+          language: entry.language || "",
+          accent: entry.accent || "",
+          resourceId: entry.resourceId || "",
+          appId: entry.appId || "",
+          apiKey: secret2(entry.apiKey),
+          apiSecret: secret2(entry.apiSecret)
         };
-        const body = {
-          endpoints: {
-            lanWsUrl: settings.endpoints.lanWsUrl,
-            wanWsUrl: settings.endpoints.wanWsUrl,
-            token: secret2(settings.endpoints.token)
+      });
+      const clearFlags = (stage) => {
+        const flags = primaryClearRef.current[stage] || {};
+        const apiKey = snapshot.voice[stage]?.apiKey;
+        const apiSecret = snapshot.voice[stage]?.apiSecret;
+        const out = {};
+        if (flags.apiKey && !apiKey) out.clearApiKey = true;
+        if (flags.apiSecret && !apiSecret) out.clearApiSecret = true;
+        return out;
+      };
+      return {
+        endpoints: {
+          lanWsUrl: snapshot.endpoints.lanWsUrl,
+          wanWsUrl: snapshot.endpoints.wanWsUrl,
+          token: secret2(snapshot.endpoints.token)
+        },
+        firmware: snapshot.firmware,
+        gateway: {
+          token: secret2(snapshot.gateway.token)
+        },
+        voice: {
+          // 全局人设编辑已删除（人设只在「智能体 → 配置 → 角色」按智能体配置）；
+          // 这里把 GET 回来的原值原样传回，绝不能写成空串/undefined 把已存人设清掉。
+          systemPrompt: snapshot.voice.systemPrompt,
+          silenceMs: snapshot.voice.silenceMs,
+          llm: {
+            provider: snapshot.voice.llm.provider,
+            model: snapshot.voice.llm.model,
+            baseUrl: snapshot.voice.llm.baseUrl,
+            appId: snapshot.voice.llm.appId,
+            apiKey: secret2(snapshot.voice.llm.apiKey),
+            maxTokens: snapshot.voice.llm.maxTokens,
+            ...clearFlags("llm"),
+            backups: backupBody("llm")
           },
-          firmware: settings.firmware,
-          gateway: {
-            token: secret2(settings.gateway.token)
+          tts: {
+            provider: snapshot.voice.tts.provider,
+            // 音色/模型/资源下放到智能体级：全局显式清空（服务端按厂商默认音色兜底）。
+            voice: "",
+            model: "",
+            resourceId: "",
+            rate: snapshot.voice.tts.rate,
+            speed: snapshot.voice.tts.speed,
+            // url 不在界面展示，但原值要原样传回，避免把用户手填的自建端点清掉。
+            url: snapshot.voice.tts.url,
+            language: snapshot.voice.tts.language,
+            appId: snapshot.voice.tts.appId,
+            apiKey: secret2(snapshot.voice.tts.apiKey),
+            apiSecret: secret2(snapshot.voice.tts.apiSecret),
+            ...clearFlags("tts"),
+            backups: backupBody("tts")
           },
-          voice: {
-            // 全局人设编辑已删除（人设只在「智能体 → 配置 → 角色」按智能体配置）；
-            // 这里把 GET 回来的原值原样传回，绝不能写成空串/undefined 把已存人设清掉。
-            systemPrompt: settings.voice.systemPrompt,
-            silenceMs: settings.voice.silenceMs,
-            llm: {
-              provider: settings.voice.llm.provider,
-              model: settings.voice.llm.model,
-              baseUrl: settings.voice.llm.baseUrl,
-              appId: settings.voice.llm.appId,
-              apiKey: secret2(settings.voice.llm.apiKey),
-              maxTokens: settings.voice.llm.maxTokens,
-              ...clearFlags("llm"),
-              backups: backupBody("llm")
-            },
-            tts: {
-              provider: settings.voice.tts.provider,
-              // 音色/模型/资源下放到智能体级：全局显式清空（服务端按厂商默认音色兜底）。
-              voice: "",
-              model: "",
-              resourceId: "",
-              rate: settings.voice.tts.rate,
-              speed: settings.voice.tts.speed,
-              // url 不在界面展示，但原值要原样传回，避免把用户手填的自建端点清掉。
-              url: settings.voice.tts.url,
-              language: settings.voice.tts.language,
-              appId: settings.voice.tts.appId,
-              apiKey: secret2(settings.voice.tts.apiKey),
-              apiSecret: secret2(settings.voice.tts.apiSecret),
-              ...clearFlags("tts"),
-              backups: backupBody("tts")
-            },
-            asr: {
-              provider: settings.voice.asr.provider,
-              url: settings.voice.asr.url,
-              language: settings.voice.asr.language,
-              accent: settings.voice.asr.accent,
-              resourceId: settings.voice.asr.resourceId,
-              appId: settings.voice.asr.appId,
-              apiKey: secret2(settings.voice.asr.apiKey),
-              apiSecret: secret2(settings.voice.asr.apiSecret),
-              ...clearFlags("asr"),
-              backups: backupBody("asr")
-            }
+          asr: {
+            provider: snapshot.voice.asr.provider,
+            url: snapshot.voice.asr.url,
+            language: snapshot.voice.asr.language,
+            accent: snapshot.voice.asr.accent,
+            resourceId: snapshot.voice.asr.resourceId,
+            appId: snapshot.voice.asr.appId,
+            apiKey: secret2(snapshot.voice.asr.apiKey),
+            apiSecret: secret2(snapshot.voice.asr.apiSecret),
+            ...clearFlags("asr"),
+            backups: backupBody("asr")
           }
-        };
-        const result = await callApi("/settings", { method: "POST", body });
-        setSettings(withBackups(result.settings));
-        setProvidersDirty(false);
-        setPrimaryClear({});
-        setConfirmDelete("");
+        }
+      };
+    };
+    const doSave = async ({ auto = false } = {}) => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      const snapshot = settingsRef.current;
+      if (!snapshot) return null;
+      const revision = revisionRef.current;
+      setSaving(true);
+      setAutoSaveError("");
+      try {
+        const result = await callApi("/settings", { method: "POST", body: buildSettingsBody(snapshot) });
+        const changedDuringSave = revisionRef.current !== revision;
+        if (!changedDuringSave) {
+          applyingServerRef.current = true;
+          setSettings(withBackups(result.settings));
+          setProvidersDirty(false);
+          setPrimaryClear({});
+          setConfirmDelete("");
+        }
         if (result.defaults) setDefaults(result.defaults);
-        notify(t("saved"));
+        if (!auto && !changedDuringSave) notify(t("saved"));
         return withBackups(result.settings);
       } catch (err) {
-        notify(`${t("actionFailed")}${err.message}`, "bad");
+        setAutoSaveError(err.message);
+        setProvidersDirty(true);
+        if (!auto) notify(`${t("actionFailed")}${err.message}`, "bad");
         return null;
       } finally {
         setSaving(false);
       }
     };
+    const save = (options = {}) => {
+      const run = () => doSave(options);
+      const next = saveChainRef.current.then(run, run);
+      saveChainRef.current = next.catch(() => {
+      });
+      return next;
+    };
+    saveRef.current = save;
     const stageCard = (stage) => {
       const primary = settings.voice?.[stage] || {};
       const health = stageHealth(stage);
@@ -3377,16 +3451,12 @@ var DshXiaozhi = (() => {
         h(
           "div",
           { className: "xz-modal-foot" },
-          h("button", { type: "button", className: "xz-btn", onClick: () => setOpenStage(null) }, t("close")),
-          h("button", {
-            type: "button",
-            className: "xz-btn primary",
-            disabled: saving,
-            onClick: async () => {
-              const saved = await save();
-              if (saved) setOpenStage(null);
-            }
-          }, saving ? "\u2026" : t("saveConfig"))
+          h(
+            "span",
+            { className: "xz-hint", style: { marginRight: "auto" } },
+            saving ? t("autoSaving") : t("autoSaved")
+          ),
+          h("button", { type: "button", className: "xz-btn", onClick: () => setOpenStage(null) }, t("close"))
         )
       )
     ) : null;
@@ -3532,14 +3602,20 @@ var DshXiaozhi = (() => {
           t("forceUpdate")
         )
       ),
-      // ---------------------------------------------------------------- 底部：sticky 保存条
+      // ---------------------------------------------------------------- 底部：自动保存状态
+      // 2026-11-08 起不再有「保存配置」按钮：改动防抖后自动落盘，这里只显示状态。
       h(
         "div",
         { className: "xz-config-footer" },
+        h(
+          "span",
+          { className: "xz-hint" },
+          autoSaveError ? `${t("autoSaveFailed")}\uFF1A${autoSaveError}` : saving ? t("autoSaving") : providersDirty ? t("autoSavePending") : t("autoSaved")
+        ),
         h("span", { className: "xz-hint" }, t("configSaveHint")),
-        h("button", { className: "xz-btn primary", disabled: saving, onClick: () => save() }, saving ? "\u2026" : t("saveConfig"))
+        autoSaveError ? h("button", { type: "button", className: "xz-btn", onClick: () => save() }, t("retry")) : null
       ),
-      // 服务商编辑弹窗（主用/备用共用）：确定只改本地状态，统一走页面底部「保存配置」。
+      // 服务商编辑弹窗（主用/备用共用）：确定只改本地状态，关闭后由防抖自动保存落盘。
       // 放在 stageModal 之后渲染：两者都是 z-index 40 的 fixed 遮罩，后挂的在上面。
       stageModal,
       editor ? h(ProviderDialog, {

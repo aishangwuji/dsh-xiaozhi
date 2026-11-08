@@ -121,9 +121,18 @@ const editModelTrigger = [...editDialog.querySelectorAll('.xz-pillselect-trigger
 const editModelText = editModelTrigger ? editModelTrigger.textContent.trim() : ''
 console.log('edit model label:', editModelText)
 
+// 自动保存：点编辑弹窗的「保存」（只改本地）后不点任何页面按钮，防抖后应自动 POST /settings。
+const postsBefore = calls.filter((call) => call.startsWith('POST') && call.includes('/settings')).length
+const editSave = [...editDialog.querySelectorAll('.xz-btn.primary')][0]
+editSave.click()
+await new Promise((resolve) => setTimeout(resolve, 900))
+const postsAfter = calls.filter((call) => call.startsWith('POST') && call.includes('/settings')).length
+console.log('auto-save posts:', postsBefore, '->', postsAfter)
+
 const failures = []
 if (addModelText !== 'deepseek-chat') failures.push(`add model placeholder = ${addModelText || '(empty)'}`)
 if (editModelText !== 'gpt-4o-mini') failures.push(`edit model label = ${editModelText || '(empty)'}`)
+if (postsAfter <= postsBefore) failures.push('auto-save did not POST /settings')
 if (failures.length) {
   console.log('FAILURES:\n' + failures.join('\n'))
   process.exit(1)

@@ -56,7 +56,7 @@ window.__ModuleLoader__.load({
 | `src/client/console/` | `Console`（导航/滚动外壳）、`XiaozhiPanel`（面板根组件） |
 | `build.mjs` | esbuild 构建脚本 |
 | `scripts/smoke-client.mjs` | 冒烟：产物加载 + slot 注册 + 主要组件 SSR 渲染 |
-| `scripts/check-config-wizard.mjs` | jsdom 交互检查：全局设置概览卡 → 弹窗 → 添加 → ⋯ → 保存并测试 |
+| `scripts/check-config-wizard.mjs` | jsdom 交互检查：全局设置概览卡 → 弹窗 → 添加 → ⋯ → 模型回显 → 自动保存 |
 
 ## 3. 构建
 
@@ -87,7 +87,7 @@ npm run smoke    # 冒烟
    三个弹窗与 `ProviderDialog`——抓渲染期的 undefined / 拼错名字。
 
 `npm run check:ui` 再用 jsdom 把全局设置点一遍：概览卡 → stage 弹窗 → 添加 → ⋯ 菜单 →
-删除二次确认 → 保存并测试（断言先 `POST /settings` 再 `/test/llm`）。它不替代浏览器验收
+删除二次确认 → 模型回显 → 自动保存（断言防抖后确实 `POST /settings`）。它不替代浏览器验收
 （样式、交互、定位仍需人眼），但能在不重启 DSH 的情况下拦住大部分改崩。
 
 ## 5. 编码约定
@@ -139,6 +139,9 @@ node --test "test/*.test.mjs"   # 196 项
   `ProviderDialog` 换成 `SchemaForm`，`core.js` 的 provider 辅助全部读描述符；
   `settings.js` 的备用白名单由描述符派生。加厂商 = 描述符 + 适配器，前端 0 改动。
   详见 `docs/provider-descriptors.md`。
+- **2026-11-08（自动保存）**：全局设置去掉底部「保存配置」和环节弹窗里的保存按钮；任何改动
+  防抖 700ms 自动 `POST /settings`，底部只显示「保存中… / 已自动保存 / 失败重试」。保存期间
+  有新改动时用 revision 判断，不用服务端回写覆盖本地；切视图卸载时立即 flush。
 - **2026-11-08（修）**：模型下拉回显。`ModelField` 把「当前值不在厂商 `/models` 清单里」的情况
   补成选项（否则显示「未选择」，看起来像模型丢了）；`PillSelect` 新增 `placeholder`，
   空值显示描述符 `modelHint`（如 `deepseek-chat`）。`npm run check:ui` 增加了这两条断言。

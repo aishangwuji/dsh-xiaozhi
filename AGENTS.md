@@ -74,7 +74,7 @@ cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
 node --test "test/*.test.mjs"          # 全量 196 项，必须全绿
 npm run build                          # src/client/** → client.js（esbuild，React 保持 external）
 npm run smoke                          # 真实 React SSR 渲染主要页面 + slot 注册校验
-npm run check:ui                       # jsdom 交互检查：概览卡 → 弹窗 → 添加 → ⋯ → 保存并测试
+npm run check:ui                       # jsdom 交互检查：概览卡 → 弹窗 → 添加 → ⋯ → 模型回显 → 自动保存
 node --check client.js                 # 构建产物语法检查
 ```
 
@@ -143,7 +143,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 | 唤醒后连不上、之前能连 | 串口 `Connecting to websocket server: ws://192.168.43.10:8989/...`；PC 的 WLAN 地址已经变成 `192.168.0.151` | 设备 NVS 里存的是上次 OTA 给的旧 IP，PC 换网段后失效（这也是加 mDNS 的直接原因） |
 | 字幕被撑出屏幕、长语音像接不住 | `voice.log` 里每轮有一串 `ws.json stt` | 服务端按 ASR 中间结果逐条推 `stt`，固件对每条 `stt` 都新建气泡（`lcd_display.cc:539`）。现在默认只发整句 |
 | 人设改了不生效 | `session.build` 的 `promptChars` 很小 | 会话每轮用 `config.systemPrompt` 重写 LLM 提示词，而 `config` 里当时没有这个字段，人设被覆盖成空串 + 记忆 |
-| 主用 Key 挂了但没切到备用 | `session.build` 的 `llmCandidates` 是 1；`voice.log` 没有 `llm.failover` | 三种可能：备用没保存（卡片只在本地、还没点「保存配置」）、设备还是上一轮连接（配置下次连接生效）、该轮 LLM 已经出了字（出字后按契约不切换） |
+| 主用 Key 挂了但没切到备用 | `session.build` 的 `llmCandidates` 是 1；`voice.log` 没有 `llm.failover` | 三种可能：备用还没自动保存完（或保存失败，看底部状态条）、设备还是上一轮连接（配置下次连接生效）、该轮 LLM 已经出了字（出字后按契约不切换） |
 | 设备显示「聆听中」、说什么都没反应 | `voice.log` 每条 utterance 只有 `asr.empty`（没有 `asr.result`）；用 TTS 合成一句话再喂 ASR 的探针能正常识别 | 2026-11-06 实际踩到：① ASR Resource ID 选了 1.0 的 `volc.bigasr.*`，与 `bigmodel_async` 端点不匹配，握手直接 403；② 旧 failover 只看 `text`，把 `finish()` 返回的 `{text:'', error}` 当成“成功但为空”，本地备用永远不启用；③ adapter 缓存 key 没带 ASR 配置，改完 Resource ID 重连仍命中旧 adapter。已修：只列 2.0 资源、`result.error` 当候选失败、缓存 key 覆盖三段全量配置 |
 | 只能聊一轮，之后一直「聆听中」 | 第一轮 `asr.result` 后，后续每句 `asr.empty`（甚至 `45000002 No audio was received`）；串口反复 `VAD end of speech, sending listen stop` | 固件只在 Speaking 收到 `tts stop` 才回 Listening；服务端对空 ASR 不回包，固件停在 Listening 反复发 stop，服务端 `capturing=false` 丢音频 → 死锁。长回答（TTS 念十几秒）时用户插话最容易触发。已修空回合收尾（`turn.empty_close`），并把默认回答长度压到 120 tokens |
 | 控制台「扩展能力」里出现英文工具名 | 卡片显示 `web_fetch`，旁边几个都是中文 | `src/client/core.js` 的 `toolLabel()` 是白名单映射，新工具没登记就原样显示工具名。2026-11-08 补了 `web_fetch → 网页抓取`；新增工具时 § 十一 第 1 条那几处要一起改 |
@@ -162,12 +162,14 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   ① **服务商**（页面主体：ASR/LLM/TTS 三张概览卡——主用厂商 + 摘要 + 密钥/备用数/降级链 + 状态点，
   点「管理」进 `xz-stage-modal`；弹窗里主用卡一整行、备用纵向列表（行内 `[编辑][⋯]`，上移/下移/测试/删除
   收进 ⋯ 展开区）、底部整行「+ 添加备用服务商」）；
-  ② **语音默认参数**；③ **接入与网关**（折叠）；底部 **sticky** 一次保存。
+  ② **语音默认参数**；③ **接入与网关**（折叠）。**没有「保存配置」按钮**：任何改动先落本地 state，
+  防抖 700ms 自动 `POST /settings`；保存期间又有改动就等下一轮，服务端回写不覆盖刚输入的值。
+  底部 sticky 只显示「保存中… / 已自动保存 / 自动保存失败 + 重试」。
   **人设不在全局设置**，只在「智能体 → 配置 → 角色」按智能体设置（`save()` 仍原样透传 systemPrompt，
   不会清掉已存值）；「配置」「设备(N)」「历史对话」都是弹窗（根层渲染，避开 card 的 backdrop-filter）；
   所有下拉是 `PillSelect` 胶囊浮层（`position:fixed`、不撑布局、可向上翻转），规范 `docs/pill-popover.md`。
-  **dirty 时测试不再禁用**：按钮变「保存并测试」，先 `POST /settings` 再按服务端顺序测（契约仍是
-  「只测已保存的配置」，只是把两步合成一次点击）。
+  **自动保存 + 测试**：未落盘时测试按钮变「保存并测试」，先 `POST /settings` 再按服务端顺序测
+  （契约仍是「只测已保存的配置」，只是把两步合成一次点击）；已自动保存时直接测。
 - 弹窗尺寸（2026-11-08 修）：控制台 4 个弹窗**一律固定外框**、只有内部区域滚动，不要再退回「max-height + 内容撑开」（父层 `align-items:center`，高度一变标题与页签就上下跳）：智能体配置 `.xz-config-modal` 720×600（页签条固定，只有 `.xz-pane` 滚动）、历史对话 `.xz-history-modal` 920×720、服务商编辑 `.xz-modal-lg` 560×460（表单区滚动）、播报测试 `.xz-inject-modal` 520×320。高度统一写 `height:min(Xpx,86~88vh)` 兜底小视口；切页签 / 换厂商 / 消息增减都不得改变外框尺寸。
 - **TTS 归属（2026-11-08）**：全局设置 → TTS 合成只配「厂商 + 凭据」（volc = API Key；xunfei = APPID/APIKey/APISecret；edge 免密钥），不配音色 / 模型 / Resource ID / API URL——全局保存时这三项显式清空。音色（= TTS 模型族）只在「智能体 → 配置 → 角色」按智能体选，首项「默认音色」= 不覆盖，留空 = 厂商默认（`src/voice/voices.js` 的 `DEFAULT_TTS_VOICES`：火山 `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan`）；`resolveTtsVoice` 负责空音色→厂商默认、跨厂商残留→回落本厂商默认、自定义 ID 原样保留。智能体级音色只覆盖主用，备用 TTS 条目只存凭据、运行时用各自厂商默认音色。
 - 控制台滚动（2026-11-07 修）：宿主面板高度不固定，`.xz-app` 由 JS 按「视口高度 - 顶端偏移」量测并设 inline height（`Console` 里的 effect，resize/view 切换时重算），`.xz-main` 加 `min-height:0;overflow:hidden`，`.xz-content` 成为唯一滚动容器（`flex:1 1 auto;min-height:0;overflow-y:auto`）。**不要再依赖宿主页面滚动**：单页配置变长后宿主不会替我们滚，表现为整页滑不动。
@@ -220,8 +222,9 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 5. **观测**：`session.build` 带 `llmCandidates` / `ttsCandidates` / `asrCandidates`（1 = 只有主用）
    与 `maxTokens`；切换记 `voice.log` 的 `llm.failover` / `tts.failover` / `asr.failover`
    （`from`/`to`/`provider`/`error`/`ms`）。
-6. **测试只测已保存配置**：`/test/provider` 的 `index` 是服务端顺序，本地改过顺序/内容时面板会
-   要求先保存；新填 Key 必须先保存才能测。ASR 没有在线测试按钮（回放成本与语义都不合适）。
+6. **测试只测已保存配置**：`/test/provider` 的 `index` 是服务端顺序。改动通常已被自动保存落盘；
+   仍有未落盘改动时按钮变「保存并测试」，先保存再测。新填 Key 等自动保存完成（或点「保存并测试」）才能测。
+   ASR 没有在线测试按钮（回放成本与语义都不合适）。
 7. **adapter 缓存 key 必须覆盖三段全量配置**（`index.js` 的 `adaptersFor`）：provider / model /
    baseUrl / url / resourceId / apiKey / backups + 智能体 overrides + 人设。漏掉任何一项都会出现
    「控制台改了配置、设备重连后仍用旧 adapter」；2026-11-06 就是漏了 ASR resourceId 导致修正后
@@ -342,7 +345,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 - **构建/冒烟**：`npm run build`（`build.mjs`，banner/footer 把 IIFE 包进 factory）；
   `npm run smoke`（`scripts/smoke-client.mjs`，真实 React SSR 渲染主要页面 + slot 注册校验）；
   `npm run check:ui`（`scripts/check-config-wizard.mjs`，jsdom 里点一遍全局设置：概览卡 → 弹窗 →
-  添加 → ⋯ 菜单 → 删除二次确认 → 保存并测试）。
+  添加 → ⋯ 菜单 → 删除二次确认 → 模型回显 → 自动保存）。
 - **生效**：build 后刷新控制台；仍加载旧产物就重启 DSH（未实测 refresh 是否足够）。
 - **不要**：手改 `client.js`；组件里直接 `import react`（统一走 `src/client/react.js`）。
 - **加组件**：放 `src/client/{views,agents,settings}/`，从 `core.js` 取 `t` / `callApi` / 常量，

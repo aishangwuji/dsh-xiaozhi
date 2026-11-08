@@ -1,4 +1,4 @@
-import { h, useState, useEffect } from '../react.js'
+import { h, useState, useEffect, useRef } from '../react.js'
 import {
   t, callApi, stageProviders, stageProviderLabel, stageDescriptor, blankBackup, withBackups,
   backupKeyState, backupTestText, primaryEditFields, OUTPUT_LANGUAGE_VALUES
@@ -34,18 +34,64 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
       const [primaryTests, setPrimaryTests] = useState({});
       const [testingPrimary, setTestingPrimary] = useState('');
       const [primaryClear, setPrimaryClear] = useState({});
+      const [autoSaveError, setAutoSaveError] = useState('');
+
+      // ------------------------------------------------------------ 自动保存（2026-11-08）
+      // 页面不再有「保存配置」按钮：任何字段改动都先落本地 state，再由下面这个 effect
+      // 防抖 700ms 自动 POST /settings。保存中又有新改动时，revision 会变，服务端回写
+      // 不覆盖本地（否则会把刚输入的字回滚），下一次防抖再提交最新值。
+      const settingsRef = useRef(null);
+      const primaryClearRef = useRef({});
+      const applyingServerRef = useRef(true); // 首次加载 / 服务端回写都不触发自动保存
+      const revisionRef = useRef(0);
+      const saveTimerRef = useRef(null);
+      const saveRef = useRef(null);
+      const saveChainRef = useRef(Promise.resolve());
+      const mountedRef = useRef(true);
+
+      primaryClearRef.current = primaryClear;
+
+      useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+      }, []);
 
       useEffect(() => {
         callApi('/settings')
           .then((data) => {
             // 旧版服务端没有 backups 字段：统一兜底成空数组，UI 不能因此白屏。
+            applyingServerRef.current = true;
             setSettings(withBackups(data.settings));
             if (data.defaults) setDefaults(data.defaults);
           })
           .catch((err) => setError(err.message));
       }, []);
 
+      // 本地改动 → 标记 dirty + 防抖自动保存。服务端回写（applyingServerRef）直接跳过。
+      useEffect(() => {
+        if (!settings) return;
+        if (applyingServerRef.current) {
+          applyingServerRef.current = false;
+          return;
+        }
+        revisionRef.current += 1;
+        setProvidersDirty(true);
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(() => {
+          saveTimerRef.current = null;
+          void saveRef.current?.({ auto: true });
+        }, 700);
+        return () => {
+          if (!saveTimerRef.current) return;
+          clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+          // 卸载（切视图）时立刻落盘，避免刚改完就切走丢改动；重渲染时只清定时器。
+          if (!mountedRef.current) void saveRef.current?.({ auto: true });
+        };
+      }, [settings]);
+
       if (!settings) return h('div', { className: 'xz-empty' }, error || '…');
+      settingsRef.current = settings;
 
       const patch = (group, values) => setSettings({ ...settings, [group]: { ...settings[group], ...values } });
       const nested = (group, key, values) =>
@@ -248,133 +294,170 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
       };
 
       /**
-       * 保存（页面底部 / 二级弹窗 / 「保存并测试」共用）。
-       * 成功返回服务端回写的 settings（带 id / 掩码），失败返回 null——调用方据此决定
-       * 要不要继续测试，且能拿到保存后的顺序，不会用旧闭包里的 index。
+       * 把当前 settings 组装成 POST /settings 的请求体。
+       * 自动保存和「保存并测试」共用；掩码一律清成空串（服务端按 id / 留空=保留处理）。
        */
-      const save = async () => {
-        setSaving(true);
-        try {
-          // A masked value is a placeholder, never a credential: sending it back
-          // would overwrite the stored secret with bullets, so strip it to "".
-          const secret = (value) => (typeof value === 'string' && value.includes('•') ? '' : value || '');
-          // 三条备用列表按契约的字段集提交；掩码同样清成空串，服务端按 id 保留旧密钥。
-          const backupBody = (stage) => backupsOf(stage).map((entry) => {
-            const base = { provider: entry.provider };
-            if (entry.id) base.id = entry.id;
-            if (stage === 'llm') {
-              return {
-                ...base,
-                model: entry.model || '',
-                baseUrl: entry.baseUrl || '',
-                appId: entry.appId || '',
-                apiKey: secret(entry.apiKey)
-              };
-            }
-            if (stage === 'tts') {
-              // 全局 TTS 只提交「厂商 + 凭据」：voice/model/resourceId/url/rate/speed 由
-              // 服务端归零（音色在智能体级选；这些字段界面已经不展示了）。
-              return {
-                ...base,
-                appId: entry.appId || '',
-                apiKey: secret(entry.apiKey),
-                apiSecret: secret(entry.apiSecret)
-              };
-            }
+      const buildSettingsBody = (snapshot) => {
+        // A masked value is a placeholder, never a credential: sending it back
+        // would overwrite the stored secret with bullets, so strip it to "".
+        const secret = (value) => (typeof value === 'string' && value.includes('•') ? '' : value || '');
+        const backupsOfSnapshot = (stage) => {
+          const list = snapshot.voice?.[stage]?.backups || [];
+          return Array.isArray(list) ? list : [];
+        };
+        // 三条备用列表按契约的字段集提交；掩码同样清成空串，服务端按 id 保留旧密钥。
+        const backupBody = (stage) => backupsOfSnapshot(stage).map((entry) => {
+          const base = { provider: entry.provider };
+          if (entry.id) base.id = entry.id;
+          if (stage === 'llm') {
             return {
               ...base,
-              url: entry.url || '',
-              language: entry.language || '',
-              accent: entry.accent || '',
-              resourceId: entry.resourceId || '',
+              model: entry.model || '',
+              baseUrl: entry.baseUrl || '',
+              appId: entry.appId || '',
+              apiKey: secret(entry.apiKey)
+            };
+          }
+          if (stage === 'tts') {
+            // 全局 TTS 只提交「厂商 + 凭据」：voice/model/resourceId/url/rate/speed 由
+            // 服务端归零（音色在智能体级选；这些字段界面已经不展示了）。
+            return {
+              ...base,
               appId: entry.appId || '',
               apiKey: secret(entry.apiKey),
               apiSecret: secret(entry.apiSecret)
             };
-          });
-          const clearFlags = (stage) => {
-            // 主用换过 provider 且没重新填密钥：显式清空，避免 settings.update 的
-            // 「留空=保留」把上一家的 Key 留在新厂商名下。
-            const flags = primaryClear[stage] || {};
-            const apiKey = settings.voice[stage]?.apiKey;
-            const apiSecret = settings.voice[stage]?.apiSecret;
-            const out = {};
-            if (flags.apiKey && !apiKey) out.clearApiKey = true;
-            if (flags.apiSecret && !apiSecret) out.clearApiSecret = true;
-            return out;
+          }
+          return {
+            ...base,
+            url: entry.url || '',
+            language: entry.language || '',
+            accent: entry.accent || '',
+            resourceId: entry.resourceId || '',
+            appId: entry.appId || '',
+            apiKey: secret(entry.apiKey),
+            apiSecret: secret(entry.apiSecret)
           };
-          const body = {
-            endpoints: {
-              lanWsUrl: settings.endpoints.lanWsUrl,
-              wanWsUrl: settings.endpoints.wanWsUrl,
-              token: secret(settings.endpoints.token)
+        });
+        const clearFlags = (stage) => {
+          // 主用换过 provider 且没重新填密钥：显式清空，避免 settings.update 的
+          // 「留空=保留」把上一家的 Key 留在新厂商名下。
+          const flags = primaryClearRef.current[stage] || {};
+          const apiKey = snapshot.voice[stage]?.apiKey;
+          const apiSecret = snapshot.voice[stage]?.apiSecret;
+          const out = {};
+          if (flags.apiKey && !apiKey) out.clearApiKey = true;
+          if (flags.apiSecret && !apiSecret) out.clearApiSecret = true;
+          return out;
+        };
+        return {
+          endpoints: {
+            lanWsUrl: snapshot.endpoints.lanWsUrl,
+            wanWsUrl: snapshot.endpoints.wanWsUrl,
+            token: secret(snapshot.endpoints.token)
+          },
+          firmware: snapshot.firmware,
+          gateway: {
+            token: secret(snapshot.gateway.token)
+          },
+          voice: {
+            // 全局人设编辑已删除（人设只在「智能体 → 配置 → 角色」按智能体配置）；
+            // 这里把 GET 回来的原值原样传回，绝不能写成空串/undefined 把已存人设清掉。
+            systemPrompt: snapshot.voice.systemPrompt,
+            silenceMs: snapshot.voice.silenceMs,
+            llm: {
+              provider: snapshot.voice.llm.provider,
+              model: snapshot.voice.llm.model,
+              baseUrl: snapshot.voice.llm.baseUrl,
+              appId: snapshot.voice.llm.appId,
+              apiKey: secret(snapshot.voice.llm.apiKey),
+              maxTokens: snapshot.voice.llm.maxTokens,
+              ...clearFlags('llm'),
+              backups: backupBody('llm')
             },
-            firmware: settings.firmware,
-            gateway: {
-              token: secret(settings.gateway.token)
+            tts: {
+              provider: snapshot.voice.tts.provider,
+              // 音色/模型/资源下放到智能体级：全局显式清空（服务端按厂商默认音色兜底）。
+              voice: '',
+              model: '',
+              resourceId: '',
+              rate: snapshot.voice.tts.rate,
+              speed: snapshot.voice.tts.speed,
+              // url 不在界面展示，但原值要原样传回，避免把用户手填的自建端点清掉。
+              url: snapshot.voice.tts.url,
+              language: snapshot.voice.tts.language,
+              appId: snapshot.voice.tts.appId,
+              apiKey: secret(snapshot.voice.tts.apiKey),
+              apiSecret: secret(snapshot.voice.tts.apiSecret),
+              ...clearFlags('tts'),
+              backups: backupBody('tts')
             },
-            voice: {
-              // 全局人设编辑已删除（人设只在「智能体 → 配置 → 角色」按智能体配置）；
-              // 这里把 GET 回来的原值原样传回，绝不能写成空串/undefined 把已存人设清掉。
-              systemPrompt: settings.voice.systemPrompt,
-              silenceMs: settings.voice.silenceMs,
-              llm: {
-                provider: settings.voice.llm.provider,
-                model: settings.voice.llm.model,
-                baseUrl: settings.voice.llm.baseUrl,
-                appId: settings.voice.llm.appId,
-                apiKey: secret(settings.voice.llm.apiKey),
-                maxTokens: settings.voice.llm.maxTokens,
-                ...clearFlags('llm'),
-                backups: backupBody('llm')
-              },
-              tts: {
-                provider: settings.voice.tts.provider,
-                // 音色/模型/资源下放到智能体级：全局显式清空（服务端按厂商默认音色兜底）。
-                voice: '',
-                model: '',
-                resourceId: '',
-                rate: settings.voice.tts.rate,
-                speed: settings.voice.tts.speed,
-                // url 不在界面展示，但原值要原样传回，避免把用户手填的自建端点清掉。
-                url: settings.voice.tts.url,
-                language: settings.voice.tts.language,
-                appId: settings.voice.tts.appId,
-                apiKey: secret(settings.voice.tts.apiKey),
-                apiSecret: secret(settings.voice.tts.apiSecret),
-                ...clearFlags('tts'),
-                backups: backupBody('tts')
-              },
-              asr: {
-                provider: settings.voice.asr.provider,
-                url: settings.voice.asr.url,
-                language: settings.voice.asr.language,
-                accent: settings.voice.asr.accent,
-                resourceId: settings.voice.asr.resourceId,
-                appId: settings.voice.asr.appId,
-                apiKey: secret(settings.voice.asr.apiKey),
-                apiSecret: secret(settings.voice.asr.apiSecret),
-                ...clearFlags('asr'),
-                backups: backupBody('asr')
-              }
+            asr: {
+              provider: snapshot.voice.asr.provider,
+              url: snapshot.voice.asr.url,
+              language: snapshot.voice.asr.language,
+              accent: snapshot.voice.asr.accent,
+              resourceId: snapshot.voice.asr.resourceId,
+              appId: snapshot.voice.asr.appId,
+              apiKey: secret(snapshot.voice.asr.apiKey),
+              apiSecret: secret(snapshot.voice.asr.apiSecret),
+              ...clearFlags('asr'),
+              backups: backupBody('asr')
             }
-          };
-          const result = await callApi('/settings', { method: 'POST', body });
-          // 保存后服务端会补 id / 掩码，本地顺序与服务端一致，测试恢复可用。
-          setSettings(withBackups(result.settings));
-          setProvidersDirty(false);
-          setPrimaryClear({});
-          setConfirmDelete('');
+          }
+        };
+      };
+
+      /**
+       * 真正提交一次。`auto` 时不弹 toast（自动保存靠底部状态条反馈）。
+       * 保存期间用户又改了（revision 变）就不回写服务端快照，避免回滚刚输入的值；
+       * 下一次防抖会把最新值再提交一次。
+       */
+      const doSave = async ({ auto = false } = {}) => {
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
+        const snapshot = settingsRef.current;
+        if (!snapshot) return null;
+        const revision = revisionRef.current;
+        setSaving(true);
+        setAutoSaveError('');
+        try {
+          const result = await callApi('/settings', { method: 'POST', body: buildSettingsBody(snapshot) });
+          const changedDuringSave = revisionRef.current !== revision;
+          if (!changedDuringSave) {
+            // 保存后服务端会补 id / 掩码，本地顺序与服务端一致，测试恢复可用。
+            applyingServerRef.current = true;
+            setSettings(withBackups(result.settings));
+            setProvidersDirty(false);
+            setPrimaryClear({});
+            setConfirmDelete('');
+          }
           if (result.defaults) setDefaults(result.defaults);
-          notify(t('saved'));
+          if (!auto && !changedDuringSave) notify(t('saved'));
           return withBackups(result.settings);
         } catch (err) {
-          notify(`${t('actionFailed')}${err.message}`, 'bad');
+          setAutoSaveError(err.message);
+          setProvidersDirty(true);
+          if (!auto) notify(`${t('actionFailed')}${err.message}`, 'bad');
           return null;
         } finally {
           setSaving(false);
         }
       };
+
+      /**
+       * 保存入口（自动保存 / 「保存并测试」共用）。串行化：上一次没回来之前不并发，
+       * 后一次排在上一次之后，保证服务端最终拿到的是最新快照。
+       */
+      const save = (options = {}) => {
+        const run = () => doSave(options);
+        const next = saveChainRef.current.then(run, run);
+        saveChainRef.current = next.catch(() => {});
+        return next;
+      };
+      saveRef.current = save;
 
       // ---------------------------------------------------------------- 一级：三个概览卡
       const stageCard = (stage) => {
@@ -439,16 +522,9 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
                   : null
               ),
               h('div', { className: 'xz-modal-foot' },
-                h('button', { type: 'button', className: 'xz-btn', onClick: () => setOpenStage(null) }, t('close')),
-                h('button', {
-                  type: 'button',
-                  className: 'xz-btn primary',
-                  disabled: saving,
-                  onClick: async () => {
-                    const saved = await save();
-                    if (saved) setOpenStage(null);
-                  }
-                }, saving ? '…' : t('saveConfig'))
+                h('span', { className: 'xz-hint', style: { marginRight: 'auto' } },
+                  saving ? t('autoSaving') : t('autoSaved')),
+                h('button', { type: 'button', className: 'xz-btn', onClick: () => setOpenStage(null) }, t('close'))
               )
             )
           )
@@ -563,12 +639,23 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
             t('forceUpdate')
           )
         ),
-        // ---------------------------------------------------------------- 底部：sticky 保存条
+        // ---------------------------------------------------------------- 底部：自动保存状态
+        // 2026-11-08 起不再有「保存配置」按钮：改动防抖后自动落盘，这里只显示状态。
         h('div', { className: 'xz-config-footer' },
+          h('span', { className: 'xz-hint' },
+            autoSaveError
+              ? `${t('autoSaveFailed')}：${autoSaveError}`
+              : saving
+                ? t('autoSaving')
+                : providersDirty
+                  ? t('autoSavePending')
+                  : t('autoSaved')),
           h('span', { className: 'xz-hint' }, t('configSaveHint')),
-          h('button', { className: 'xz-btn primary', disabled: saving, onClick: () => save() }, saving ? '…' : t('saveConfig'))
+          autoSaveError
+            ? h('button', { type: 'button', className: 'xz-btn', onClick: () => save() }, t('retry'))
+            : null
         ),
-        // 服务商编辑弹窗（主用/备用共用）：确定只改本地状态，统一走页面底部「保存配置」。
+        // 服务商编辑弹窗（主用/备用共用）：确定只改本地状态，关闭后由防抖自动保存落盘。
         // 放在 stageModal 之后渲染：两者都是 z-index 40 的 fixed 遮罩，后挂的在上面。
         stageModal,
         editor
