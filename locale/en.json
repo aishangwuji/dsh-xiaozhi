@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Xiaozhi Devices",
+    "description": "Brings ESP32 Xiaozhi speakers into Harness: zero-touch OTA bootstrap, six-digit code binding, HMAC challenge activation, and a single-session WebSocket gateway."
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "小智设备接入",
+    "description": "把 ESP32 小智音箱接入 Harness：零接触 OTA 自引导、六位激活码绑定、HMAC 挑战应答激活，以及单设备互斥的 WebSocket 长连接网关。"
+  }
+}

@@ -1,0 +1,94 @@
+- insert:
+    - id: dsh-xiaozhi
+      name: '@local/dsh-xiaozhi'
+      config:
+        host: '0.0.0.0'
+        port: 8989
+        # 设备在配网页面（192.168.4.1 → 高级设置）填「自定义 OTA 地址」指向本机，
+        # 首次轮询即登记；没有激活码、没有绑定台。
+        autoProvision: true
+        maxDevices: 1000
+        timezoneOffset: 480
+        lanNetworkCidrs:
+          - '192.168.0.0/16'
+          - '10.0.0.0/8'
+          - '172.16.0.0/12'
+          - '127.0.0.1/32'
+        endpoints:
+          lanWsUrl: ''
+          wanWsUrl: ''
+          token: ''
+        firmware:
+          version: '1.0.0'
+          url: ''
+          force: false
+        # 手表侧「服务器网关」：/health、/commands、/exec。
+        # token 留空 = /exec 整体关闭（绝不裸奔）。填好后把手表配网页的
+        # 「网关地址」填 http://<本机 LAN IP>:8989 、「网关 Token」填同一个值。
+        gateway:
+          enabled: true
+          token: ''
+          rateLimitPerMin: 30
+          authFailPerMin: 10
+          defaultTimeoutSec: 8
+          maxOutputBytes: 4096
+          commands:
+            whoami:
+              argv: ['whoami']
+              desc: '当前执行用户'
+              cwd: '.'
+            disk:
+              argv: ['powershell', '-NoProfile', '-Command', 'Get-PSDrive -PSProvider FileSystem | Select-Object Name,Used,Free']
+              desc: '各盘剩余空间'
+              cwd: '.'
+        # Realtime voice pipeline. Defaults here are the local mock set so the
+        # whole chain is runnable on a desk; switch the three providers to real
+        # ones (see README) before pointing hardware at it.
+        voice:
+          enabled: true
+          ffmpegPath: 'ffmpeg'
+          # 判停模式：device = 用固件 AFE 的 VAD（固件侧 VAD_MODE_2 + vad_min_noise_ms=300，
+          # 抗环境音；固件判到静音就发 listen stop）；energy = 老固件退回插件自判。
+          vadMode: 'device'
+          # 下面两项只在 vadMode: energy 时生效，不是原厂值（能量 VAD 自研参数）。
+          silenceMs: 400
+          minSpeechMs: 120
+          vadThreshold: 0.05
+          firstChunkChars: 14
+          pacingMarginMs: 2
+          # 排障：把每段上行 PCM 存成 WAV（%TEMP%\\dsh-xiaozhi-pcm）并记录 rms/peak。
+          dumpPcm: true
+          historyTurns: 8
+          # 采样率/帧长与原厂一致：上行 16k、下行 24k，60ms / 20ms。
+          sampleRate:
+            uplink: 16000
+            downlink: 24000
+          frameMs:
+            uplink: 60
+            downlink: 20
+          llm:
+            # 直连服务商：deepseek / mimo（小米 MiMo）/ openai / volc / spark。
+            # mimo 的认证头是 `api-key`（不是 Bearer）；模型清单从 `GET /v1/models` 实时拉取，代码不内置。
+            # 这里只是 Loader 兜底；控制台「全局设置 → LLM」保存过的值优先。
+            # 2026-11-07 起设备链路不再自动走 Harness 宿主 llm（provider: host）。
+            provider: 'mock'
+            # 语音回答长度上限（max_tokens）。参考官方服务端 agent-base-prompt.txt 的
+            # 「简短、先回答」要求，语音场景默认 120 tokens（约 60 个汉字），避免 TTS 念太久。
+            # 控制台「全局设置 → LLM」可覆盖；留空 = 用这里的值。
+            maxTokens: 120
+            temperature: 0.7
+          tts:
+            # 全局 TTS 只配「厂商 + 凭据」（2026-11-08）：音色（= TTS 模型族）归设备级，
+            # 在控制台「设备 → 配置 → 角色」按设备选，留空 = 该厂商默认音色
+            # （volc=zh_female_vv_uranus_bigtts / edge=zh-CN-XiaoxiaoNeural / xunfei=xiaoyan）。
+            # 下面这行只是 Loader 兜底：控制台保存过全局设置后 voice 会被显式清空，
+            # 改用设备级选择或厂商默认。
+            provider: 'mock'
+            voice: 'zh-CN-XiaoxiaoNeural'
+            # 输出语种（模型说什么话），与 asr.language 的「识别语言」无关。
+            # 留空 = 跟随音色；可选：普通话 / 英语 / 日语 / 粤语 / 韩语。
+            language: ''
+          asr:
+            provider: 'mock'
+            plan:
+              - '打开客厅的灯'
