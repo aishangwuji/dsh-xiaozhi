@@ -204,6 +204,9 @@ desktop\operator
 | `web_search` | 联网搜索；**固定 `need_content: true`**，回传每条结果的标题/链接/摘要/**网页正文摘录**（单条正文 ≤900 字、整批 ≤3800 字） | DeepSeek Search API（Bearer，按成功请求计费） |
 | `web_fetch` | 抓取**单个网页正文**（Markdown，≤3500 字）；搜索摘录不够、用户给了链接、要看公告/文档/价格时用 | DeepSeek Fetch API（Bearer，按成功请求计费） |
 | `get_news_from_chinanews` | 社会 / 国际 / 财经新闻播报 | 中国新闻网 RSS |
+| `get_news_from_newsnow` | 热榜新闻（澎湃/百度热搜/财联社/知乎/微博/36氪/IT之家等）；可抓上一条详情 | NewsNow 公共 API（`voice.tools.newsnow`） |
+| `get_weather` | 未来 3 天天气（城市查询 + QWeather 3d） | QWeather API（`voice.tools.weather.key`） |
+| `get_lunar` | 农历日期、干支年、生肖、星期（宜忌/节气暂不支持） | 本地 `Intl` 中国农历 |
 
 要点：
 
@@ -215,6 +218,9 @@ desktop\operator
 - 计费按**成功请求次数**（Search / Fetch 各 5 元/1000 次），`count` 不影响单价；
   Search 无结果、请求失败、超时不收费。语音链路最多 3 轮工具（`MAX_TOOL_ROUNDS`），
   搜一次再看 1–2 个页面刚好在预算内。
+- 新闻/天气配置在 `cordis.patch.yml` 的 `voice.tools`：
+  `newsnow.url` / `newsnow.sources`，`weather.key` / `weather.host`（QWeather）。
+  `weather.key` 留空时 `get_weather` 只回「未配置」，不会发请求。
 
 ### 设备侧 MCP / IoT（2026-11-08 首阶段）
 
@@ -377,7 +383,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 智能体「角色」页选「跟随音色」会删除该智能体的 `language` 覆盖、撤掉语种指令；如果只在 `cordis.patch.yml` 里写过默认语种，需要智能体上显式选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，218 项）：
+实测（`node --test "test/*.test.mjs"`，221 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -433,7 +439,7 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 218 项
+node --test "test/*.test.mjs"   # 221 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 

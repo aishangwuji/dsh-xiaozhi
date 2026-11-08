@@ -49,6 +49,15 @@
         voice:
           enabled: true
           ffmpegPath: 'ffmpeg'
+          # 服务端插件工具（官方 plugins 段）：newsnow 热榜 / QWeather 天气。
+          # weather.key 留空时 get_weather 只回“未配置”，不会发请求。
+          tools:
+            newsnow:
+              url: 'https://newsnow.busiyi.world/api/s?id='
+              sources: '澎湃新闻;百度热搜;财联社'
+            weather:
+              key: ''
+              host: 'devapi.qweather.com'
           # 判停模式：device = 用固件 AFE 的 VAD（固件侧 VAD_MODE_2 + vad_min_noise_ms=300，
           # 抗环境音；固件判到静音就发 listen stop）；energy = 老固件退回插件自判。
           vadMode: 'device'

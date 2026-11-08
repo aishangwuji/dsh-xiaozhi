@@ -188,6 +188,7 @@ export function resolveConfig(config = {}) {
     .filter((entry) => entry.includes('/'))
 
   const voiceRaw = gateway.voice && typeof gateway.voice === 'object' ? gateway.voice : {}
+  const voiceTools = voiceRaw.tools && typeof voiceRaw.tools === 'object' ? voiceRaw.tools : {}
   const voiceSampleRate = voiceRaw.sampleRate && typeof voiceRaw.sampleRate === 'object' ? voiceRaw.sampleRate : {}
   const voiceFrameMs = voiceRaw.frameMs && typeof voiceRaw.frameMs === 'object' ? voiceRaw.frameMs : {}
   const number = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback)
@@ -273,6 +274,19 @@ export function resolveConfig(config = {}) {
     voice: {
       enabled: field(voiceRaw, ['enabled'], false) === true,
       ffmpegPath: text(field(voiceRaw, ['ffmpegPath', 'ffmpeg_path'], 'ffmpeg'), 'ffmpeg') || 'ffmpeg',
+      // 服务端插件工具配置（官方 config.yaml 的 plugins 段）：目前用于 newsnow / weather。
+      tools: {
+        newsnow: {
+          url: text(field(voiceTools.newsnow ?? {}, ['url'], 'https://newsnow.busiyi.world/api/s?id=')),
+          sources: text(
+            field(voiceTools.newsnow ?? {}, ['sources', 'newsSources', 'news_sources'], '澎湃新闻;百度热搜;财联社'),
+          ),
+        },
+        weather: {
+          key: text(field(voiceTools.weather ?? {}, ['key', 'apiKey', 'api_key'], '')),
+          host: text(field(voiceTools.weather ?? {}, ['host', 'apiHost', 'api_host'], 'devapi.qweather.com')),
+        },
+      },
       systemPrompt: text(
         field(
           voiceRaw,
@@ -401,6 +415,7 @@ export function apply(ctx, config = {}) {
     web: typeof ctx.get === 'function' ? ctx.get('web') : undefined,
     // Search 用 Search 端点，Fetch 用 Fetch 端点；两者都按成功请求计费。
     searchApiKey: deepSeekToolKey,
+    toolsConfig: resolved.voice.tools,
   })
 
   // 外部 MCP server（stdio）在后台初始化；配置文件不存在时静默跳过。

@@ -207,7 +207,10 @@ import { PROVIDERS as BUNDLED_PROVIDERS, STAGE_META as BUNDLED_STAGE_META } from
         get_current_time: t('toolGetCurrentTime'),
         web_search: t('toolWebSearch'),
         web_fetch: t('toolWebFetch'),
-        get_news_from_chinanews: t('toolNews')
+        get_news_from_chinanews: t('toolNews'),
+        get_news_from_newsnow: t('toolNewsnow'),
+        get_weather: t('toolWeather'),
+        get_lunar: t('toolLunar')
       };
       return map[name] || name;
     };

@@ -403,7 +403,10 @@ var DshXiaozhi = (() => {
       get_current_time: t("toolGetCurrentTime"),
       web_search: t("toolWebSearch"),
       web_fetch: t("toolWebFetch"),
-      get_news_from_chinanews: t("toolNews")
+      get_news_from_chinanews: t("toolNews"),
+      get_news_from_newsnow: t("toolNewsnow"),
+      get_weather: t("toolWeather"),
+      get_lunar: t("toolLunar")
     };
     return map[name] || name;
   };
@@ -452,6 +455,9 @@ var DshXiaozhi = (() => {
     toolGetCurrentTime: "\u65F6\u95F4\u65E5\u671F",
     toolWebSearch: "\u8054\u7F51\u641C\u7D22",
     toolWebFetch: "\u7F51\u9875\u6293\u53D6",
+    toolNewsnow: "\u70ED\u699C\u65B0\u95FB",
+    toolWeather: "\u5929\u6C14",
+    toolLunar: "\u519C\u5386",
     toolNews: "\u65B0\u95FB\u64AD\u62A5",
     cancel: "\u53D6\u6D88",
     overview: "\u6982\u89C8",
@@ -693,6 +699,9 @@ var DshXiaozhi = (() => {
     toolGetCurrentTime: "Date & time",
     toolWebSearch: "Web search",
     toolWebFetch: "Web fetch",
+    toolNewsnow: "Trending news",
+    toolWeather: "Weather",
+    toolLunar: "Lunar calendar",
     toolNews: "News",
     cancel: "Cancel",
     overview: "Overview",

@@ -134,6 +134,7 @@ export function createToolRegistry({
   searchBaseUrl = DEEPSEEK_SEARCH_URL,
   fetchUrl = DEEPSEEK_FETCH_URL,
   fetchImpl,
+  toolsConfig = {},
   // 按设备判定某个工具是否被关闭：不同设备的扩展能力互相隔离。
   isDisabled = () => false,
 } = {}) {
@@ -147,6 +148,235 @@ export function createToolRegistry({
   const currentSearchKey = () =>
     typeof searchApiKey === 'function' ? String(searchApiKey() ?? '') : String(searchApiKey ?? '')
   const hasRemoteSearch = () => Boolean(currentSearchKey()) && typeof doFetch === 'function'
+
+  // 官方 newsnow 的新闻源映射（只收常用的一批，未知名字按原样当 id）。
+  const NEWSNOW_CHANNELS = {
+    V2EX: 'v2ex-share',
+    知乎: 'zhihu',
+    微博: 'weibo',
+    联合早报: 'zaobao',
+    酷安: 'coolapk',
+    华尔街见闻: 'wallstreetcn-quick',
+    '36氪': '36kr-quick',
+    抖音: 'douyin',
+    虎扑: 'hupu',
+    百度贴吧: 'tieba',
+    今日头条: 'toutiao',
+    'IT之家': 'ithome',
+    澎湃新闻: 'thepaper',
+    参考消息: 'cankaoxiaoxi',
+    财联社: 'cls-depth',
+    雪球: 'xueqiu-hotstock',
+    'Hacker News': 'hackernews',
+    'Product Hunt': 'producthunt',
+    GitHub: 'github-trending-today',
+    哔哩哔哩: 'bilibili-hot-search',
+    百度热搜: 'baidu',
+    少数派: 'sspai',
+    稀土掘金: 'juejin',
+    凤凰网: 'ifeng',
+  }
+  const lastNewsByDevice = new Map()
+
+  const stripHtml = (html) =>
+    String(html ?? '')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+  const fetchJson = async (url, { signal, timeoutMs = 8000 } = {}) => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    timer.unref?.()
+    const onAbort = () => controller.abort()
+    signal?.addEventListener?.('abort', onAbort, { once: true })
+    try {
+      const response = await doFetch(url, {
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; dsh-xiaozhi/1.0)' },
+        signal: controller.signal,
+      })
+      if (!response.ok) return { error: `HTTP ${response.status}` }
+      return { data: await response.json() }
+    } catch (error) {
+      return { error: error?.message ?? String(error) }
+    } finally {
+      clearTimeout(timer)
+      signal?.removeEventListener?.('abort', onAbort)
+    }
+  }
+
+  register({
+    name: 'get_lunar',
+    description:
+      '查询农历日期、干支年、生肖与星期。用户问“今天农历多少”“某天农历”时用；' +
+      '宜忌/节气/八字等完整黄历信息当前不提供。',
+    parameters: {
+      type: 'object',
+      properties: {
+        date: { type: 'string', description: 'YYYY-MM-DD；不传用今天' },
+        query: { type: 'string', description: '想查的内容，例如农历日期、干支、生肖' },
+      },
+      additionalProperties: false,
+    },
+    async run({ date, query } = {}) {
+      const now = date ? new Date(`${date}T12:00:00+08:00`) : clock()
+      if (Number.isNaN(now.getTime())) return '日期格式错误，请使用 YYYY-MM-DD，例如 2026-11-08'
+      let parts = []
+      try {
+        parts = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          weekday: 'long',
+        }).formatToParts(now)
+      } catch {
+        return `无法获取农历：当前运行环境不支持中国农历日历（${now.toISOString().slice(0, 10)}）`
+      }
+      const get = (type) => parts.find((part) => part.type === type)?.value ?? ''
+      const yearName = get('yearName')
+      const branch = yearName.slice(-1)
+      const zodiac = '子鼠丑牛寅虎卯兔辰龙巳蛇午马未羊申猴酉鸡戌狗亥猪'
+      const zodiacIndex = zodiac.indexOf(branch)
+      const animal = zodiacIndex >= 0 ? zodiac[zodiacIndex + 1] : ''
+      return [
+        `农历：${get('relatedYear')}${yearName}年${get('month')}${get('day')}`,
+        `干支年：${yearName}`,
+        animal ? `生肖：${animal}` : '',
+        get('weekday') ? `星期：${get('weekday')}` : '',
+        query ? `（${query}：当前仅提供农历/干支/生肖/星期，宜忌与节气暂不支持）` : '',
+      ].filter(Boolean).join('\n')
+    },
+  })
+
+  if (doFetch) {
+    register({
+      name: 'get_news_from_newsnow',
+      description:
+        '当用户要求查看或收听新闻时调用（如“来条新闻”“今天有什么新闻”）。' +
+        '可指定新闻源（澎湃新闻、百度热搜、财联社、知乎、微博、36氪、IT之家等）；不指定时用默认源。',
+      parameters: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', description: '新闻源中文名，例如 澎湃新闻 / 百度热搜 / 财联社' },
+          detail: { type: 'boolean', description: 'true = 抓取上一条新闻的详细正文' },
+          lang: { type: 'string', description: '语言 code，默认 zh_CN' },
+        },
+        additionalProperties: false,
+      },
+      async run({ source = '', detail = false, lang = 'zh_CN' } = {}, { signal, deviceId } = {}) {
+        const key = deviceId || ''
+        if (detail === true || String(detail).toLowerCase() === 'true') {
+          const last = lastNewsByDevice.get(key)
+          if (!last?.url) return '还没有上一条新闻，先让我播一条新闻吧'
+          const controller = new AbortController()
+          const timer = setTimeout(() => controller.abort(), 8000)
+          timer.unref?.()
+          try {
+            const response = await doFetch(last.url, {
+              headers: { 'user-agent': 'Mozilla/5.0 (compatible; dsh-xiaozhi/1.0)' },
+              signal: controller.signal,
+            })
+            if (!response.ok) return `新闻详情返回 HTTP ${response.status}`
+            const text = stripHtml(await response.text()).slice(0, 3000)
+            return text || '无法解析新闻详情内容'
+          } catch (error) {
+            return `获取新闻详情失败：${error?.message ?? error}`
+          } finally {
+            clearTimeout(timer)
+          }
+        }
+        const config = toolsConfig.newsnow ?? {}
+        const configured = String(config.sources ?? '澎湃新闻;百度热搜;财联社')
+          .split(';')
+          .map((item) => item.trim())
+          .filter(Boolean)
+        const picked =
+          String(source || '').trim() ||
+          configured[Math.floor(Math.random() * Math.max(1, configured.length))] ||
+          '澎湃新闻'
+        const id = NEWSNOW_CHANNELS[picked] ?? picked
+        const base = String(config.url || 'https://newsnow.busiyi.world/api/s?id=')
+        const url = base.includes('{source}')
+          ? base.replace('{source}', encodeURIComponent(id))
+          : (() => {
+              const target = new URL(base)
+              target.searchParams.set('id', id)
+              return target.toString()
+            })()
+        const { data, error } = await fetchJson(url, { signal })
+        if (error) return `新闻源请求失败：${error}`
+        const items = Array.isArray(data?.items) ? data.items.filter((item) => item && item.title) : []
+        if (items.length === 0) return `新闻源 ${picked} 暂时没有内容`
+        const item = items[Math.floor(Math.random() * items.length)]
+        lastNewsByDevice.set(key, { title: item.title, url: item.url ?? item.mobileUrl ?? '' })
+        const extra = String(item.extra ?? item.desc ?? '').trim()
+        return [
+          `【${picked}】${item.title}`,
+          extra ? `摘要：${extra.slice(0, 200)}` : '',
+          lang && lang !== 'zh_CN' ? `（lang=${lang}）` : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      },
+    })
+
+    register({
+      name: 'get_weather',
+      description:
+        '获取某个地点的天气。用户提供位置（例如杭州）时调用；不提供位置时先问清楚，不要猜。' +
+        '返回未来 3 天天气。',
+      parameters: {
+        type: 'object',
+        properties: {
+          location: { type: 'string', description: '地点名，例如杭州' },
+          lang: { type: 'string', description: '语言 code，默认 zh_CN' },
+        },
+        required: ['location'],
+        additionalProperties: false,
+      },
+      async run({ location = '', lang = 'zh_CN' } = {}, { signal } = {}) {
+        const config = toolsConfig.weather ?? {}
+        const apiKey = String(config.key ?? '').trim()
+        if (!apiKey) return '天气工具未配置：请在 voice.tools.weather.key 填入 QWeather API Key'
+        const city = String(location ?? '').trim()
+        if (!city) return '请告诉我城市名，例如“杭州天气”'
+        const host = String(config.host ?? 'devapi.qweather.com').replace(/^https?:\/\//, '').replace(/\/$/, '')
+        const lookup = await fetchJson(
+          `https://${host}/geo/v2/city/lookup?key=${encodeURIComponent(apiKey)}&location=${encodeURIComponent(city)}&lang=zh&number=1`,
+          { signal },
+        )
+        if (lookup.error) return `城市查询失败：${lookup.error}`
+        if (lookup.data?.code !== '200') return `城市查询失败：${lookup.data?.code ?? '未知错误'}`
+        const place = Array.isArray(lookup.data.location) ? lookup.data.location[0] : null
+        if (!place?.id) return `没有找到城市“${city}”`
+        const forecast = await fetchJson(
+          `https://${host}/v7/weather/3d?key=${encodeURIComponent(apiKey)}&location=${encodeURIComponent(place.id)}&lang=zh`,
+          { signal },
+        )
+        if (forecast.error) return `天气查询失败：${forecast.error}`
+        if (forecast.data?.code !== '200') return `天气查询失败：${forecast.data?.code ?? '未知错误'}`
+        const days = Array.isArray(forecast.data.daily) ? forecast.data.daily.slice(0, 3) : []
+        if (days.length === 0) return `没有取到 ${place.name ?? city} 的天气`
+        return [
+          `${place.name ?? city}未来 ${days.length} 天天气：`,
+          ...days.map(
+            (day) =>
+              `${day.fxDate ?? ''} ${day.textDay ?? ''} ${day.tempMin ?? '?'}~${day.tempMax ?? '?'}℃ ${day.windDirDay ?? ''}${day.windScaleDay ?? ''}级`,
+          ),
+          lang && lang !== 'zh_CN' ? `（lang=${lang}）` : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      },
+    })
+  }
 
   function register(tool) {
     if (!tool?.name || typeof tool.run !== 'function') {
@@ -307,8 +537,7 @@ export function createToolRegistry({
 
   if (doFetch) {
     register({
-      name: 'get_news_from_chinanews',
-      description:
+      name: 'get_news_from_chinanews',      description:
         '当用户要求查看或收听新闻时调用（如“来条新闻”“今天有什么新闻”）。' +
         '可以指定类别：社会、国际、财经；不指定时是社会新闻。',
       parameters: {

@@ -140,7 +140,7 @@
 ## 8. 验收
 
 ```powershell
-node --test "test/*.test.mjs"   # 218 项，含 test/providers.test.mjs 6 项 + /providers 路由
+node --test "test/*.test.mjs"   # 221 项，含 test/providers.test.mjs 6 项 + /providers 路由
 npm run build
 npm run smoke                   # 描述符表单矩阵：llm/deepseek、tts/xunfei、tts/edge、asr/volc、asr/xunfei、asr/local
 npm run check:ui                # 全局设置交互
