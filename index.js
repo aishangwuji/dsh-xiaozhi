@@ -27,6 +27,7 @@ import { createMemoryStore } from './src/memory.js'
 import { AgentStore, adoptLegacyDevices, nextAgentName } from './src/agents.js'
 import { createToolRegistry } from './src/tools.js'
 import { createMcpManager } from './src/mcp/manager.js'
+import { InboundMcpRegistry } from './src/mcp/inbound.js'
 import { createGateway } from './src/gateway.js'
 import { createIngress } from './src/ingress.js'
 import { startMdns } from './src/mdns.js'
@@ -205,6 +206,10 @@ export function resolveConfig(config = {}) {
     mcpEndpoint:
       text(field(root, ['mcpEndpoint', 'mcp_endpoint'], '')) ||
       text(field(voiceRaw, ['mcpEndpoint', 'mcp_endpoint'], '')),
+    // 入站 /mcp 的共享 token；留空 = 不开放入站通道。
+    mcpToken:
+      text(field(root, ['mcpToken', 'mcp_token'], '')) ||
+      text(field(voiceRaw, ['mcpToken', 'mcp_token'], '')),
     onboarding: {
       // First contact registers the device. Disabling this turns the ingress into
       // an allow-list that only accepts devices already in the roster.
@@ -428,6 +433,10 @@ export function apply(ctx, config = {}) {
   void mcpManager.initialize().catch((error) => {
     logger.warn?.(`dsh-xiaozhi: external MCP init failed: ${error.message}`)
   })
+
+  // 入站 `/mcp`：游戏/外部 MCP server 连进来注册工具。
+  const inboundMcp = new InboundMcpRegistry({ logger })
+  toolRegistry.setInbound(inboundMcp)
 
   const store = new DeviceStore({
     file: join(resolved.dataRoot, 'devices.json'),
@@ -743,6 +752,7 @@ export function apply(ctx, config = {}) {
     store,
     hub,
     logger,
+    inboundMcp,
   })
   const control = createControlHandler({
     store,
@@ -976,6 +986,7 @@ export function apply(ctx, config = {}) {
       clearInterval(sweeper)
       mdns?.stop()
       mcpManager.close()
+      inboundMcp.close()
       hub.dispose()
       await ingress.close()
     }

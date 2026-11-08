@@ -10,6 +10,7 @@ import { createControlHandler } from '../src/control.js'
 import { AgentStore, adoptLegacyDevices, nextAgentName } from '../src/agents.js'
 import { createGateway } from '../src/gateway.js'
 import { createIngress } from '../src/ingress.js'
+import { InboundMcpRegistry } from '../src/mcp/inbound.js'
 import { SettingsStore } from '../src/settings.js'
 import { DeviceStore } from '../src/store.js'
 import { openWebSocket } from './ws-client.mjs'
@@ -68,7 +69,7 @@ function baseConfig(dir, overrides = {}) {
   }
 }
 
-async function startHarness(overrides = {}) {
+async function startHarness(overrides = {}, { inboundMcp } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-xiaozhi-http-'))
   const config = baseConfig(dir, overrides)
   const store = new DeviceStore({ file: join(dir, 'devices.json'), logger: silent })
@@ -84,7 +85,7 @@ async function startHarness(overrides = {}) {
   await adoptLegacyDevices({ devices: store, agents, logger: silent })
   const hub = new ConnectionHub({ logger: silent })
   const gatewayRef = { current: createGateway({ config: config.gateway, logger: silent }) }
-  const ingress = createIngress({ config: { ...config, gatewayRef }, store, hub, logger: silent })
+  const ingress = createIngress({ config: { ...config, gatewayRef }, store, hub, logger: silent, inboundMcp })
   await ingress.listen()
   const port = ingress.server.address().port
   const base = `http://127.0.0.1:${port}`
@@ -547,6 +548,44 @@ test('GET /voices falls back to the built-in catalog without Volc AK/SK', async 
     assert.equal(body.source, 'catalog')
     assert.ok(Array.isArray(body.options.volc) && body.options.volc.length > 0)
   } finally {
+    await harness.dispose()
+  }
+})
+
+test('inbound /mcp rejects a bad token and registers tools for a valid channel', async () => {
+  const inbound = new InboundMcpRegistry({ logger: silent })
+  const harness = await startHarness({ mcpToken: 'mcp-secret' }, { inboundMcp: inbound })
+  try {
+    const bad = await openWebSocket({ port: harness.port, path: '/mcp?token=nope' })
+    assert.equal(bad.status, 401)
+    const good = await openWebSocket({ port: harness.port, path: '/mcp?token=mcp-secret&agentId=game' })
+    assert.equal(good.status, 101)
+    try {
+      const init = JSON.parse(await good.ws.nextText())
+      assert.equal(init.method, 'initialize')
+      good.ws.sendJson({
+        jsonrpc: '2.0',
+        id: init.id,
+        result: { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'game', version: '1' } },
+      })
+      const notification = JSON.parse(await good.ws.nextText())
+      assert.equal(notification.method, 'notifications/initialized')
+      const list = JSON.parse(await good.ws.nextText())
+      assert.equal(list.method, 'tools/list')
+      good.ws.sendJson({
+        jsonrpc: '2.0',
+        id: list.id,
+        result: {
+          tools: [{ name: 'echo', description: 'echo', inputSchema: { type: 'object', properties: {} } }],
+        },
+      })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      assert.equal(inbound.has('echo'), true)
+    } finally {
+      good.ws.destroy()
+    }
+  } finally {
+    inbound.close()
     await harness.dispose()
   }
 })

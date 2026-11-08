@@ -58,6 +58,11 @@ export class TestWebSocket extends EventEmitter {
     this.sendText(JSON.stringify(value))
   }
 
+  /** Feed bytes that arrived together with the 101 response. */
+  feed(chunk) {
+    this.#onData(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+
   sendText(text) {
     this.socket.write(encodeClientFrame(0x1, text))
   }
@@ -230,6 +235,6 @@ export async function openWebSocket({ port, host = '127.0.0.1', path = '/xiaozhi
   }
 
   const client = new TestWebSocket(socket)
-  if (rest.length > 0) client.buffer = rest
+  if (rest.length > 0) client.feed(rest)
   return { status, ws: client, body: null }
 }

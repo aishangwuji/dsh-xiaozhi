@@ -11,6 +11,8 @@
         timezoneOffset: 480
         # 出站 MCP 接入点（官方 mcp_endpoint）：ws://.../mcp/...；留空 = 不连接。
         mcpEndpoint: ''
+        # 入站 /mcp 的共享 token（游戏/外部 MCP server 注册工具）；留空 = 不开放。
+        mcpToken: ''
         lanNetworkCidrs:
           - '192.168.0.0/16'
           - '10.0.0.0/8'

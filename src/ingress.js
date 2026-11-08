@@ -19,6 +19,7 @@ import { clientIp, isPrivateAddress, readFirmwareVersion, readIdentity } from '.
 import { DeviceStoreError } from './store.js'
 import { VoiceSession } from './voice/session.js'
 import { acceptUpgrade, CLOSE_CODE, rejectUpgrade, UpgradeRejection } from './ws.js'
+import { InboundMcpChannel } from './mcp/inbound.js'
 import { trace } from './voice/trace.js'
 
 const MAX_JSON_BODY = 16 * 1024
@@ -75,7 +76,7 @@ function sanitizeAudioParams(raw) {
   }
 }
 
-export function createIngress({ config, store, hub, logger, clock = () => Date.now() }) {
+export function createIngress({ config, store, hub, logger, inboundMcp, clock = () => Date.now() }) {
   const startedAt = clock()
   const ready = store.load()
   const sessions = new Map()
@@ -167,6 +168,44 @@ export function createIngress({ config, store, hub, logger, clock = () => Date.n
     sendJson(res, 200, { ok: true, activated: true, message: '本服务不使用激活码，设备可直接连接' })
   }
 
+  async function handleInboundMcpUpgrade(req, socket, head, url) {
+    if (!inboundMcp) {
+      rejectUpgrade(socket, 503, { error: { code: 'mcp-disabled', message: 'MCP 入站未启用' } })
+      return
+    }
+    const expected = String(config.mcpToken ?? '')
+    if (!expected) {
+      logger.warn?.('dsh-xiaozhi: rejected /mcp upgrade because mcpToken is empty')
+      rejectUpgrade(socket, 503, { error: { code: 'mcp-token-required', message: '未配置 mcpToken' } })
+      return
+    }
+    const token = String(url.searchParams.get('token') ?? '')
+    if (token !== expected) {
+      logger.warn?.(`dsh-xiaozhi: rejected /mcp upgrade with bad token (${clientIp(req)})`)
+      rejectUpgrade(socket, 401, { error: { code: 'mcp-unauthorized', message: 'token 无效' } })
+      return
+    }
+    const agentId = String(url.searchParams.get('agentId') || url.searchParams.get('agent') || 'default').slice(0, 64)
+    let connection
+    try {
+      connection = acceptUpgrade(req, socket, head, { maxPayload: config.maxFrameBytes })
+    } catch (error) {
+      if (error instanceof UpgradeRejection) rejectUpgrade(socket, error.status, error.body)
+      else socket.destroy?.()
+      return
+    }
+    const channel = new InboundMcpChannel({
+      send: (text) => connection.sendText(text),
+      logger,
+    })
+    connection.on('message', (payload, isBinary) => {
+      if (!isBinary) channel.handleText(payload)
+    })
+    connection.on('close', () => inboundMcp.remove(agentId))
+    logger.info?.(`dsh-xiaozhi: inbound MCP connected agent=${agentId} (${clientIp(req)})`)
+    void inboundMcp.add(agentId, channel)
+  }
+
   function handleUpgrade(req, socket, head) {
     void (async () => {
       let url
@@ -174,6 +213,10 @@ export function createIngress({ config, store, hub, logger, clock = () => Date.n
         url = new URL(req.url ?? '/', 'http://localhost')
       } catch {
         rejectUpgrade(socket, 400, { error: 'malformed request target' })
+        return
+      }
+      if (url.pathname === '/mcp' || url.pathname === '/mcp/') {
+        await handleInboundMcpUpgrade(req, socket, head, url)
         return
       }
       const identity = readIdentity(req, url)

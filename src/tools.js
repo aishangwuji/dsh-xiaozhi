@@ -139,8 +139,9 @@ export function createToolRegistry({
   isDisabled = () => false,
 } = {}) {
   const tools = new Map()
-  // 外部 MCP server 工具（`src/mcp/manager.js`）在启动后异步接入；这里只做合并。
+  // 外部 MCP server 工具（`src/mcp/manager.js`）与入站 `/mcp` 工具在启动后异步接入；这里只做合并。
   let external = null
+  let inbound = null
   const doFetch = fetchImpl ?? globalThis.fetch
   const hasLocalSearch = typeof web?.search === 'function'
   const hasLocalFetch = typeof web?.fetch === 'function'
@@ -573,11 +574,21 @@ export function createToolRegistry({
   }
 
   return {
-    names: () => [...tools.keys(), ...(external?.definitions?.() ?? []).map((tool) => tool.function?.name).filter(Boolean)],
+    names: () =>
+      [
+        ...tools.keys(),
+        ...(external?.definitions?.() ?? []).map((tool) => tool.function?.name),
+        ...(inbound?.definitions?.() ?? []).map((tool) => tool.function?.name),
+      ].filter(Boolean),
 
     /** 外部 MCP 管理器（可为空；启动后异步注入）。 */
     setExternal(manager) {
       external = manager
+    },
+
+    /** 入站 `/mcp` 工具注册表（可为空；连接建立后异步注入）。 */
+    setInbound(registry) {
+      inbound = registry
     },
 
     /** 控制台展示用：名字、分类与说明。 */
@@ -596,7 +607,17 @@ export function createToolRegistry({
         description: tool.function?.description ?? '',
         enabled: true,
       }))
-      return [...builtins, ...externalTools.filter((tool) => tool.name && !builtins.some((item) => item.name === tool.name))]
+      const inboundTools = (inbound?.definitions?.() ?? []).map((tool) => ({
+        name: tool.function?.name ?? '',
+        toolType: 'mcp',
+        action: 'reqlm',
+        description: tool.function?.description ?? '',
+        enabled: true,
+      }))
+      const extra = [...externalTools, ...inboundTools].filter(
+        (tool) => tool.name && !builtins.some((item) => item.name === tool.name),
+      )
+      return [...builtins, ...extra]
     },
 
     isEnabled: (name, deviceId) => !isDisabled(name, deviceId),
@@ -612,7 +633,9 @@ export function createToolRegistry({
       }))
       const names = new Set(builtins.map((tool) => tool.function.name))
       const externalTools = (external?.definitions?.() ?? []).filter((tool) => !names.has(tool.function?.name))
-      return [...builtins, ...externalTools]
+      for (const tool of externalTools) names.add(tool.function.name)
+      const inboundTools = (inbound?.definitions?.() ?? []).filter((tool) => !names.has(tool.function?.name))
+      return [...builtins, ...externalTools, ...inboundTools]
     },
 
     /** `{ output, action, response }`；失败也返回文本，让模型自己圆场。 */
@@ -621,6 +644,14 @@ export function createToolRegistry({
       if (!tool && external?.has?.(name)) {
         try {
           const value = await external.execute(name, args ?? {})
+          return { output: String(value ?? '').slice(0, 4000), action: 'reqlm', response: '' }
+        } catch (error) {
+          return { output: `工具 ${name} 执行失败：${error?.message ?? error}`, action: 'reqlm', response: '' }
+        }
+      }
+      if (!tool && inbound?.has?.(name)) {
+        try {
+          const value = await inbound.execute(name, args ?? {})
           return { output: String(value ?? '').slice(0, 4000), action: 'reqlm', response: '' }
         } catch (error) {
           return { output: `工具 ${name} 执行失败：${error?.message ?? error}`, action: 'reqlm', response: '' }

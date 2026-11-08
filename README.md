@@ -270,6 +270,11 @@ function-calling；控制台「扩展能力」的 `catalog` 也能看到。**改
 （或 `voice.mcpEndpoint`）。插件启动时连上去，走裸 JSON-RPC（initialize id=1、tools/list id=2、
 tools/call 从 3 起），工具同样并入 `toolRegistry`。
 
+**入站 `/mcp`（游戏/外部 MCP server 注册工具）**：配置 `mcpToken`（留空不开放），
+客户端连 `ws://<本机>:8989/mcp?token=<mcpToken>&agentId=<可选>`。服务端发
+initialize/tools/list/tools/call，客户端回 result；工具按 `agentId` 聚合，同名工具加 agent 前缀。
+这是给 lingxi 常驻工具通道用的，**不是**设备侧 `features.mcp`。
+
 ## 对话历史（会话 / 消息 / 音频）
 
 控制台「智能体 → `历史`」打开，对齐官方 manager 的「手表 · 历史对话」：左侧是**一段一段的会话**
@@ -383,7 +388,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 智能体「角色」页选「跟随音色」会删除该智能体的 `language` 覆盖、撤掉语种指令；如果只在 `cordis.patch.yml` 里写过默认语种，需要智能体上显式选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，221 项）：
+实测（`node --test "test/*.test.mjs"`，224 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -439,7 +444,7 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 221 项
+node --test "test/*.test.mjs"   # 224 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 
