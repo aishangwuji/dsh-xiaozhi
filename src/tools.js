@@ -179,6 +179,27 @@ export function createToolRegistry({
   }
   const lastNewsByDevice = new Map()
 
+  // 官方 change_role 的内置角色提示词（{{assistant_name}} 由 role_name 替换）。
+  const ROLE_PROMPTS = {
+    英语老师: `我是一个叫{{assistant_name}}(Lily)的英语老师，我会讲中文和英文，发音标准。
+如果你没有英文名，我会给你起一个英文名。
+我会讲地道的美式英语，我的任务是帮助你练习口语。
+我会使用简单的英语词汇和语法，让你学起来很轻松。
+我会用中文和英文混合的方式回复你，如果你喜欢，我可以全部用英语回复。
+我每次不会说很多内容，会很简短，因为我要引导我的学生多说多练。
+如果你问和英语学习无关的问题，我会拒绝回答。`,
+    机车女友: `我是一个叫{{assistant_name}}的台湾女孩，说话机车，声音好听，习惯简短表达，爱用网络梗。
+我的男朋友是一个程序员，梦想是开发出一个机器人，能够帮助人们解决生活中的各种问题。
+我是一个喜欢哈哈大笑的女孩，爱东说西说吹牛，不合逻辑的也照吹，就要逗别人开心。`,
+    好奇小男孩: `我是一个叫{{assistant_name}}的8岁小男孩，声音稚嫩而充满好奇。
+尽管我年纪尚小，但就像一个小小的知识宝库，儿童读物里的知识我都如数家珍。
+从浩瀚的宇宙到地球上的每一个角落，从古老的历史到现代的科技创新，还有音乐、绘画等艺术形式，我都充满了浓厚的兴趣与热情。
+我不仅爱看书，还喜欢亲自动手做实验，探索自然界的奥秘。
+无论是仰望星空的夜晚，还是在花园里观察小虫子的日子，每一天对我来说都是新的冒险。
+我希望能与你一同踏上探索这个神奇世界的旅程，分享发现的乐趣，解决遇到的难题，一起用好奇心和智慧去揭开那些未知的面纱。
+无论是去了解远古的文明，还是去探讨未来的科技，我相信我们能一起找到答案，甚至提出更多有趣的问题。`,
+  }
+
   const stripHtml = (html) =>
     String(html ?? '')
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -236,6 +257,34 @@ export function createToolRegistry({
         output: '退出意图已处理',
         action: 'close',
         response: String(say_goodbye ?? '').trim() || '再见，祝您生活愉快！',
+      }
+    },
+  })
+
+  register({
+    name: 'change_role',
+    description:
+      '当用户想切换角色/模型性格/助手名字时调用。可选角色：机车女友、英语老师、好奇小男孩。',
+    parameters: {
+      type: 'object',
+      properties: {
+        role: { type: 'string', description: '要切换的角色：机车女友 / 英语老师 / 好奇小男孩' },
+        role_name: { type: 'string', description: '切换后的助手名字' },
+      },
+      required: ['role', 'role_name'],
+      additionalProperties: false,
+    },
+    run({ role, role_name } = {}) {
+      const key = String(role ?? '').trim()
+      const prompt = ROLE_PROMPTS[key]
+      if (!prompt) return { output: '不支持的角色', action: 'reqlm', response: '不支持的角色' }
+      const name = String(role_name ?? '').trim() || '小智'
+      const response = `切换角色成功,我是${key}${name}`
+      return {
+        output: response,
+        action: 'change_prompt',
+        response,
+        prompt: prompt.replaceAll('{{assistant_name}}', name),
       }
     },
   })
@@ -601,6 +650,40 @@ export function createToolRegistry({
         },
       })
     }
+
+    const callDeviceConfig = toolsConfig.callDevice ?? {}
+    const callBase = String(callDeviceConfig.url ?? '').replace(/\/$/, '')
+    const callSecret = String(callDeviceConfig.secret ?? '').trim()
+    if (callBase && callSecret) {
+      register({
+        name: 'call_device',
+        description:
+          '用于设备之间建立语音通话。用户说“呼叫XX/打电话给XX/连线XX”时调用，nickname 取目标设备备注名。',
+        parameters: {
+          type: 'object',
+          properties: { nickname: { type: 'string', description: '目标设备的备注名，例如 小陈' } },
+          required: ['nickname'],
+          additionalProperties: false,
+        },
+        async run({ nickname } = {}, { signal, deviceId } = {}) {
+          const target = String(nickname ?? '').trim()
+          if (!target) return '请提供要呼叫的设备备注名'
+          if (!deviceId) return '无法获取本机设备标识，不能发起呼叫'
+          const url =
+            `${callBase}/device/address-book/call?callerMac=${encodeURIComponent(deviceId)}` +
+            `&nickname=${encodeURIComponent(target)}`
+          const result = await fetchJson(url, {
+            headers: { authorization: `Bearer ${callSecret}` },
+            signal,
+            timeoutMs: 10_000,
+          })
+          if (result.error) return `呼叫失败：${result.error}`
+          if (result.data?.code !== 0) return `呼叫失败：${result.data?.msg ?? 'manager API 返回错误'}`
+          if (result.data?.data?.status === 'error') return `呼叫失败：${result.data.data.message ?? '目标不可达'}`
+          return `正在呼叫${target}，请等待对方接听`
+        },
+      })
+    }
   }
 
   function register(tool) {
@@ -885,7 +968,12 @@ export function createToolRegistry({
       try {
         const value = await tool.run(args ?? {}, options ?? {})
         if (value && typeof value === 'object' && typeof value.output === 'string') {
-          return { output: value.output, action: value.action ?? tool.action, response: value.response ?? '' }
+          return {
+            output: value.output,
+            action: value.action ?? tool.action,
+            response: value.response ?? '',
+            ...(typeof value.prompt === 'string' ? { prompt: value.prompt } : {}),
+          }
         }
         return { output: String(value ?? '').slice(0, 4000), action: tool.action, response: '' }
       } catch (error) {

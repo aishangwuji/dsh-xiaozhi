@@ -20,6 +20,33 @@ test('get_lunar returns lunar date, sexagenary year and zodiac', async () => {
   assert.match(out, /生肖：马/)
 })
 
+test('change_role returns a prompt switch and the assistant name is substituted', async () => {
+  const registry = createToolRegistry()
+  const result = await registry.invoke('change_role', { role: '英语老师', role_name: 'Lily' })
+  assert.equal(result.action, 'change_prompt')
+  assert.match(result.response, /英语老师Lily/)
+  assert.match(result.prompt, /叫Lily/)
+  assert.match(result.prompt, /英语老师/)
+  const unsupported = await registry.invoke('change_role', { role: '不存在的角色', role_name: 'X' })
+  assert.match(unsupported.output, /不支持的角色/)
+})
+
+test('call_device asks the manager API with callerMac and nickname', async () => {
+  let request
+  const registry = createToolRegistry({
+    toolsConfig: { callDevice: { url: 'http://manager.local/api', secret: 's3cret' } },
+    fetchImpl: async (url, init) => {
+      request = { url, init }
+      return { ok: true, async json() { return { code: 0, data: { status: 'ok' } } } }
+    },
+  })
+  const out = await registry.execute('call_device', { nickname: '小陈' }, { deviceId: 'AA:BB:CC' })
+  assert.match(out, /正在呼叫小陈/)
+  assert.match(request.url, /callerMac=AA%3ABB%3ACC/)
+  assert.match(request.url, /nickname=%E5%B0%8F%E9%99%88/)
+  assert.equal(request.init.headers.authorization, 'Bearer s3cret')
+})
+
 test('hass tools read state, call services and play media', async () => {
   const calls = []
   const json = (data) => ({ ok: true, async json() { return data } })

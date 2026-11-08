@@ -308,6 +308,10 @@ export function resolveConfig(config = {}) {
           apiKey: text(field(ragflowConfig, ['apiKey', 'api_key'], '')),
           datasetIds: ragflowDatasetIds,
         },
+        callDevice: {
+          url: text(field(voiceTools.callDevice ?? {}, ['url', 'baseUrl', 'base_url'], '')),
+          secret: text(field(voiceTools.callDevice ?? {}, ['secret', 'apiKey', 'api_key'], '')),
+        },
       },
       systemPrompt: text(
         field(

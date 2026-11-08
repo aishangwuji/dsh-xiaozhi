@@ -642,6 +642,21 @@ export class VoiceSession {
             })
             break toolLoop
           }
+          if (result.action === 'change_prompt') {
+            // change_role：把本会话的系统提示词换掉，下一轮 #answer 会用它重写 LLM 提示词。
+            if (result.prompt) this.config.systemPrompt = String(result.prompt)
+            const reply = String(result.response || result.output || '').trim()
+            if (reply) {
+              answerParts.push(reply)
+              speak(reply)
+            }
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id || `call_${round}_${call.name}`,
+              content: String(result.output ?? ''),
+            })
+            break toolLoop
+          }
           this.logger.info?.(`dsh-xiaozhi: tool ${call.name} -> ${String(output).slice(0, 80)}`)
           messages.push({
             role: 'tool',

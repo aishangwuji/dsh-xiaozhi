@@ -9,7 +9,7 @@ covered_paths:
 last_verified_commit: dc179b320f204192746276da2312aaa40692a56e
 verified_at: 2026-11-08
 status: current
-note: 2026-11-06 删除「行为档案/播放器」页：ProfileStore、/profiles/* 与 device.profileId 一并移除，人设与静音收口迁进 settings（全局设置）。2026-11-06 新增「主用 + 备用服务商」：settings v3 的 voice.{llm,tts,asr}.backups、adapters/failover.js、控制台卡片 + 弹窗表单、POST /test/provider；契约 docs/backup-providers.md、选择器规范 docs/pill-popover.md。2026-11-07：LLM 主路径改回插件直连并新增小米 MiMo（模型清单走 /v1/models）、联网工具回传正文并新增 web_fetch、对话历史（会话/消息/音频）、配置 UI 重构（全局设置单页分区：服务商为主 + 语音默认参数 + 接入与网关；人设只在设备级；设备配置与历史都是弹窗；PillSelect 改 fixed 浮层不撑布局）。2026-11-08：TTS 归属分离——全局设置只配「厂商 + 凭据」（保存时显式清空 voice/model/resourceId），音色（= TTS 模型族）改由设备 overrides.voice 选择（留空 = 厂商默认），src/voice/voices.js 新增 DEFAULT_TTS_VOICES / defaultTtsVoice / resolveTtsVoice（空→默认、跨厂商回落、自定义保留），TTS 备用条目用各自厂商默认音色；test/tts-defaults.test.mjs 新增，全量 227 项。2026-11-08 去掉备用服务商 5 条上限：settings.js 的 normalizeBackups/loadBackups 不再校验/截断条数，client.js 的「添加」按钮永不禁用、标题只显示「备用 N 个」，test/settings.test.mjs 新增「12 条可存可读」，全量 227 项。2026-11-08 智能体/设备拆分：agents.json + devices.agentId、旧设备启动迁移（配置与记忆搬家）、控制台「设备」改名「智能体」（卡片/绑定弹窗/级联删除）、记忆改按智能体、历史合并展示，全量 227 项。2026-11-08 删除全局「输出语种」：`voice.tts.language` 不再由 settings 提供，只在智能体 `overrides.language`（全局 UI 与 settings 字段一并移除），避免与智能体页重复。2026-11-08 设备侧 MCP/IoT：`src/voice/device-mcp.js`（hello features.mcp → initialize/tools/list/tools/call）与 `src/voice/device-iot.js`（descriptors/states/commands）接入 `VoiceSession`，动态工具与内置工具合并；外部 MCP server（stdio/SSE/streamable-http）、MCP 接入点、入站 `/mcp` 均已接（`src/mcp/*`；入站配置 `mcpToken`）。
+note: 2026-11-06 删除「行为档案/播放器」页：ProfileStore、/profiles/* 与 device.profileId 一并移除，人设与静音收口迁进 settings（全局设置）。2026-11-06 新增「主用 + 备用服务商」：settings v3 的 voice.{llm,tts,asr}.backups、adapters/failover.js、控制台卡片 + 弹窗表单、POST /test/provider；契约 docs/backup-providers.md、选择器规范 docs/pill-popover.md。2026-11-07：LLM 主路径改回插件直连并新增小米 MiMo（模型清单走 /v1/models）、联网工具回传正文并新增 web_fetch、对话历史（会话/消息/音频）、配置 UI 重构（全局设置单页分区：服务商为主 + 语音默认参数 + 接入与网关；人设只在设备级；设备配置与历史都是弹窗；PillSelect 改 fixed 浮层不撑布局）。2026-11-08：TTS 归属分离——全局设置只配「厂商 + 凭据」（保存时显式清空 voice/model/resourceId），音色（= TTS 模型族）改由设备 overrides.voice 选择（留空 = 厂商默认），src/voice/voices.js 新增 DEFAULT_TTS_VOICES / defaultTtsVoice / resolveTtsVoice（空→默认、跨厂商回落、自定义保留），TTS 备用条目用各自厂商默认音色；test/tts-defaults.test.mjs 新增，全量 229 项。2026-11-08 去掉备用服务商 5 条上限：settings.js 的 normalizeBackups/loadBackups 不再校验/截断条数，client.js 的「添加」按钮永不禁用、标题只显示「备用 N 个」，test/settings.test.mjs 新增「12 条可存可读」，全量 229 项。2026-11-08 智能体/设备拆分：agents.json + devices.agentId、旧设备启动迁移（配置与记忆搬家）、控制台「设备」改名「智能体」（卡片/绑定弹窗/级联删除）、记忆改按智能体、历史合并展示，全量 229 项。2026-11-08 删除全局「输出语种」：`voice.tts.language` 不再由 settings 提供，只在智能体 `overrides.language`（全局 UI 与 settings 字段一并移除），避免与智能体页重复。2026-11-08 设备侧 MCP/IoT：`src/voice/device-mcp.js`（hello features.mcp → initialize/tools/list/tools/call）与 `src/voice/device-iot.js`（descriptors/states/commands）接入 `VoiceSession`，动态工具与内置工具合并；外部 MCP server（stdio/SSE/streamable-http）、MCP 接入点、入站 `/mcp` 均已接（`src/mcp/*`；入站配置 `mcpToken`）。
 ---
 
 # dsh-xiaozhi 认知地图
@@ -113,7 +113,7 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 
 历史/记忆（`src/history.js` / `src/memory.js`）：`HistoryStore` 管「说过什么」的只读流水（会话/消息/WAV 音频，30 天音频保留）；`MemoryStore` 管「要记住的信息」（facts + 最近 8 轮，注入 prompt）。两者都按 deviceId 隔离，`VoiceSession` 在每轮收尾时分别写入，互不阻塞语音。
 
-实测（`node --test "test/*.test.mjs"`，227 项全绿）：真 Opus 整轮 277ms；mock 供应商首帧 40–100ms；打断 <100ms 且无幽灵帧；20 轮无泄漏；真实 Edge 首包 1.3–1.5s（整句合成后才吐包），是端到端预算的主要项。
+实测（`node --test "test/*.test.mjs"`，229 项全绿）：真 Opus 整轮 277ms；mock 供应商首帧 40–100ms；打断 <100ms 且无幽灵帧；20 轮无泄漏；真实 Edge 首包 1.3–1.5s（整句合成后才吐包），是端到端预算的主要项。
 
 ## 验证
 

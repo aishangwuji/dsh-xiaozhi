@@ -70,6 +70,10 @@
               baseUrl: ''
               apiKey: ''
               datasetIds: []
+            # 设备互拨（官方 manager-api）：url 形如 http://manager:8082/api，secret 是 manager 的 API 密钥。
+            callDevice:
+              url: ''
+              secret: ''
           # 判停模式：device = 用固件 AFE 的 VAD（固件侧 VAD_MODE_2 + vad_min_noise_ms=300，
           # 抗环境音；固件判到静音就发 listen stop）；energy = 老固件退回插件自判。
           vadMode: 'device'

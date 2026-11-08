@@ -43,6 +43,8 @@
       toolHassSet: 'Control device',
       toolHassMusic: 'Play on speaker',
       toolRagflow: 'Knowledge base',
+      toolChangeRole: 'Change role',
+      toolCallDevice: 'Call device',
       toolNews: 'News',
       cancel: 'Cancel',
       overview: 'Overview',

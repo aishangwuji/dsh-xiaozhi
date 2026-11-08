@@ -411,7 +411,9 @@ var DshXiaozhi = (() => {
       hass_get_state: t("toolHassGet"),
       hass_set_state: t("toolHassSet"),
       hass_play_music: t("toolHassMusic"),
-      search_from_ragflow: t("toolRagflow")
+      search_from_ragflow: t("toolRagflow"),
+      change_role: t("toolChangeRole"),
+      call_device: t("toolCallDevice")
     };
     return map[name] || name;
   };
@@ -468,6 +470,8 @@ var DshXiaozhi = (() => {
     toolHassSet: "\u63A7\u5236\u5BB6\u7535",
     toolHassMusic: "\u97F3\u7BB1\u64AD\u653E",
     toolRagflow: "\u77E5\u8BC6\u5E93",
+    toolChangeRole: "\u5207\u6362\u89D2\u8272",
+    toolCallDevice: "\u547C\u53EB\u8BBE\u5907",
     toolNews: "\u65B0\u95FB\u64AD\u62A5",
     cancel: "\u53D6\u6D88",
     overview: "\u6982\u89C8",
@@ -717,6 +721,8 @@ var DshXiaozhi = (() => {
     toolHassSet: "Control device",
     toolHassMusic: "Play on speaker",
     toolRagflow: "Knowledge base",
+    toolChangeRole: "Change role",
+    toolCallDevice: "Call device",
     toolNews: "News",
     cancel: "Cancel",
     overview: "Overview",

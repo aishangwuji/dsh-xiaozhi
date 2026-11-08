@@ -43,6 +43,8 @@
       toolHassSet: '控制家电',
       toolHassMusic: '音箱播放',
       toolRagflow: '知识库',
+      toolChangeRole: '切换角色',
+      toolCallDevice: '呼叫设备',
       toolNews: '新闻播报',
       cancel: '取消',
       overview: '概览',
