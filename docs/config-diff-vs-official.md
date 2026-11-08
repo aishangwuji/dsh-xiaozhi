@@ -16,7 +16,7 @@
 
 ## 一、TL;DR（最影响体验的 5 条）
 
-1. **工具面整体缺位**：官方有 15+ 服务端插件工具、设备侧 IoT、设备侧 MCP、外部 MCP server、MCP 接入点（`官方 config.yaml:132-188, 281-292`、`plugins_func/functions/*.py`、`helloHandle.py:56-73`、`mcp_server_settings.json:9-55`）；插件只有 `get_current_time` / `web_search` / `get_news_from_chinanews` 三个（`插件 src/tools.js:121-212`）。音乐、家电、天气、设备控制、外部工具全部不可用。
+1. **工具面整体缺位**：官方有 15+ 服务端插件工具、设备侧 IoT、设备侧 MCP、外部 MCP server、MCP 接入点（`官方 config.yaml:132-188, 281-292`、`plugins_func/functions/*.py`、`helloHandle.py:56-73`、`mcp_server_settings.json:9-55`）；插件只有 `get_current_time` / `web_search` / `web_fetch` / `get_news_from_chinanews` 四个（`插件 src/tools.js:157-337`）。音乐、家电、天气、设备控制、外部工具全部不可用。
 2. **判停/VAD 完全不是同一套**：官方是 Silero 神经 VAD（阈值 0.5/0.3、静音 200ms，`官方 config.yaml:606-612`、`silero.py:26-37,88-113`）；插件默认「设备判停」（等固件发 `listen stop`），兜底能量 VAD 是 RMS 0.05/静音 400ms（`插件 index.js:280-290,282`、`src/voice/vad.js:19-37`）。两套阈值量纲不同、不可换算，句尾时延与环境音误触发的表现不同。
 3. **回答长度与上下文被压得很短**：官方同类模型 `max_tokens: 500`（`官方 config.yaml:625`），插件默认 `max_tokens: 120` 并追加 `<voice_reply_limits>` 强制 1–2 句（`插件 index.js:321,62-67`）；会话历史官方全量进 LLM（`官方 core/utils/dialogue.py:151-161`），插件裁到 8 轮（`插件 index.js:295`、`src/voice/session.js:563`）。**这是设计取舍而非缺陷**，但会直接让「讲长故事 / 连续追问」类对话变差。
 4. **音频下行参数不同**：官方下行 24kHz/单声道/**60ms** 帧（`官方 config.yaml:92-97`、`sendAudioHandle.py:15`），插件下行 24kHz/**20ms** 帧（`插件 index.js:305,309`，并在 hello 里如实声明，`src/ingress.js:329-342`）。同样时长语音的 WS 帧数是官方 3 倍，设备缓冲与网络抖动敏感度不同。
@@ -86,7 +86,7 @@
 | 34 | 默认模型 | `selected_module.LLM: ChatGLMLLM` → `glm-4-flash`（`config.yaml:240,657-664`） | 代码默认 `mock`（`cordis.patch.yml:74`）；运行期 settings.json 为 `host` + `opencode-go` + `deepseek-v4.1-flash`，但**新代码已把 host 从设备链路退役**（`device-config.js:7-12`；`cordis.patch.yml:70-74`）；LLM 直连白名单为 deepseek / mimo / openai / volc / spark（`cordis.patch.yml:70`）→ 运行期值需重存后才与新代码一致，❓未确认 | ❌ | 输出质量、是否消耗 Harness 额度 |
 | 35 | max_tokens | AliLLM `500`（`config.yaml:625`）；未配置的实例不发送该参数（`core/providers/llm/openai/openai.py:55-71,129-139`） | 默认 **120**，控制台可改（`index.js:321`；`cordis.patch.yml:78`；`settings.js:230-231,448-454` 量程 32–2048） | ❌ | 回复长度/首响/TTS 时长（插件显著更短） |
 | 36 | temperature | 0.7（AliLLM，`config.yaml:624`）；未配置则不发送（`openai.py:55-71`） | 0.7（`index.js:319`），**控制台无 temperature 字段**（`settings.js:223-235`） | ⚠️ | 语气可控性（运行期改不了） |
-| 37 | 工具调用机制 | `response_with_functions` + `Intent.functions` 白名单（`config.yaml:275-292`；`openai.py:166-207`） | `streamWithTools`，`tool_choice:'auto'`，工具=固定 3 个 × 设备开关（`adapters/openai-llm.js:53-56`；`session.js:494-495`；`tools.js:15`） | ⚠️ | 能调什么（插件极少） |
+| 37 | 工具调用机制 | `response_with_functions` + `Intent.functions` 白名单（`config.yaml:275-292`；`openai.py:166-207`） | `streamWithTools`，`tool_choice:'auto'`，工具=固定 4 个 × 设备开关（`adapters/openai-llm.js:53-56`；`session.js:494-495`；`tools.js:17`） | ⚠️ | 能调什么（插件极少） |
 | 38 | 工具循环上限 | `MAX_DEPTH = 5`（`connection.py:1079-1093`，到顶改为强制作答） | `MAX_TOOL_ROUNDS = 3`（`tools.js:15`；`session.js:498`） | ❌ | 多步任务能否完成 |
 | 39 | 工具调用超时 | `tool_call_timeout: 30`（`config.yaml:65`；`connection.py:1347-1353`、`intentHandler.py:170-178`） | 无统一超时，仅单工具自带（如新闻 8s，`tools.js:192-193`）；`session.js:534` 直接 await | ❌ | 工具卡死时整轮悬挂 |
 | 40 | 意图识别 | 三选一：`function_call` / `intent_llm`（独立 LLM，历史 4 条）/ `nointent`（`config.yaml:252-292`；`core/providers/intent/intent_llm/intent_llm.py:31`；`intentHandler.py:20-50`） | **无意图模块**，只有 LLM function calling（`session.js:494-542`） | ❌ | 前置拦截、退出、音量/音乐类系统指令 |
@@ -132,7 +132,7 @@
 
 | # | 配置项 | 官方值/行为（证据） | 插件值/行为（证据） | 等价 | 影响功能 |
 |---|---|---|---|---|---|
-| 63 | 服务端插件工具 | 15+ `@register_function`：change_role / get_weather / get_news×2 / play_music / handle_exit_intent / get_lunar / hass×3 / search_from_ragflow / web_search / call_device（`plugins_func/functions/*.py` 各装饰器行；`plugins_func/register.py:85-100`） | 3 个：get_current_time / web_search / get_news_from_chinanews（`tools.js:121-212`） | ❌ | 音乐、家电、天气、角色切换、退出、知识库全部缺失 |
+| 63 | 服务端插件工具 | 15+ `@register_function`：change_role / get_weather / get_news×2 / play_music / handle_exit_intent / get_lunar / hass×3 / search_from_ragflow / web_search / call_device（`plugins_func/functions/*.py` 各装饰器行；`plugins_func/register.py:85-100`） | 4 个：get_current_time / web_search / web_fetch / get_news_from_chinanews（`tools.js:157-337`） | ❌ | 音乐、家电、天气、角色切换、退出、知识库全部缺失 |
 | 64 | 外部 MCP server | `data/.mcp_server_settings.json`，支持 stdio / sse / streamable-http（`mcp_server_settings.json:9-55`） | 无 | ❌ | 外部工具生态 |
 | 65 | 设备侧 MCP | `features.mcp` → `MCPClient`，hello 后发 initialize + tools/list（`helloHandle.py:56-73`；`core/providers/tools/device_mcp/mcp_handler.py:148-203`） | 无实现（全仓库 `grep mcp` 只命中注释与配置键名：`index.js:174,181`；`client.js:216`） | ❌ | 设备/游戏上报工具（本项目 lingxi 链路的核心） |
 | 66 | MCP 接入点（出站） | `mcp_endpoint` 配置 + `connect_mcp_endpoint`（`config.yaml:119-121`；`core/providers/tools/unified_tool_handler.py:81-101`） | 无 | ❌ | 对接小智 MCP 接入点 |
@@ -178,7 +178,7 @@
 |---|---|---|---|---|
 | **高** | 设备侧 MCP（`features.mcp`） | `helloHandle.py:56-73`、`device_mcp/mcp_handler.py:148-203` | 无实现（`grep mcp` 只命中注释/配置键名） | 设备/游戏上报的工具模型看不到、调不到；本项目的 lingxi 工具链路无法接入这条通道 |
 | **高** | 设备 IoT 控制 | `device_iot/iot_handler.py:50-63`、`iot_executor.py:102-135` | 无 | 「把灯调暗」类指令完全不可用；也无法复用现成 IoT 设备描述符 |
-| **高** | 服务端插件工具集 | `plugins_func/functions/*.py`、`config.yaml:281-292` | 仅 3 个工具（时/搜/新闻） | 音乐播放、天气、家电、角色切换、知识库问答、退出意图全部缺失 |
+| **高** | 服务端插件工具集 | `plugins_func/functions/*.py`、`config.yaml:281-292` | 仅 4 个工具（时/搜/网页/新闻） | 音乐播放、天气、家电、角色切换、知识库问答、退出意图全部缺失 |
 | **高** | 意图识别模块 | `config.yaml:252-292`、`intentHandler.py:20-50` | 无，仅 function calling | 无法前置拦截系统指令、无法用独立小模型做意图路由；工具多时更慢更贵 |
 | **高** | 外部 MCP server / MCP 接入点 | `mcp_server_settings.json:9-55`、`unified_tool_handler.py:81-101` | 无 | 无法把第三方 MCP 工具接进语音；也无法对外提供接入点 |
 | **中** | Silero 神经 VAD | `config.yaml:606-612`、`silero.py` | 依赖固件判停/能量 VAD | 老固件或强噪声环境下句尾不准；跨固件版本行为漂移 |
