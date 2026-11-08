@@ -200,6 +200,10 @@ export function resolveConfig(config = {}) {
     host: text(field(gateway, ['host'], '0.0.0.0'), '0.0.0.0') || '0.0.0.0',
     port: positiveInteger(field(gateway, ['port'], DEFAULT_PORT), DEFAULT_PORT, { min: 1, max: 65_535 }),
     dataRoot: resolvePath(text(field(root, ['dataRoot', 'data_root'], join(homedir(), '.dsh-xiaozhi')))),
+    // 官方 config.yaml 的 mcp_endpoint：出站 MCP 接入点（ws://.../mcp/...）。
+    mcpEndpoint:
+      text(field(root, ['mcpEndpoint', 'mcp_endpoint'], '')) ||
+      text(field(voiceRaw, ['mcpEndpoint', 'mcp_endpoint'], '')),
     onboarding: {
       // First contact registers the device. Disabling this turns the ingress into
       // an allow-list that only accepts devices already in the roster.
@@ -402,6 +406,7 @@ export function apply(ctx, config = {}) {
   // 外部 MCP server（stdio）在后台初始化；配置文件不存在时静默跳过。
   const mcpManager = createMcpManager({
     file: join(resolved.dataRoot, 'mcp_servers.json'),
+    endpoint: resolved.mcpEndpoint,
     logger,
   })
   toolRegistry.setExternal(mcpManager)

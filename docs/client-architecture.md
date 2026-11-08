@@ -121,7 +121,7 @@ npm run build
 npm run smoke
 npm run check:ui
 node --check client.js
-node --test "test/*.test.mjs"   # 217 项
+node --test "test/*.test.mjs"   # 218 项
 ```
 
 ## 7. 变更记录

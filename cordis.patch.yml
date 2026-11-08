@@ -9,6 +9,8 @@
         autoProvision: true
         maxDevices: 1000
         timezoneOffset: 480
+        # 出站 MCP 接入点（官方 mcp_endpoint）：ws://.../mcp/...；留空 = 不连接。
+        mcpEndpoint: ''
         lanNetworkCidrs:
           - '192.168.0.0/16'
           - '10.0.0.0/8'

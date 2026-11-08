@@ -13,11 +13,13 @@ import { readFile } from 'node:fs/promises'
 import { sanitizeToolName } from '../voice/device-mcp.js'
 import { StdioMcpClient } from './stdio-client.js'
 import { SseMcpClient, StreamableHttpMcpClient } from './http-client.js'
+import { WsMcpEndpointClient } from './ws-endpoint-client.js'
 
 export class McpManager {
-  constructor({ file = '', servers = null, logger } = {}) {
+  constructor({ file = '', servers = null, endpoint = '', logger } = {}) {
     this.file = file
     this.servers = servers
+    this.endpoint = endpoint
     this.logger = logger ?? {}
     this.clients = new Map() // server name -> client
     this.tools = new Map() // exposed tool name -> { client, localName, definition }
@@ -52,6 +54,9 @@ export class McpManager {
       }
       jobs.push(this.#initOne(name, config))
     }
+    if (this.endpoint) {
+      jobs.push(this.#initEndpoint(this.endpoint))
+    }
     await Promise.allSettled(jobs)
     this.ready = true
     this.logger.info?.(`dsh-xiaozhi: external MCP tools = ${this.tools.size}`)
@@ -84,6 +89,19 @@ export class McpManager {
     } catch (error) {
       client.close()
       this.logger.warn?.(`dsh-xiaozhi: MCP server ${name} 初始化失败: ${error.message}`)
+    }
+  }
+
+  async #initEndpoint(url) {
+    const client = new WsMcpEndpointClient({ url, logger: this.logger })
+    try {
+      const count = await client.initialize()
+      this.clients.set('mcp_endpoint', client)
+      this.#collect('mcp_endpoint', client)
+      this.logger.info?.(`dsh-xiaozhi: MCP 接入点 ready (${count} tools)`)
+    } catch (error) {
+      client.close()
+      this.logger.warn?.(`dsh-xiaozhi: MCP 接入点初始化失败: ${error.message}`)
     }
   }
 
