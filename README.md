@@ -229,7 +229,7 @@ desktop\operator
 - **尚未接**：外部 MCP server（SSE/streamable-http）、MCP 接入点、入站 `/mcp`、
   官方 weather/music/hass/ragflow/exit 等服务端插件工具。
 
-### 外部 MCP server（stdio）
+### 外部 MCP server（stdio / SSE / Streamable HTTP）
 
 配置文件 `~/.dsh-xiaozhi/mcp_servers.json`，格式与官方 `data/.mcp_server_settings.json` 一致：
 
@@ -239,14 +239,26 @@ desktop\operator
     "filesystem": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    },
+    "remote-sse": {
+      "url": "http://localhost:8080/sse",
+      "headers": { "Authorization": "Bearer TOKEN" }
+    },
+    "remote-http": {
+      "url": "http://localhost:8000/mcp",
+      "transport": "streamable-http",
+      "headers": { "Authorization": "Bearer TOKEN" }
     }
   }
 }
 ```
 
-插件启动时异步 spawn 子进程，走 `initialize → notifications/initialized → tools/list`，
-工具并入语音会话的 function-calling；控制台「扩展能力」的 `catalog` 也能看到。**改完配置要重启 DSH**。
-当前只支持 stdio；带 `url` 的 SSE / streamable-http 条目会跳过并告警。
+- `command`：stdio 子进程，按行 JSON-RPC。
+- `url` 不带 `transport`：SSE（GET 事件流 + POST endpoint）。
+- `url` + `transport: "streamable-http"`（或 `"http"`）：Streamable HTTP。
+
+插件启动时异步连接、`initialize → notifications/initialized → tools/list`，工具并入语音会话的
+function-calling；控制台「扩展能力」的 `catalog` 也能看到。**改完配置要重启 DSH**。
 
 ## 对话历史（会话 / 消息 / 音频）
 
@@ -361,7 +373,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 智能体「角色」页选「跟随音色」会删除该智能体的 `language` 覆盖、撤掉语种指令；如果只在 `cordis.patch.yml` 里写过默认语种，需要智能体上显式选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，216 项）：
+实测（`node --test "test/*.test.mjs"`，217 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -417,7 +429,7 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 216 项
+node --test "test/*.test.mjs"   # 217 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 

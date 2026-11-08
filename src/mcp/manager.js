@@ -12,6 +12,7 @@
 import { readFile } from 'node:fs/promises'
 import { sanitizeToolName } from '../voice/device-mcp.js'
 import { StdioMcpClient } from './stdio-client.js'
+import { SseMcpClient, StreamableHttpMcpClient } from './http-client.js'
 
 export class McpManager {
   constructor({ file = '', servers = null, logger } = {}) {
@@ -49,10 +50,6 @@ export class McpManager {
         this.logger.warn?.(`dsh-xiaozhi: MCP server ${name} 缺少 command/url，跳过`)
         continue
       }
-      if (!config.command) {
-        this.logger.warn?.(`dsh-xiaozhi: MCP server ${name} 使用 url（SSE/streamable-http），当前版本暂不支持，跳过`)
-        continue
-      }
       jobs.push(this.#initOne(name, config))
     }
     await Promise.allSettled(jobs)
@@ -61,8 +58,24 @@ export class McpManager {
     return this
   }
 
+  #createClient(name, config) {
+    if (config.command) return new StdioMcpClient({ name, config, logger: this.logger })
+    if (config.url) {
+      const transport = String(config.transport ?? 'sse').toLowerCase()
+      if (transport === 'streamable-http' || transport === 'http') {
+        return new StreamableHttpMcpClient({ name, config, logger: this.logger })
+      }
+      return new SseMcpClient({ name, config, logger: this.logger })
+    }
+    return null
+  }
+
   async #initOne(name, config) {
-    const client = new StdioMcpClient({ name, config, logger: this.logger })
+    const client = this.#createClient(name, config)
+    if (!client) {
+      this.logger.warn?.(`dsh-xiaozhi: MCP server ${name} 配置不可识别，跳过`)
+      return
+    }
     try {
       const count = await client.initialize()
       this.clients.set(name, client)
