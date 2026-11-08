@@ -17,10 +17,12 @@ function ProviderSection({
   const [openRow, setOpenRow] = useState(null)
   const primaryKey = backupKeyState(stage, primary)
   const primaryTesting = testingPrimary === stage
-  // 能不能在线测试由描述符的 probe.kind 决定（ASR = none），不在前端写 `stage === 'asr'`。
-  const primaryProbe = stageDescriptor(primary.provider, stage)?.probe?.kind || 'none'
-  const primaryTestDisabled = primaryProbe === 'none' || primaryTesting
-  const testLabel = providersDirty ? t('saveAndTest') : t('backupTest')
+  // 能不能在线测试由描述符的 probe 决定（kind=none 不显示；ASR 用 kind=asr + 自己的按钮文案）。
+  const primaryProbe = stageDescriptor(primary.provider, stage)?.probe || { kind: 'none' }
+  const primaryTestDisabled = primaryProbe.kind === 'none' || primaryTesting
+  const testLabel = providersDirty
+    ? t('saveAndTest')
+    : (primaryProbe.labelKey ? t(primaryProbe.labelKey) : t('backupTest'))
   // TTS 全局只配厂商 + 凭据（厂商已在卡片标题），所以没有摘要行。
   const summaryKey = stage === 'llm' ? t('model') : stage === 'asr' ? t('asrUrl') : ''
   const fact = (key, value) => h('div', { className: 'xz-backup-fact' },
@@ -46,7 +48,7 @@ function ProviderSection({
       primaryTest ? h('div', { className: 'xz-backup-test' }, backupTestText(stage, primaryTest)) : null,
       h('div', { className: 'xz-backup-actions' },
         h('button', { type: 'button', className: 'xz-btn', onClick: onEditPrimary }, t('backupEdit')),
-        primaryProbe === 'none'
+        primaryProbe.kind === 'none'
           ? null
           : h('button', {
               type: 'button',
@@ -68,9 +70,12 @@ function ProviderSection({
             const result = entry.id ? testResults[entry.id] : null
             const isTesting = Boolean(entry.id) && testingId === entry.id
             const expanded = openRow === index
-            const probeKind = stageDescriptor(entry.provider, stage)?.probe?.kind || 'none'
-            const testDisabled = probeKind === 'none' || isTesting
-            const testTitle = probeKind === 'none' ? t('probeUnsupported') : testLabel
+            const probe = stageDescriptor(entry.provider, stage)?.probe || { kind: 'none' }
+            const testDisabled = probe.kind === 'none' || isTesting
+            const rowTestLabel = providersDirty
+              ? t('saveAndTest')
+              : (probe.labelKey ? t(probe.labelKey) : t('backupTest'))
+            const testTitle = probe.kind === 'none' ? t('probeUnsupported') : rowTestLabel
             const rowFacts = [
               summaryKey ? `${summaryKey}: ${backupSummaryText(stage, entry)}` : null,
               `${t('backupSecret')}: ${keyState.text}`,
@@ -119,7 +124,7 @@ function ProviderSection({
                       disabled: testDisabled,
                       title: testTitle,
                       onClick: () => { setOpenRow(null); onTest(index) }
-                    }, isTesting ? t('backupTesting') : testLabel),
+                    }, isTesting ? t('backupTesting') : rowTestLabel),
                     h('button', {
                       type: 'button',
                       className: `xz-btn danger${confirmDelete === cardKey ? ' confirm' : ''}`,

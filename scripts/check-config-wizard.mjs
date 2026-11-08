@@ -34,6 +34,7 @@ const settings = {
 }
 
 const calls = []
+const callBodies = []
 function json(body) {
   return { ok: true, status: 200, text: async () => JSON.stringify(body), json: async () => body }
 }
@@ -41,13 +42,14 @@ globalThis.fetch = async (url, options = {}) => {
   const path = String(url)
   const method = options.method || 'GET'
   calls.push(`${method} ${path}`)
+  if (options.body) callBodies.push(String(options.body))
   if (path.endsWith('/settings') && method === 'GET') return json({ settings, defaults: { systemPrompt: '', silenceMs: 400 } })
   if (path.endsWith('/settings') && method === 'POST') return json({ settings, defaults: { systemPrompt: '', silenceMs: 400 } })
   if (path.includes('/voices')) return json({ options: {} })
   // 模型清单故意**不包含**已保存的 gpt-4o-mini：验证「当前值不在清单里」时仍能回显，
   // 而不是显示「未选择」。
   if (path.includes('/models')) return json({ options: [{ value: 'some-other-model', label: 'some-other-model' }] })
-  if (path.includes('/test/')) return json({ ok: true, totalMs: 100, firstTokenMs: 30 })
+  if (path.includes('/test/')) return json({ ok: true, totalMs: 100, firstTokenMs: 30, text: '你好小智' })
   return json({})
 }
 
@@ -129,10 +131,30 @@ await new Promise((resolve) => setTimeout(resolve, 900))
 const postsAfter = calls.filter((call) => call.startsWith('POST') && call.includes('/settings')).length
 console.log('auto-save posts:', postsBefore, '->', postsAfter)
 
+// ASR 也必须有在线测试：关掉 LLM 弹窗，进 ASR，点「测试识别」应 POST /test/provider {kind:'asr'}。
+const stageClose = [...document.querySelectorAll('.xz-stage-modal .xz-modal-foot .xz-btn')]
+  .find((button) => button.textContent.includes('关闭'))
+stageClose?.click()
+await new Promise((resolve) => setTimeout(resolve, 150))
+document.querySelectorAll('.xz-stage-card')[0].click()
+await new Promise((resolve) => setTimeout(resolve, 200))
+const asrPrimary = document.querySelector('.xz-stage-modal .xz-primary-card')
+const asrTestButton = [...asrPrimary.querySelectorAll('.xz-btn')]
+  .find((button) => button.textContent.includes('测试识别'))
+console.log('asr test button:', asrTestButton ? asrTestButton.textContent.trim() : 'MISSING')
+asrTestButton?.click()
+await new Promise((resolve) => setTimeout(resolve, 300))
+const asrResult = asrPrimary.querySelector('.xz-backup-test')?.textContent || ''
+const lastTestBody = [...callBodies].reverse().find((body) => body.includes('"source":"primary"') && body.includes('"kind":"asr"')) || ''
+console.log('asr test result:', asrResult)
+
 const failures = []
 if (addModelText !== 'deepseek-chat') failures.push(`add model placeholder = ${addModelText || '(empty)'}`)
 if (editModelText !== 'gpt-4o-mini') failures.push(`edit model label = ${editModelText || '(empty)'}`)
 if (postsAfter <= postsBefore) failures.push('auto-save did not POST /settings')
+if (!asrTestButton) failures.push('ASR primary test button missing')
+if (!lastTestBody) failures.push('ASR test did not POST /test/provider with kind=asr')
+if (!asrResult.includes('你好小智')) failures.push(`ASR test result = ${asrResult || '(empty)'}`)
 if (failures.length) {
   console.log('FAILURES:\n' + failures.join('\n'))
   process.exit(1)

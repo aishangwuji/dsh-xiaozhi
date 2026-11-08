@@ -162,8 +162,10 @@
 { "ok": false, "ms": 300, "error": "…" }
 ```
 
-`kind=asr` 返回 `{ ok:false, error: "ASR 暂不支持在线测试" }`（不伪造成功）。
-写接口照旧要 `x-dsh-xiaozhi: 1` 头。现有 `/test/llm` 保留（等价于 kind=llm/source=primary）。
+`kind=asr` 会先用全局 TTS 合成一句固定话（「你好，小智，这是一次语音识别测试。」），再把 16k PCM
+分块喂给被测 ASR，返回 `{ ok:true, kind:"asr", provider, text, bytes, totalMs }`；TTS 未配置 / 是 mock /
+没返回音频时返回 `{ ok:false, error }`，不会伪造成功。写接口照旧要 `x-dsh-xiaozhi: 1` 头。
+现有 `/test/llm` 保留（等价于 kind=llm/source=primary）。
 
 ## 4. 运行时装配（index.js + adapters/index.js）
 
@@ -242,7 +244,7 @@
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"      # 全量 196 项必须全绿（2026-11-08）
+node --test "test/*.test.mjs"      # 全量 201 项必须全绿（2026-11-08）
 npm run build                      # src/client/** → client.js（esbuild，React external）
 npm run smoke                      # 真实 React SSR 渲染主要页面 + slot 注册校验
 node --check client.js             # UI 产物语法检查

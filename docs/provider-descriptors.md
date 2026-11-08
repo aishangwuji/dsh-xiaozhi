@@ -110,10 +110,12 @@
 
 ## 5. 探测（Probe）
 
-描述符只声明**语义**：`probe.kind = chat | tts | none`。
+描述符只声明**语义**：`probe.kind = chat | tts | asr | none`。
 
-- `none`：UI 不显示测试按钮（ASR 现在就是）；
-- `chat` / `tts`：`/test/provider`（主用 LLM 仍走 `/test/llm`）。
+- `none`：UI 不显示测试按钮（当前没有厂商用；留给确实无法在线探测的实现）；
+- `chat` / `tts`：`/test/provider`（主用 LLM 仍走 `/test/llm`）；
+- `asr`：`/test/provider` 用全局 TTS 合成一句固定话再喂被测 ASR（`src/voice/asr-probe.js`），
+  返回识别文本；TTS 不可用时明确报错。按钮文案由 `probe.labelKey` 决定（如「测试识别」）。
 
 探测的 HTTP 细节在适配器里，不进描述符——否则 schema 会膨胀成第二套业务代码。
 
@@ -133,7 +135,7 @@
 ## 8. 验收
 
 ```powershell
-node --test "test/*.test.mjs"   # 196 项，含 test/providers.test.mjs 6 项 + /providers 路由
+node --test "test/*.test.mjs"   # 201 项，含 test/providers.test.mjs 6 项 + /providers 路由
 npm run build
 npm run smoke                   # 描述符表单矩阵：llm/deepseek、tts/xunfei、tts/edge、asr/volc、asr/xunfei、asr/local
 npm run check:ui                # 全局设置交互

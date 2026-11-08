@@ -71,14 +71,14 @@
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"          # 全量 196 项，必须全绿
+node --test "test/*.test.mjs"          # 全量 201 项，必须全绿
 npm run build                          # src/client/** → client.js（esbuild，React 保持 external）
 npm run smoke                          # 真实 React SSR 渲染主要页面 + slot 注册校验
 npm run check:ui                       # jsdom 交互检查：概览卡 → 弹窗 → 添加 → ⋯ → 模型回显 → 自动保存
 node --check client.js                 # 构建产物语法检查
 ```
 
-当前 196 项，覆盖分句、VAD、Ogg/Opus 往返、mock 整轮、打断、20 轮、语种、音色族、**TTS 默认音色**（全局只存凭据可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留）、设备级覆盖合并（含「设备 hostProvider 不再强切 host」）、全局设置（人设/静音收口、`applyRuntimeSettings` 的 hostProvider/backups 叠加回归）、备用服务商（持久化/掩码/留空保留/整次失败/**条数不设上限**/`/test/provider`）、**服务商描述符**（描述符与 `BACKUP_SPEC` 白名单一致、字段可存储、stage 级名字覆盖、`hidden` 只存不展示、`GET /providers` 路由，`test/providers.test.mjs` 6 项）、三段 failover（LLM 未出字前切换、TTS 整句重试、ASR 回放不推 partial、abort 不切换、粘性回落）、mDNS 报文与地址过滤、小米 MiMo（api-key 认证头 / thinking / SSE / 工具调用 / 模型清单走 /v1/models 无内置兜底）、联网工具（Search 带正文与截断预算 / web_fetch 正文与 403·404 语义 / 动态 Key / 无 Key 回退）、对话历史（会话聚合与标题 / 旧格式 10 分钟迁移 / WAV 读写与路径安全 / 30 天保留与容量清理 / clear 粒度 / 4 条 HTTP 路由）、**智能体/设备绑定**（旧设备迁移与记忆复制 / 多设备绑定与移动 / 解绑 / 配置共享 / 级联删除 / 历史合并，`test/agents.test.mjs` 6 项）。
+当前 201 项，覆盖分句、VAD、Ogg/Opus 往返、mock 整轮、打断、20 轮、语种、音色族、**TTS 默认音色**（全局只存凭据可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留）、设备级覆盖合并（含「设备 hostProvider 不再强切 host」）、全局设置（人设/静音收口、`applyRuntimeSettings` 的 hostProvider/backups 叠加回归）、备用服务商（持久化/掩码/留空保留/整次失败/**条数不设上限**/`/test/provider`）、**服务商描述符**（描述符与 `BACKUP_SPEC` 白名单一致、字段可存储、stage 级名字覆盖、`hidden` 只存不展示、`GET /providers` 路由，`test/providers.test.mjs` 6 项）、**ASR 在线测试**（TTS→ASR 编排：分块喂 PCM、TTS mock/无音频/ASR error 的报错，`test/asr-probe.test.mjs` 5 项）、三段 failover（LLM 未出字前切换、TTS 整句重试、ASR 回放不推 partial、abort 不切换、粘性回落）、mDNS 报文与地址过滤、小米 MiMo（api-key 认证头 / thinking / SSE / 工具调用 / 模型清单走 /v1/models 无内置兜底）、联网工具（Search 带正文与截断预算 / web_fetch 正文与 403·404 语义 / 动态 Key / 无 Key 回退）、对话历史（会话聚合与标题 / 旧格式 10 分钟迁移 / WAV 读写与路径安全 / 30 天保留与容量清理 / clear 粒度 / 4 条 HTTP 路由）、**智能体/设备绑定**（旧设备迁移与记忆复制 / 多设备绑定与移动 / 解绑 / 配置共享 / 级联删除 / 历史合并，`test/agents.test.mjs` 6 项）。
 
 **不接手表也能做的三种探针**：
 
@@ -224,7 +224,8 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
    （`from`/`to`/`provider`/`error`/`ms`）。
 6. **测试只测已保存配置**：`/test/provider` 的 `index` 是服务端顺序。改动通常已被自动保存落盘；
    仍有未落盘改动时按钮变「保存并测试」，先保存再测。新填 Key 等自动保存完成（或点「保存并测试」）才能测。
-   ASR 没有在线测试按钮（回放成本与语义都不合适）。
+   **ASR 也有在线测试**：`probe.kind='asr'`，服务端先用全局 TTS 合成一句固定话、再把 PCM 喂给被测
+   ASR（`src/voice/asr-probe.js`），返回识别文本；TTS 未配置/是 mock 时明确报「需要先配置可用的 TTS」。
 7. **adapter 缓存 key 必须覆盖三段全量配置**（`index.js` 的 `adaptersFor`）：provider / model /
    baseUrl / url / resourceId / apiKey / backups + 智能体 overrides + 人设。漏掉任何一项都会出现
    「控制台改了配置、设备重连后仍用旧 adapter」；2026-11-06 就是漏了 ASR resourceId 导致修正后
@@ -290,7 +291,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 - 控制台：三个平级视图 **概览 / 智能体 / 全局设置**。卡片 = 智能体（名字/在线/绑定设备列表/音色/设备数/最近在线 +
   配置/设备(N)/历史/播报/删除）；「设备(N)」弹窗里绑定/解绑、改设备别名、OTA/封禁/断开/删除设备；
   「播报」发给该智能体所有在线设备（一台都不在线时提示「这个智能体没有在线设备」）。
-- 验证：`node --test "test/*.test.mjs"`（196 项，含 `test/agents.test.mjs` 6 项）。
+- 验证：`node --test "test/*.test.mjs"`（201 项，含 `test/agents.test.mjs` 6 项）。
 
 ## 十一、改代码时最容易漏的几处
 
@@ -317,7 +318,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
    `devices.json` 的 `agentId` 全为空 → 说明迁移还没跑（推测：正在跑的 DSH 仍是智能体改造前的实例，
    未直接验证进程内代码版本）；重启后 `adoptLegacyDevices` 会给每台旧设备各建一个智能体并复制记忆
    （幂等，重复重启不会重复建）。
-8. **改完的验收底线**：`node --test "test/*.test.mjs"` 196 项全绿 + `npm run build` 成功 + `npm run smoke` 通过 + `npm run check:ui` 通过 + `node --check client.js` 通过 +
+8. **改完的验收底线**：`node --test "test/*.test.mjs"` 201 项全绿 + `npm run build` 成功 + `npm run smoke` 通过 + `npm run check:ui` 通过 + `node --check client.js` 通过 +
    需要时 `curl http://127.0.0.1:8989/healthz` 看设备面是否还活着。
 
 ## 十二、文档地图
@@ -345,7 +346,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 - **构建/冒烟**：`npm run build`（`build.mjs`，banner/footer 把 IIFE 包进 factory）；
   `npm run smoke`（`scripts/smoke-client.mjs`，真实 React SSR 渲染主要页面 + slot 注册校验）；
   `npm run check:ui`（`scripts/check-config-wizard.mjs`，jsdom 里点一遍全局设置：概览卡 → 弹窗 →
-  添加 → ⋯ 菜单 → 删除二次确认 → 模型回显 → 自动保存）。
+  添加 → ⋯ 菜单 → 删除二次确认 → 模型回显 → 自动保存 → ASR 测试识别）。
 - **生效**：build 后刷新控制台；仍加载旧产物就重启 DSH（未实测 refresh 是否足够）。
 - **不要**：手改 `client.js`；组件里直接 `import react`（统一走 `src/client/react.js`）。
 - **加组件**：放 `src/client/{views,agents,settings}/`，从 `core.js` 取 `t` / `callApi` / 常量，

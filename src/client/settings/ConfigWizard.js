@@ -253,7 +253,7 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
         try {
           const result = await callApi('/test/provider', {
             method: 'POST',
-            body: { kind: stage === 'llm' ? 'llm' : 'tts', source: 'backup', index }
+            body: { kind: stage, source: 'backup', index }
           });
           setTestResults((previous) => ({ ...previous, [entry.id]: result }));
           notify(
@@ -277,10 +277,10 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
         }
         setTestingPrimary(stage);
         try {
-          // 主用 LLM 走老的 /test/llm（只测主用，不会静默测到备用）；TTS 走统一的 /test/provider。
+          // 主用 LLM 走老的 /test/llm（只测主用，不会静默测到备用）；TTS/ASR 走统一的 /test/provider。
           const result = stage === 'llm'
             ? await callApi('/test/llm', { method: 'POST' })
-            : await callApi('/test/provider', { method: 'POST', body: { kind: 'tts', source: 'primary' } });
+            : await callApi('/test/provider', { method: 'POST', body: { kind: stage, source: 'primary' } });
           setPrimaryTests((previous) => ({ ...previous, [stage]: result }));
           notify(
             result.ok ? `${t('backupTestOk')} · ${backupTestText(stage, result)}` : String(result.error || t('backupTestFail')),

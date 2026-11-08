@@ -121,7 +121,7 @@ import { PROVIDERS as BUNDLED_PROVIDERS, STAGE_META as BUNDLED_STAGE_META } from
       return '—';
     };
 
-    /** 测试结果的小字：LLM 给 ms + 首 token，TTS 给 ms + 字节数。 */
+    /** 测试结果的小字：LLM 给 ms + 首 token，TTS 给 ms + 字节数，ASR 给 ms + 识别文本。 */
     const backupTestText = (stage, result) => {
       if (!result) return '';
       if (result.ok === false) return String(result.error || t('backupTestFail'));
@@ -129,6 +129,13 @@ import { PROVIDERS as BUNDLED_PROVIDERS, STAGE_META as BUNDLED_STAGE_META } from
       if (stage === 'llm') {
         const first = result.firstTokenMs == null ? '—' : result.firstTokenMs;
         return `${total} ms · ${t('firstToken')} ${first} ms`;
+      }
+      if (stage === 'asr') {
+        const text = typeof result.text === 'string' ? result.text.trim() : '';
+        const sample = text
+          ? `“${text.length > 40 ? `${text.slice(0, 40)}…` : text}”`
+          : t('asrNoText');
+        return `${total} ms · ${sample}`;
       }
       return `${total} ms · ${result.bytes ?? 0} ${t('bytes')}`;
     };

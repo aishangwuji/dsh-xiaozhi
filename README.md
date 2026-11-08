@@ -325,7 +325,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 控制台的「跟随音色」会显式写入空串、把语种指令撤掉；如果只在 `cordis.patch.yml` 里写过默认语种，面板得先选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，196 项）：
+实测（`node --test "test/*.test.mjs"`，201 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -381,7 +381,7 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 196 项
+node --test "test/*.test.mjs"   # 201 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 

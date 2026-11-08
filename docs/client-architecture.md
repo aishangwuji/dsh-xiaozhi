@@ -87,7 +87,8 @@ npm run smoke    # 冒烟
    三个弹窗与 `ProviderDialog`——抓渲染期的 undefined / 拼错名字。
 
 `npm run check:ui` 再用 jsdom 把全局设置点一遍：概览卡 → stage 弹窗 → 添加 → ⋯ 菜单 →
-删除二次确认 → 模型回显 → 自动保存（断言防抖后确实 `POST /settings`）。它不替代浏览器验收
+删除二次确认 → 模型回显 → 自动保存 → ASR「测试识别」（断言防抖后确实 `POST /settings`，
+ASR 测试确实 `POST /test/provider {kind:"asr"}` 并回显识别文本）。它不替代浏览器验收
 （样式、交互、定位仍需人眼），但能在不重启 DSH 的情况下拦住大部分改崩。
 
 ## 5. 编码约定
@@ -120,7 +121,7 @@ npm run build
 npm run smoke
 npm run check:ui
 node --check client.js
-node --test "test/*.test.mjs"   # 196 项
+node --test "test/*.test.mjs"   # 201 项
 ```
 
 ## 7. 变更记录

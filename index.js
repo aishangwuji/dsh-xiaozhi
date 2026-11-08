@@ -32,7 +32,8 @@ import { startMdns } from './src/mdns.js'
 import { mergeDeviceConfig } from './src/device-config.js'
 import { SettingsStore } from './src/settings.js'
 import { DeviceStore } from './src/store.js'
-import { buildLlmAdapter, buildTtsAdapter, createVoiceAdapters } from './src/voice/adapters/index.js'
+import { buildLlmAdapter, buildTtsAdapter, buildAsrAdapter, createVoiceAdapters } from './src/voice/adapters/index.js'
+import { probeAsr } from './src/voice/asr-probe.js'
 import { hostProviderIssue } from './src/voice/host-provider.js'
 import { encodePcmToOpus, probeFfmpeg, UplinkDecoder } from './src/voice/codec.js'
 import { normalizeOutputLanguage, withOutputLanguage } from './src/voice/language.js'
@@ -766,7 +767,7 @@ export function apply(ctx, config = {}) {
     // 不把明文密钥从浏览器带回来。LLM 走同一条流式适配器，TTS 真合成一小段。
     probeProvider: async ({ kind = 'llm', source = 'primary', index = 0 } = {}) => {
       if (!voice.enabled) throw new Error('语音未启用，无法测试服务商')
-      if (kind !== 'llm' && kind !== 'tts') throw new Error('ASR 暂不支持在线测试')
+      if (kind !== 'llm' && kind !== 'tts' && kind !== 'asr') throw new Error('kind 只能是 llm / tts / asr')
       const stage = kind
       const spec =
         source === 'backup'
@@ -802,6 +803,26 @@ export function apply(ctx, config = {}) {
             firstTokenMs,
             totalMs: Date.now() - startedAt,
             sample: text.slice(0, 120),
+          }
+        }
+        if (kind === 'asr') {
+          const { text, bytes } = await probeAsr({
+            spec,
+            ttsSpec: resolved.voice.tts,
+            buildTts: buildTtsAdapter,
+            buildAsr: buildAsrAdapter,
+            speechToText,
+            sampleRate: resolved.voice.sampleRate?.uplink ?? 16_000,
+            ffmpegPath: resolved.voice.ffmpegPath,
+            signal: controller.signal,
+          })
+          return {
+            kind,
+            provider: spec.provider,
+            text,
+            sample: text.slice(0, 80),
+            bytes,
+            totalMs: Date.now() - startedAt,
           }
         }
         const sampleRate = resolved.voice.sampleRate?.downlink ?? 24_000

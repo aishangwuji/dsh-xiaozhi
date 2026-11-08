@@ -129,7 +129,7 @@ var DshXiaozhi = (() => {
           ],
           summary: ["url", "resourceId"],
           secretFields: ["apiKey"],
-          probe: { kind: "none" }
+          probe: { kind: "asr", labelKey: "backupTestAsr" }
         }
       }
     },
@@ -165,7 +165,7 @@ var DshXiaozhi = (() => {
           ],
           summary: ["language"],
           secretFields: ["apiKey", "apiSecret"],
-          probe: { kind: "none" }
+          probe: { kind: "asr", labelKey: "backupTestAsr" }
         }
       }
     },
@@ -197,7 +197,7 @@ var DshXiaozhi = (() => {
           fields: [{ key: "language", type: "text", label: "asrLanguage", placeholder: "zh_cn" }],
           summary: ["language"],
           secretFields: [],
-          probe: { kind: "none" }
+          probe: { kind: "asr", labelKey: "backupTestAsr" }
         }
       }
     },
@@ -214,7 +214,7 @@ var DshXiaozhi = (() => {
           fields: [],
           summary: [],
           secretFields: [],
-          probe: { kind: "none" }
+          probe: { kind: "asr", labelKey: "backupTestAsr" }
         }
       }
     }
@@ -317,6 +317,11 @@ var DshXiaozhi = (() => {
     if (stage === "llm") {
       const first = result.firstTokenMs == null ? "\u2014" : result.firstTokenMs;
       return `${total} ms \xB7 ${t("firstToken")} ${first} ms`;
+    }
+    if (stage === "asr") {
+      const text = typeof result.text === "string" ? result.text.trim() : "";
+      const sample = text ? `\u201C${text.length > 40 ? `${text.slice(0, 40)}\u2026` : text}\u201D` : t("asrNoText");
+      return `${total} ms \xB7 ${sample}`;
     }
     return `${total} ms \xB7 ${result.bytes ?? 0} ${t("bytes")}`;
   };
@@ -540,7 +545,9 @@ var DshXiaozhi = (() => {
     backupMoveUp: "\u4E0A\u79FB",
     backupMoveDown: "\u4E0B\u79FB",
     backupTest: "\u6D4B\u8BD5",
+    backupTestAsr: "\u6D4B\u8BD5\u8BC6\u522B",
     backupTesting: "\u6D4B\u8BD5\u4E2D\u2026",
+    asrNoText: "\u672A\u8BC6\u522B\u51FA\u6587\u5B57",
     backupSaveFirst: "\u8BF7\u5148\u4FDD\u5B58\u914D\u7F6E",
     backupDeleteConfirm: "\u518D\u6B21\u70B9\u51FB\u5220\u9664",
     backupTestOk: "\u6D4B\u8BD5\u901A\u8FC7",
@@ -762,7 +769,9 @@ var DshXiaozhi = (() => {
     backupMoveUp: "Move up",
     backupMoveDown: "Move down",
     backupTest: "Test",
+    backupTestAsr: "Test ASR",
     backupTesting: "Testing\u2026",
+    asrNoText: "No text recognised",
     backupSaveFirst: "Save the configuration first",
     backupDeleteConfirm: "Click again to delete",
     backupTestOk: "Test passed",
@@ -2633,9 +2642,9 @@ var DshXiaozhi = (() => {
     const [openRow, setOpenRow] = useState2(null);
     const primaryKey = backupKeyState(stage, primary);
     const primaryTesting = testingPrimary === stage;
-    const primaryProbe = stageDescriptor(primary.provider, stage)?.probe?.kind || "none";
-    const primaryTestDisabled = primaryProbe === "none" || primaryTesting;
-    const testLabel = providersDirty ? t("saveAndTest") : t("backupTest");
+    const primaryProbe = stageDescriptor(primary.provider, stage)?.probe || { kind: "none" };
+    const primaryTestDisabled = primaryProbe.kind === "none" || primaryTesting;
+    const testLabel = providersDirty ? t("saveAndTest") : primaryProbe.labelKey ? t(primaryProbe.labelKey) : t("backupTest");
     const summaryKey = stage === "llm" ? t("model") : stage === "asr" ? t("asrUrl") : "";
     const fact = (key, value) => h(
       "div",
@@ -2673,7 +2682,7 @@ var DshXiaozhi = (() => {
           "div",
           { className: "xz-backup-actions" },
           h("button", { type: "button", className: "xz-btn", onClick: onEditPrimary }, t("backupEdit")),
-          primaryProbe === "none" ? null : h("button", {
+          primaryProbe.kind === "none" ? null : h("button", {
             type: "button",
             className: "xz-btn",
             disabled: primaryTestDisabled,
@@ -2692,9 +2701,10 @@ var DshXiaozhi = (() => {
           const result = entry.id ? testResults[entry.id] : null;
           const isTesting = Boolean(entry.id) && testingId === entry.id;
           const expanded = openRow === index;
-          const probeKind = stageDescriptor(entry.provider, stage)?.probe?.kind || "none";
-          const testDisabled = probeKind === "none" || isTesting;
-          const testTitle = probeKind === "none" ? t("probeUnsupported") : testLabel;
+          const probe = stageDescriptor(entry.provider, stage)?.probe || { kind: "none" };
+          const testDisabled = probe.kind === "none" || isTesting;
+          const rowTestLabel = providersDirty ? t("saveAndTest") : probe.labelKey ? t(probe.labelKey) : t("backupTest");
+          const testTitle = probe.kind === "none" ? t("probeUnsupported") : rowTestLabel;
           const rowFacts = [
             summaryKey ? `${summaryKey}: ${backupSummaryText(stage, entry)}` : null,
             `${t("backupSecret")}: ${keyState.text}`,
@@ -2766,7 +2776,7 @@ var DshXiaozhi = (() => {
                   setOpenRow(null);
                   onTest(index);
                 }
-              }, isTesting ? t("backupTesting") : testLabel),
+              }, isTesting ? t("backupTesting") : rowTestLabel),
               h("button", {
                 type: "button",
                 className: `xz-btn danger${confirmDelete === cardKey ? " confirm" : ""}`,
@@ -3191,7 +3201,7 @@ var DshXiaozhi = (() => {
       try {
         const result = await callApi("/test/provider", {
           method: "POST",
-          body: { kind: stage === "llm" ? "llm" : "tts", source: "backup", index }
+          body: { kind: stage, source: "backup", index }
         });
         setTestResults((previous) => ({ ...previous, [entry.id]: result }));
         notify(
@@ -3215,7 +3225,7 @@ var DshXiaozhi = (() => {
       }
       setTestingPrimary(stage);
       try {
-        const result = stage === "llm" ? await callApi("/test/llm", { method: "POST" }) : await callApi("/test/provider", { method: "POST", body: { kind: "tts", source: "primary" } });
+        const result = stage === "llm" ? await callApi("/test/llm", { method: "POST" }) : await callApi("/test/provider", { method: "POST", body: { kind: stage, source: "primary" } });
         setPrimaryTests((previous) => ({ ...previous, [stage]: result }));
         notify(
           result.ok ? `${t("backupTestOk")} \xB7 ${backupTestText(stage, result)}` : String(result.error || t("backupTestFail")),
