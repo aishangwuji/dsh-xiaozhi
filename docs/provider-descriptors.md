@@ -72,6 +72,10 @@
 `commitEditor` 会拦下空值）、`showWhen: { key, equals }`（同表单条件显示）、`primaryOnly: true`
 （只在主用编辑弹窗出现，备用条目编辑时隐藏——火山 AK/SK 拉音色就属于这种）。
 
+**备用 LLM 的模型字段**：`ProviderDialog` 在 `mode==='backup' && stage==='llm'` 且厂商有
+`modelHint` 时隐藏 `model` 字段，并在打开/换厂商时自动填入该默认；MiMo 没有 `modelHint`
+（模型清单从 `/v1/models` 拉），仍显示字段。主用模型不受影响，仍是全局默认。
+
 ### 段级元数据（`stages`）
 
 - `storageFields`：一条备用条目在 `settings.json` 里允许的字段（`blankBackup` 用它造空骨架）；

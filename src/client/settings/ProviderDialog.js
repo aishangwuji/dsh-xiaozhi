@@ -25,11 +25,20 @@ import { SchemaForm } from './SchemaForm.js'
 
       const provider = draft.provider || stageProviders(stage)[0];
       const desc = stageDescriptor(provider, stage);
+      // 备用 LLM 条目不要求选模型：有厂商默认（DeepSeek/OpenAI/火山/星火）就自动填默认并隐藏
+      // 模型字段；MiMo 没有默认模型（模型清单要从 /v1/models 拉），仍保留字段让用户选。
+      const fields = (desc?.fields || []).filter((field) =>
+        !(mode === 'backup' && stage === 'llm' && field.key === 'model' && desc?.modelHint)
+      );
       const switchProvider = (nextProvider) => {
         if (nextProvider === provider) return;
         // 字段是服务商专属的（模型名、资源、地址、密钥都不一样），换厂商就重开一张空表，
         // 并标记 providerChanged（主用保存时据此清掉上一家的旧密钥）。
-        onDraft({ ...blankBackup(stage, nextProvider), providerChanged: true });
+        const next = { ...blankBackup(stage, nextProvider), providerChanged: true };
+        if (mode === 'backup' && stage === 'llm') {
+          next.model = stageDescriptor(nextProvider, stage)?.modelHint || '';
+        }
+        onDraft(next);
       };
 
       const title = isNew
@@ -62,7 +71,7 @@ import { SchemaForm } from './SchemaForm.js'
                   provider,
                   mode,
                   index,
-                  fields: desc.fields || [],
+                  fields,
                   value: draft,
                   onChange: onDraft,
                   baseUrlHint: desc.baseUrlHint || '',

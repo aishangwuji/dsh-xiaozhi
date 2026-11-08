@@ -225,7 +225,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
    重试（缓存上限 60s，回放不推 partial）。主动打断不算失败。
 2. **粘性**：切到备用并成功后先继续用它，`cooldownMs`（默认 5 分钟）后才重新先试主用；
    每个会话的 adapter 实例各有一份，配置改动仍是下一次连接生效。
-3. **备用也是全局默认**：智能体级 `overrides` 只改主用（人设/模型/音色/语种/语速/静音），不会改这个智能体的备用链。TTS 备用条目同样只存「厂商 + 凭据」，运行时用各自厂商的默认音色（2026-11-08）；全局 TTS 主用也只存凭据，音色只由智能体 `overrides.voice` 决定，空值走厂商默认。
+3. **备用也是全局默认**：智能体级 `overrides` 只改主用（人设/模型/音色/语种/语速/静音），不会改这个智能体的备用链。TTS 备用条目同样只存「厂商 + 凭据」，运行时用各自厂商的默认音色（2026-11-08）；全局 TTS 主用也只存凭据，音色只由智能体 `overrides.voice` 决定，空值走厂商默认。**LLM 备用条目的模型**：厂商有默认（DeepSeek `deepseek-chat` / OpenAI `gpt-4o-mini` / 火山 `doubao-1.5-pro-32k` / 星火 `generalv3.5`）时，添加/编辑表单**不显示模型字段**，自动填默认；MiMo 没有默认模型（清单从 `/v1/models` 拉），仍保留字段。主用模型仍是全局默认，智能体「模型」可覆盖。
 4. **构建容错**：一条备用配错（缺 Key/未知 provider/缺 ffmpeg）只跳过并 warn，不打死整条语音；
    主用坏、备用好时用 `logger.error` 说明主用为什么没起来。
 5. **观测**：`session.build` 带 `llmCandidates` / `ttsCandidates` / `asrCandidates`（1 = 只有主用）

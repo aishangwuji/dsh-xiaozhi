@@ -195,7 +195,9 @@ render(
 // 描述符驱动表单的覆盖矩阵：每个 stage/provider 组合都要渲染出描述符里声明的字段。
 // 加厂商只改 src/providers.js，这里不新增用例也能覆盖（字段来自描述符本身）。
 const DIALOG_MATRIX = [
-  { stage: 'llm', provider: 'deepseek', expect: ['model', 'baseUrl', 'apiKey'] },
+  { stage: 'llm', provider: 'deepseek', expect: ['baseUrl', 'apiKey'] },
+  // MiMo 没有厂商默认模型，备用条目仍要选模型（模型清单来自 /v1/models）。
+  { stage: 'llm', provider: 'mimo', expect: ['model', 'baseUrl', 'apiKey'] },
   { stage: 'tts', provider: 'xunfei', expect: ['appId', 'apiKey', 'apiSecret'] },
   { stage: 'tts', provider: 'edge', expect: ['ttsEdgeKeyless'] },
   { stage: 'asr', provider: 'volc', expect: ['apiKey', 'resourceId', 'asrUrl'] },

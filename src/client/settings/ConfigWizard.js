@@ -160,12 +160,19 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
       };
       const openAddBackup = (stage) => {
         const provider = stageProviders(stage)[0];
-        setEditor({ stage, mode: 'backup', index: null, draft: blankBackup(stage, provider) });
+        const draft = blankBackup(stage, provider);
+        // 备用 LLM：有厂商默认模型就自动带上，表单不再让用户选（MiMo 无默认，保留字段）。
+        if (stage === 'llm') draft.model = stageDescriptor(provider, stage)?.modelHint || '';
+        setEditor({ stage, mode: 'backup', index: null, draft });
       };
       const openEditBackup = (stage, index) => {
         const entry = backupsOf(stage)[index];
         if (!entry) return;
-        setEditor({ stage, mode: 'backup', index, draft: { ...blankBackup(stage, entry.provider || ''), ...entry } });
+        const draft = { ...blankBackup(stage, entry.provider || ''), ...entry };
+        if (stage === 'llm' && !draft.model) {
+          draft.model = stageDescriptor(entry.provider || '', stage)?.modelHint || '';
+        }
+        setEditor({ stage, mode: 'backup', index, draft });
       };
       const openEditPrimary = (stage) => {
         const current = settings.voice?.[stage] || {};

@@ -94,11 +94,11 @@ add.click()
 await new Promise((resolve) => setTimeout(resolve, 200))
 console.log('provider dialog open:', !!document.querySelector('.xz-modal-lg'))
 
-// 空模型时显示厂商的 modelHint 占位（deepseek-chat），不再显示「未选择」。
+// 备用 LLM 有厂商默认模型：添加时不再让用户选模型（MiMo 例外，没有默认）。
 const addDialog = document.querySelector('.xz-modal-lg')
-const addModelTrigger = [...addDialog.querySelectorAll('.xz-pillselect-trigger')][1]
-const addModelText = addModelTrigger ? addModelTrigger.textContent.trim() : ''
-console.log('add model placeholder:', addModelText)
+const backupHasModel = [...addDialog.querySelectorAll('label')]
+  .some((label) => label.textContent.trim() === '模型')
+console.log('backup model field:', backupHasModel)
 
 // 必填校验：不填 API Key 点保存应被拦下（弹窗不关）；填了才允许提交。
 const confirmBeforeKey = [...addDialog.querySelectorAll('.xz-btn.primary')][0]
@@ -128,15 +128,15 @@ testButton.click()
 await new Promise((resolve) => setTimeout(resolve, 300))
 console.log('calls after save-and-test:', calls.join(' | '))
 
-// 已保存的模型不在厂商返回的清单里：必须回显原值，不能显示「未选择」。
+// 编辑备用（OpenAI）同样不再显示模型字段；保存只改本地状态。
 const row = document.querySelector('.xz-provider-row')
 const editButton = [...row.querySelectorAll('.xz-btn')].find((button) => button.textContent.trim() === '编辑')
 editButton.click()
 await new Promise((resolve) => setTimeout(resolve, 250))
 const editDialog = document.querySelector('.xz-modal-lg')
-const editModelTrigger = [...editDialog.querySelectorAll('.xz-pillselect-trigger')][1]
-const editModelText = editModelTrigger ? editModelTrigger.textContent.trim() : ''
-console.log('edit model label:', editModelText)
+const editHasModel = [...editDialog.querySelectorAll('label')]
+  .some((label) => label.textContent.trim() === '模型')
+console.log('edit backup model field:', editHasModel)
 
 // 自动保存：点编辑弹窗的「保存」（只改本地）后不点任何页面按钮，防抖后应自动 POST /settings。
 const postsBefore = calls.filter((call) => call.startsWith('POST') && call.includes('/settings')).length
@@ -164,9 +164,9 @@ const lastTestBody = [...callBodies].reverse().find((body) => body.includes('"so
 console.log('asr test result:', asrResult)
 
 const failures = []
-if (addModelText !== 'deepseek-chat') failures.push(`add model placeholder = ${addModelText || '(empty)'}`)
+if (backupHasModel) failures.push('backup add dialog still asks for a model')
+if (editHasModel) failures.push('backup edit dialog still asks for a model')
 if (!requiredBlocked) failures.push('required-field validation did not block the empty API Key')
-if (editModelText !== 'gpt-4o-mini') failures.push(`edit model label = ${editModelText || '(empty)'}`)
 if (postsAfter <= postsBefore) failures.push('auto-save did not POST /settings')
 if (!asrTestButton) failures.push('ASR primary test button missing')
 if (!lastTestBody) failures.push('ASR test did not POST /test/provider with kind=asr')

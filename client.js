@@ -3051,9 +3051,16 @@ var DshXiaozhi = (() => {
     }, [onCancel]);
     const provider = draft.provider || stageProviders(stage)[0];
     const desc = stageDescriptor(provider, stage);
+    const fields = (desc?.fields || []).filter(
+      (field) => !(mode === "backup" && stage === "llm" && field.key === "model" && desc?.modelHint)
+    );
     const switchProvider = (nextProvider) => {
       if (nextProvider === provider) return;
-      onDraft({ ...blankBackup(stage, nextProvider), providerChanged: true });
+      const next = { ...blankBackup(stage, nextProvider), providerChanged: true };
+      if (mode === "backup" && stage === "llm") {
+        next.model = stageDescriptor(nextProvider, stage)?.modelHint || "";
+      }
+      onDraft(next);
     };
     const title = isNew ? `${t("backupAddTitle")} \xB7 ${stageLabel(stage)}` : mode === "primary" ? `${t("providerEditPrimary")} \xB7 ${stageLabel(stage)}` : `${t("backupEditTitle")} \xB7 ${stageLabel(stage)}`;
     return h(
@@ -3089,7 +3096,7 @@ var DshXiaozhi = (() => {
             provider,
             mode,
             index,
-            fields: desc.fields || [],
+            fields,
             value: draft,
             onChange: onDraft,
             baseUrlHint: desc.baseUrlHint || "",
@@ -3223,12 +3230,18 @@ var DshXiaozhi = (() => {
     };
     const openAddBackup = (stage) => {
       const provider = stageProviders(stage)[0];
-      setEditor({ stage, mode: "backup", index: null, draft: blankBackup(stage, provider) });
+      const draft = blankBackup(stage, provider);
+      if (stage === "llm") draft.model = stageDescriptor(provider, stage)?.modelHint || "";
+      setEditor({ stage, mode: "backup", index: null, draft });
     };
     const openEditBackup = (stage, index) => {
       const entry = backupsOf(stage)[index];
       if (!entry) return;
-      setEditor({ stage, mode: "backup", index, draft: { ...blankBackup(stage, entry.provider || ""), ...entry } });
+      const draft = { ...blankBackup(stage, entry.provider || ""), ...entry };
+      if (stage === "llm" && !draft.model) {
+        draft.model = stageDescriptor(entry.provider || "", stage)?.modelHint || "";
+      }
+      setEditor({ stage, mode: "backup", index, draft });
     };
     const openEditPrimary = (stage) => {
       const current = settings.voice?.[stage] || {};
