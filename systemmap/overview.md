@@ -9,7 +9,7 @@ covered_paths:
 last_verified_commit: dc179b320f204192746276da2312aaa40692a56e
 verified_at: 2026-11-08
 status: current
-note: 2026-11-06 删除「行为档案/播放器」页：ProfileStore、/profiles/* 与 device.profileId 一并移除，人设与静音收口迁进 settings（全局设置）。2026-11-06 新增「主用 + 备用服务商」：settings v3 的 voice.{llm,tts,asr}.backups、adapters/failover.js、控制台卡片 + 弹窗表单、POST /test/provider；契约 docs/backup-providers.md、选择器规范 docs/pill-popover.md。「输出语种」与以上改动均尚未提交。2026-11-07：LLM 主路径改回插件直连并新增小米 MiMo（模型清单走 /v1/models）、联网工具回传正文并新增 web_fetch、对话历史（会话/消息/音频）、配置 UI 重构（全局设置单页分区：服务商为主 + 语音默认参数 + 接入与网关；人设只在设备级；设备配置与历史都是弹窗；PillSelect 改 fixed 浮层不撑布局）。2026-11-08：TTS 归属分离——全局设置只配「厂商 + 凭据」（保存时显式清空 voice/model/resourceId），音色（= TTS 模型族）改由设备 overrides.voice 选择（留空 = 厂商默认），src/voice/voices.js 新增 DEFAULT_TTS_VOICES / defaultTtsVoice / resolveTtsVoice（空→默认、跨厂商回落、自定义保留），TTS 备用条目用各自厂商默认音色；test/tts-defaults.test.mjs 新增，全量 189 项。2026-11-08 去掉备用服务商 5 条上限：settings.js 的 normalizeBackups/loadBackups 不再校验/截断条数，client.js 的「添加」按钮永不禁用、标题只显示「备用 N 个」，test/settings.test.mjs 新增「12 条可存可读」，全量 189 项。2026-11-08 智能体/设备拆分：agents.json + devices.agentId、旧设备启动迁移（配置与记忆搬家）、控制台「设备」改名「智能体」（卡片/绑定弹窗/级联删除）、记忆改按智能体、历史合并展示，全量 189 项。
+note: 2026-11-06 删除「行为档案/播放器」页：ProfileStore、/profiles/* 与 device.profileId 一并移除，人设与静音收口迁进 settings（全局设置）。2026-11-06 新增「主用 + 备用服务商」：settings v3 的 voice.{llm,tts,asr}.backups、adapters/failover.js、控制台卡片 + 弹窗表单、POST /test/provider；契约 docs/backup-providers.md、选择器规范 docs/pill-popover.md。「输出语种」与以上改动均尚未提交。2026-11-07：LLM 主路径改回插件直连并新增小米 MiMo（模型清单走 /v1/models）、联网工具回传正文并新增 web_fetch、对话历史（会话/消息/音频）、配置 UI 重构（全局设置单页分区：服务商为主 + 语音默认参数 + 接入与网关；人设只在设备级；设备配置与历史都是弹窗；PillSelect 改 fixed 浮层不撑布局）。2026-11-08：TTS 归属分离——全局设置只配「厂商 + 凭据」（保存时显式清空 voice/model/resourceId），音色（= TTS 模型族）改由设备 overrides.voice 选择（留空 = 厂商默认），src/voice/voices.js 新增 DEFAULT_TTS_VOICES / defaultTtsVoice / resolveTtsVoice（空→默认、跨厂商回落、自定义保留），TTS 备用条目用各自厂商默认音色；test/tts-defaults.test.mjs 新增，全量 196 项。2026-11-08 去掉备用服务商 5 条上限：settings.js 的 normalizeBackups/loadBackups 不再校验/截断条数，client.js 的「添加」按钮永不禁用、标题只显示「备用 N 个」，test/settings.test.mjs 新增「12 条可存可读」，全量 196 项。2026-11-08 智能体/设备拆分：agents.json + devices.agentId、旧设备启动迁移（配置与记忆搬家）、控制台「设备」改名「智能体」（卡片/绑定弹窗/级联删除）、记忆改按智能体、历史合并展示，全量 196 项。
 ---
 
 # dsh-xiaozhi 认知地图
@@ -27,9 +27,10 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 | 设备网关 | `src/gateway.js:handle` | `/health`（免鉴权）、`/commands`、`/exec`（Bearer） |
 | 操作台 HTTP | `src/control.js` | Harness webServer 前缀 `/dsh-xiaozhi-7c3a`：全部路由开放（回环即管理员），写接口查 CSRF 头 |
 | 控制台 UI | `src/client/**`（构建产物 `client.js`） | 概览 / 智能体 / 全局设置三个平级视图，内部路由；`npm run build` 用 esbuild 打包 |
+| 服务商描述符 | `src/providers.js` | 控制台元数据唯一来源：`GET /providers` 下发；`settings.js` 的备用白名单由它派生；加厂商只改这里 + 适配器 |
 | 运行时设置 | `src/settings.js` | `settings.json`（0600）：端点、固件、网关、语音 provider、**静音收口与语音默认参数**；全局人设字段仍在（API 保留），控制台不再编辑、改为按智能体配置；TTS 段只存「厂商 + 凭据」，音色归智能体级（2026-11-08）；无任何登录凭据 |
 | 地址发现 | `src/network.js` | 枚举本机 IPv4 私网地址，虚拟网卡（WSL/Hyper-V/VMware）排最后；`/state` 用它算 OTA/WS/网关的真实 URL |
-| 浏览器面板 | `src/client/console/*.js` | `main` key `xiaozhi` + `sidebar.panellist` id `xiaozhi`：概览 / 智能体（卡片 + 配置弹窗 + 设备绑定弹窗 + 历史对话）/ 全局设置（服务商为主 + 语音默认参数 + 接入与网关；TTS 块只配厂商 + 凭据，音色在智能体「角色」页选，2026-11-08）/ 能力 |
+| 浏览器面板 | `src/client/console/*.js` | `main` key `xiaozhi` + `sidebar.panellist` id `xiaozhi`：概览 / 智能体（卡片 + 配置弹窗 + 设备绑定弹窗 + 历史对话）/ 全局设置（服务商三张概览卡 + 二级弹窗，表单由 `src/providers.js` 描述符驱动；语音默认参数；接入与网关；TTS 只配厂商 + 凭据，音色在智能体「角色」页选，2026-11-08）/ 能力 |
 
 ## 核心数据模型
 
@@ -88,12 +89,14 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 8. **LLM 主路径 = 插件直连厂商（2026-11-07）**：不再走 Harness 宿主 `llm` 服务。智能体级覆盖只改模型名，`src/device-config.js` 不再把设备 `hostProvider` 强切成 `provider:'host'`（线上曾因此持续 `no adapter registered for provider "…"`，设备只有聆听中）。新增小米 MiMo（`mimo`）：OpenAI 兼容但认证头是 `api-key`，**模型清单从 `GET /v1/models` 实时拉取（代码不内置模型 id）**，语音场景 `thinking:{type:'disabled'}`；`host` 仅保留为全局显式选项。
 9. **联网工具要能读正文（2026-11-07）**：`web_search` 固定 `need_content:true` 并回传正文摘录（单条 ≤900、整批 ≤3800 字），新增 `web_fetch`（DeepSeek Fetch，Markdown ≤3500 字）让模型能读具体页面；两个工具共用 DeepSeek Key（主用非 DeepSeek 时从备用链找），Key 用运行时 getter，控制台保存即生效。
 10. **对话历史 = 会话 + 消息 + 音频（2026-11-07）**：控制台「设备 → 历史」按 WS 连接分段的会话浏览（对齐官方 ai_agent_chat_history / ai_agent_chat_audio 的本地实现）。`history/<device>.jsonl` 每条消息一行（`session`=连接 session_id，role，content，audioId），音频 WAV 存 `history/audio/<device>/`；旧 `{at,user,assistant}` 行读取时按 10 分钟间隔聚合迁移。文本 5000 条/设备、音频 30 天 + 500MB、单条 120s 截断；写盘 fire-and-forget，失败只 warn。契约 `docs/history.md`，入口 `src/history.js` + `src/control.js`（`/history/*`）。
-11. **配置 UI：单页分区 + 弹窗（2026-11-07 两轮定稿）**：全局设置 = 单页分区，没有左侧步骤侧边栏/步骤弹窗——① 服务商（页面主体：ASR/LLM/TTS 三块纵向，每块标题 + 当前主用摘要 + `ProviderSection`）② 语音默认参数（静音收口/回复长度/输出语种/回复速度）③ 接入与网关（默认折叠）④ 底部唯一「保存配置」（整份 settings 一次提交）。**人设从全局设置移除**，只在「设备 → 配置 → 角色」按设备设置（`save()` 仍原样透传 `systemPrompt`，不会清掉已存值）。设备「配置」也从卡片内联展开改为 `DeviceConfigDialog` 弹窗（根层渲染，避开卡片 backdrop-filter 包含块）。下拉统一为 `PillSelect` 胶囊浮层：`position:fixed` + 视口 clamp/翻转，打开不改变 `document.scrollHeight`（不撑滚动条），字段内外都是 `999px` 胶囊；`fixedContainingBlock()` 处理 `backdrop-filter` 祖先；`.xz-app`/`.xz-content` 加 `scrollbar-gutter:stable` 兜底。规范 `docs/pill-popover.md`。
+11. **配置 UI：三张概览卡 + 二级弹窗（2026-11-08 改版）**：全局设置 = 三个环节概览卡（ASR/LLM/TTS，每张 = 主用厂商 + 摘要 + 密钥/备用数/降级链 + 状态点），点「管理」进 `xz-stage-modal`——弹窗里主用卡一整行、备用纵向列表（行内 `[编辑][⋯]`，上移/下移/测试/删除收进 ⋯ 展开区）、底部整行添加；② 语音默认参数（静音收口/回复长度/输出语种/回复速度）③ 接入与网关（默认折叠）④ 底部 **sticky** 唯一「保存配置」（整份 settings 一次提交）。**dirty 时测试按钮变「保存并测试」**（先 `POST /settings` 再按服务端顺序测）。**人设从全局设置移除**，只在「智能体 → 配置 → 角色」按智能体设置（`save()` 仍原样透传 `systemPrompt`）。设备「配置」也是弹窗（`AgentConfigDialog`，根层渲染，避开卡片 backdrop-filter 包含块）。下拉统一为 `PillSelect` 胶囊浮层：`position:fixed` + 视口 clamp/翻转，打开不改变 `document.scrollHeight`；`fixedContainingBlock()` 处理 `backdrop-filter` 祖先；`.xz-app`/`.xz-content` 加 `scrollbar-gutter:stable` 兜底。规范 `docs/pill-popover.md`。
 12. **TTS 归属：全局 = 厂商 + 凭据，智能体 = 音色/模型（2026-11-08）**：全局设置 → TTS 合成只配厂商与凭据（volc = API Key；xunfei = APPID/APIKey/APISecret；edge 免密钥），主用/备用编辑弹窗都只留这些字段；保存时把全局 `voice` / `model` / `resourceId` 显式清空。音色（= TTS 模型族）改在「智能体 → 配置 → 角色」按智能体选，首项「默认音色」= 不覆盖，留空 = 厂商默认（`DEFAULT_TTS_VOICES`：火山 `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan`）。`src/voice/adapters/index.js` 的 `buildTtsAdapter` 统一走 `resolveTtsVoice`，所以主用/备用条目只存凭据也能构建；设备级音色只覆盖主用，备用用各自厂商默认音色；`session.build` trace 与 `/test/provider` 回显实际生效音色。
 
 13. **智能体 = 配置单位，设备 = 物理单位（2026-11-08）**：对齐参考服务端 `ai_agent` / `ai_device.agent_id`——人设/模型/音色/语种/记忆/工具在智能体上，一台智能体可绑定多台设备；控制台页面从「设备」改名「智能体」，卡片 = 智能体，设备操作收进「设备(N)」弹窗。删智能体级联删绑定设备（与 `deleteAgent` 一致），所以做二次确认。旧数据启动时各建一个智能体并复制记忆，行为不变。契约 `docs/agent-device.md`。
 
 14. **控制台客户端：React + esbuild 多文件（2026-11-08）**：宿主用 `window.__ModuleLoader__.load({ factory(require) })` 加载单文件产物，React 来自页面模块表（`require('react')`），slot 只收 React 组件——**Vue 不能直接用**（`require('vue')` 不存在；`dsh.client.external` 只能声明页面已提供的模块）。要换只能把 Vue 打进产物再用 React 桥挂载，双框架不划算。源码拆到 `src/client/**`（core/i18n/styles/ui/views/agents/settings/console），`npm run build`（esbuild，React external）生成 `client.js`，`npm run smoke` 用真实 React SSR 渲染主要页面。契约 `docs/client-architecture.md`。
+
+15. **服务商描述符：元数据与前端解耦（2026-11-08）**：`src/providers.js` 是唯一元数据来源（`id/name/group/stages`，每段声明 `fields/summary/secretFields/probe` 等），`GET /providers` 下发；client.js 打包一份首屏兜底，启动后 `setProviders()` 覆盖。`settings.js` 的备用白名单由 `allProvidersForStage()` 派生（含 `hidden` 的 funasr）。前端 `core.js` 的 provider 辅助与 `ProviderDialog`/`SchemaForm` 全部读描述符，没有 `stage ===`/`provider ===` 分支；加厂商 = 描述符 + 适配器/preset，**前端 0 改动**。契约 `docs/provider-descriptors.md`。
 
 ## 语音管道（src/voice/）
 
@@ -110,7 +113,7 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 
 历史/记忆（`src/history.js` / `src/memory.js`）：`HistoryStore` 管「说过什么」的只读流水（会话/消息/WAV 音频，30 天音频保留）；`MemoryStore` 管「要记住的信息」（facts + 最近 8 轮，注入 prompt）。两者都按 deviceId 隔离，`VoiceSession` 在每轮收尾时分别写入，互不阻塞语音。
 
-实测（`node --test "test/*.test.mjs"`，189 项全绿）：真 Opus 整轮 277ms；mock 供应商首帧 40–100ms；打断 <100ms 且无幽灵帧；20 轮无泄漏；真实 Edge 首包 1.3–1.5s（整句合成后才吐包），是端到端预算的主要项。
+实测（`node --test "test/*.test.mjs"`，196 项全绿）：真 Opus 整轮 277ms；mock 供应商首帧 40–100ms；打断 <100ms 且无幽灵帧；20 轮无泄漏；真实 Edge 首包 1.3–1.5s（整句合成后才吐包），是端到端预算的主要项。
 
 ## 验证
 

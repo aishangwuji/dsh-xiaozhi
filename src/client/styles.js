@@ -254,24 +254,59 @@
 /* ---- 全局设置单页 IA（2026-11-07）：以服务商为主体，语音默认参数 / 接入与网关次之 ---- */
 .xz-config-page{display:flex;flex-direction:column;gap:14px;padding-bottom:10px}
 .xz-config-page>.xz-card{margin-bottom:0}
-/* 三段服务商：区块之间用分隔线 + 留白；区块内直接复用 ProviderSection（组件本身不改） */
-.xz-provider-stage{margin-top:18px;padding-top:16px;border-top:1px solid var(--xz-line)}
-.xz-provider-stage:first-of-type{border-top:none;margin-top:8px;padding-top:4px}
-.xz-provider-stage-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:2px}
-.xz-provider-stage-title{margin:0;font-size:14px;font-weight:650}
-.xz-provider-stage-summary{min-width:0;flex:1;font-size:11.5px;color:var(--xz-text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* ProviderSection 自带「服务商配置」标题和上边线：区块之间已经有分隔线，这里去掉重复的那层 */
-.xz-provider-stage .xz-backup-section{margin-top:6px;padding-top:0;border-top:none}
+/* 一级：三个环节概览卡（2026-11-08）。桌面 3 列 / 平板 2 列 / 手机 1 列，一屏能扫完。 */
+.xz-stage-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.xz-stage-card{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--xz-line);border-radius:16px;background:var(--xz-surface-strong);cursor:pointer;text-align:left;font:inherit;color:inherit;transition:border-color .16s ease,box-shadow .16s ease}
+.xz-stage-card:hover{border-color:rgba(0,122,255,.35);box-shadow:var(--xz-shadow-sm)}
+.xz-stage-card.is-warn{border-color:rgba(255,159,10,.3)}
+.xz-stage-card-head{display:flex;align-items:center;gap:10px}
+.xz-stage-icon{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--xz-primary-soft);color:var(--xz-primary);font-size:13px;font-weight:700;flex:none}
+.xz-stage-card-heading{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.xz-stage-card-heading strong{font-size:13.5px}
+.xz-stage-card-desc{font-size:10.5px;color:var(--xz-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-stage-card-primary{display:flex;flex-direction:column;gap:2px;min-width:0}
+.xz-stage-card-primary strong{font-size:15px}
+.xz-stage-card-detail{font-size:11.5px;color:var(--xz-text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-stage-card-facts{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--xz-text-2)}
+.xz-stage-card-chain{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-stage-card-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding-top:2px}
+.xz-stage-card-health{font-size:11px;color:var(--xz-text-3)}
+.xz-stage-card-health.ok{color:var(--xz-success)}
+.xz-stage-card-health.warn{color:var(--xz-warning)}
+.xz-stage-card-manage{font-size:12px;font-weight:600;color:var(--xz-primary)}
+/* 二级：一个环节的管理弹窗（复用 devices modal 的「固定头 + 可滚体 + 固定脚」骨架） */
+.xz-stage-modal{width:min(680px,94vw);height:min(600px,88vh);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;padding:0}
+.xz-stage-modal .xz-modal-head{padding:16px 20px 12px;border-bottom:1px solid var(--xz-line);flex:none}
+.xz-stage-modal .xz-modal-body{flex:1 1 auto;min-height:0;overflow:auto;padding:14px 20px;scrollbar-gutter:stable}
+.xz-stage-modal .xz-modal-foot{padding:12px 20px;border-top:1px solid var(--xz-line);flex:none;display:flex;justify-content:flex-end;gap:8px}
+/* 备用：纵向列表（不是 grid），行内信息 + 右侧编辑/⋯，操作区展开在行下方 */
+.xz-provider-list{display:flex;flex-direction:column;margin-top:12px}
+.xz-provider-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--xz-line);min-width:0}
+.xz-provider-row:last-child{border-bottom:none}
+.xz-provider-row.is-draft{border-bottom-style:dashed}
+.xz-provider-row-main{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 260px}
+.xz-provider-row-title{display:flex;align-items:center;gap:8px;min-width:0}
+.xz-provider-row-title strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-provider-row-facts{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--xz-text-2)}
+.xz-provider-row-facts span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-provider-row-actions{display:flex;gap:6px;flex:none;margin-left:auto}
+.xz-provider-row-menu{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 6px 34px}
+.xz-provider-empty{margin:10px 0 2px;padding:12px;border:1px dashed var(--xz-line);border-radius:12px;background:var(--xz-surface-muted)}
+/* 添加备用：列表底部一整行，不再是同尺寸 dashed 方块 */
+.xz-backup-add-row{display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;margin-top:8px;padding:10px 12px;border:1px dashed var(--xz-line);border-radius:12px;background:transparent;color:var(--xz-primary);font:inherit;font-size:12.5px;cursor:pointer}
+.xz-backup-add-row:hover:not(:disabled){background:var(--xz-primary-soft);border-color:rgba(0,122,255,.4)}
 /* 接入与网关：可折叠、默认收起，页面的视觉重点留给服务商 */
 .xz-config-access>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:650}
 .xz-config-access>summary::-webkit-details-marker{display:none}
 .xz-config-access>summary::after{content:'▾';margin-left:auto;font-size:11px;color:var(--xz-text-3);transition:transform .18s ease}
 .xz-config-access[open]>summary::after{transform:rotate(180deg)}
 .xz-config-access[open]>summary{margin-bottom:12px}
-/* 页面底部：一行「保存后生效」提示 + 保存按钮 */
-.xz-config-footer{display:flex;align-items:center;gap:12px;justify-content:flex-end;margin:2px 2px 10px}
+/* 页面底部：sticky 保存条，滚到哪都能点（2026-11-08） */
+.xz-config-footer{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:12px;justify-content:flex-end;margin:2px 2px 10px;padding:10px 12px;border:1px solid var(--xz-line);border-radius:14px;background:var(--xz-surface-strong);box-shadow:var(--xz-shadow-sm)}
 .xz-config-footer .xz-hint{margin-right:auto}
 @media (max-width:768px){.xz-config-footer{flex-wrap:wrap;justify-content:flex-end}.xz-config-footer .xz-hint{flex:1 1 100%;margin-right:0}}
+@media (max-width:640px){.xz-stage-cards{grid-template-columns:1fr}.xz-stage-modal{width:96vw;height:92vh;max-height:92vh}.xz-provider-row-menu{padding-left:0}}
+
 /* 弹窗骨架仍被「智能体 → 配置」的 AgentConfigDialog 复用：固定头 + 可滚动页签内容 + 页脚。
    高度必须写死，不能只给 max-height（2026-11-08 修）：三个页签内容高度差很大，弹窗按内容
    收缩时垂直居中会让标题/页签跟着上下跳；固定高度后只有页签内部滚动。 */

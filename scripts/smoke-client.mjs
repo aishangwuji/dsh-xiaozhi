@@ -8,6 +8,7 @@
  */
 import fs from 'node:fs'
 import vm from 'node:vm'
+import assert from 'node:assert/strict'
 import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
@@ -76,6 +77,7 @@ const { ProviderSection } = await import('../src/client/settings/ProviderSection
 const { AgentConfigDialog } = await import('../src/client/agents/AgentConfigDialog.js')
 const { AgentDevicesDialog } = await import('../src/client/agents/AgentDevicesDialog.js')
 const { HistoryDialog } = await import('../src/client/agents/HistoryDialog.js')
+const { ProviderDialog } = await import('../src/client/settings/ProviderDialog.js')
 
 const state = {
   version: 3,
@@ -118,11 +120,15 @@ render(
   React.createElement(ProviderSection, {
     stage: 'llm',
     primary: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-••••99', hasApiKey: true },
-    entries: [{ id: 'e1', provider: 'deepseek', model: 'deepseek-flash', apiKey: 'sk-••••99', hasApiKey: true }],
-    providersDirty: false,
-    primaryTest: null,
+    entries: [
+      { id: 'e1', provider: 'deepseek', model: 'deepseek-flash', apiKey: 'sk-••••99', hasApiKey: true },
+      { id: 'e2', provider: 'openai', model: 'gpt-4o-mini', baseUrl: 'https://api.openai.com/v1' },
+    ],
+    // dirty 时测试按钮应变成「保存并测试」且不再禁用（2026-11-08 改版）。
+    providersDirty: true,
+    primaryTest: { ok: true, totalMs: 120, firstTokenMs: 40 },
     testingPrimary: '',
-    testResults: {},
+    testResults: { e1: { ok: true, totalMs: 90, firstTokenMs: 30 } },
     testingId: '',
     confirmDelete: '',
     onEditPrimary: noop,
@@ -167,4 +173,51 @@ render(
   })
 )
 render('HistoryDialog', React.createElement(HistoryDialog, { agent: state.agents[0], onClose: noop }))
+render(
+  'ProviderDialog',
+  React.createElement(ProviderDialog, {
+    stage: 'llm',
+    mode: 'backup',
+    index: 0,
+    isNew: false,
+    draft: {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKey: '',
+    },
+    onDraft: noop,
+    onConfirm: noop,
+    onCancel: noop,
+  })
+)
+
+// 描述符驱动表单的覆盖矩阵：每个 stage/provider 组合都要渲染出描述符里声明的字段。
+// 加厂商只改 src/providers.js，这里不新增用例也能覆盖（字段来自描述符本身）。
+const DIALOG_MATRIX = [
+  { stage: 'llm', provider: 'deepseek', expect: ['model', 'baseUrl', 'apiKey'] },
+  { stage: 'tts', provider: 'xunfei', expect: ['appId', 'apiKey', 'apiSecret'] },
+  { stage: 'tts', provider: 'edge', expect: ['ttsEdgeKeyless'] },
+  { stage: 'asr', provider: 'volc', expect: ['apiKey', 'resourceId', 'asrUrl'] },
+  { stage: 'asr', provider: 'xunfei', expect: ['appId', 'apiKey', 'apiSecret', 'asrLanguage'] },
+  { stage: 'asr', provider: 'local', expect: ['asrLanguage', 'localAsrNote'] },
+]
+for (const item of DIALOG_MATRIX) {
+  const html = renderToStaticMarkup(
+    React.createElement(ProviderDialog, {
+      stage: item.stage,
+      mode: 'backup',
+      index: 0,
+      isNew: true,
+      draft: { provider: item.provider },
+      onDraft: noop,
+      onConfirm: noop,
+      onCancel: noop,
+    })
+  )
+  for (const key of item.expect) {
+    assert.ok(html.includes(key), `${item.provider}/${item.stage} 缺少字段 ${key}`)
+  }
+  console.log(`dialog ${item.stage}/${item.provider}: ok`)
+}
 console.log('smoke ok')

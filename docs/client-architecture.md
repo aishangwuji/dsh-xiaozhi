@@ -51,10 +51,12 @@ window.__ModuleLoader__.load({
 | `src/client/ui/` | `Icon` / `PillSelect` / `menu`（`MenuItem`、`IconCheck`）/ `primitives`（`Badge`、`Metric`、`EndpointRow`） |
 | `src/client/views/` | `Dashboard`（概览）、`CapabilitiesView`（已无渲染点，保留待评估） |
 | `src/client/agents/` | `AgentsView`、`AgentConfigDialog`、`AgentDevicesDialog`、`HistoryDialog` |
-| `src/client/settings/` | `ConfigWizard`（全局设置页）、`ProviderSection`、`ProviderDialog`、`ModelField` |
+| `src/client/settings/` | `ConfigWizard`（全局设置页）、`ProviderSection`、`ProviderDialog`、`SchemaForm`（描述符驱动表单）、`ModelField` |
+| `src/providers.js` | 服务商描述符（唯一元数据来源，服务端与客户端共用；见 `docs/provider-descriptors.md`） |
 | `src/client/console/` | `Console`（导航/滚动外壳）、`XiaozhiPanel`（面板根组件） |
 | `build.mjs` | esbuild 构建脚本 |
 | `scripts/smoke-client.mjs` | 冒烟：产物加载 + slot 注册 + 主要组件 SSR 渲染 |
+| `scripts/check-config-wizard.mjs` | jsdom 交互检查：全局设置概览卡 → 弹窗 → 添加 → ⋯ → 保存并测试 |
 
 ## 3. 构建
 
@@ -82,9 +84,11 @@ npm run smoke    # 冒烟
 2. 调 `factory(require)`，`require('react')` 返回真实 React，断言拿到 `{ inject, apply }`；
 3. 用桩 `ctx` 跑 `apply`，断言 `main` / `sidebar.panellist` 都注册了；
 4. 用 `react-dom/server` 渲染 `Console`、`AgentsView`、`ConfigWizard`、`ProviderSection`、
-   三个弹窗——抓渲染期的 undefined / 拼错名字。
+   三个弹窗与 `ProviderDialog`——抓渲染期的 undefined / 拼错名字。
 
-它不替代浏览器验收（样式、交互、定位仍需人眼），但能在不重启 DSH 的情况下拦住大部分改崩。
+`npm run check:ui` 再用 jsdom 把全局设置点一遍：概览卡 → stage 弹窗 → 添加 → ⋯ 菜单 →
+删除二次确认 → 保存并测试（断言先 `POST /settings` 再 `/test/llm`）。它不替代浏览器验收
+（样式、交互、定位仍需人眼），但能在不重启 DSH 的情况下拦住大部分改崩。
 
 ## 5. 编码约定
 
@@ -114,8 +118,9 @@ npm run smoke    # 冒烟
 ```powershell
 npm run build
 npm run smoke
+npm run check:ui
 node --check client.js
-node --test "test/*.test.mjs"   # 189 项
+node --test "test/*.test.mjs"   # 196 项
 ```
 
 ## 7. 变更记录
@@ -126,3 +131,11 @@ node --test "test/*.test.mjs"   # 189 项
   （用户要求：卡片区里数量一眼能数，头部不再挂计数）。
 - **2026-11-08（修）**：`AgentConfigDialog` 补 `toolLabel` 导入——拆分时漏了，打开配置弹窗
   即白屏；`npm run smoke` 改为用非空 `tools` 渲染该弹窗，覆盖「扩展能力」页签。
+- **2026-11-08（改版）**：全局设置从「三块纵向卡片」改成「三个环节概览卡 + `xz-stage-modal`」；
+  备用 grid → 纵向列表 + `⋯` 展开区；添加改整行；dirty 测试改「保存并测试」；底部保存条 sticky。
+  新增 `npm run check:ui`（jsdom 交互检查）。顺带修 `ProviderDialog` 的 `React.Fragment` 未导入
+  （拆分遗留，点「编辑」会崩）。
+- **2026-11-08（描述符化）**：服务商元数据从前端搬到 `src/providers.js` + `GET /providers`；
+  `ProviderDialog` 换成 `SchemaForm`，`core.js` 的 provider 辅助全部读描述符；
+  `settings.js` 的备用白名单由描述符派生。加厂商 = 描述符 + 适配器，前端 0 改动。
+  详见 `docs/provider-descriptors.md`。

@@ -517,3 +517,20 @@ test('the gateway stays closed when no token is configured', async () => {
     await harness.dispose()
   }
 })
+
+test('GET /providers serves the descriptor catalog to the console', async () => {
+  const harness = await startHarness()
+  try {
+    const response = await fetch(`${harness.controlBase}${CONTROL}/providers`)
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.equal(body.schemaVersion, 1)
+    assert.ok(Array.isArray(body.providers) && body.providers.length >= 8)
+    const volc = body.providers.find((provider) => provider.id === 'volc')
+    assert.ok(volc.stages.llm && volc.stages.tts && volc.stages.asr)
+    assert.ok(body.stages.tts.storageFields.includes('apiSecret'))
+    assert.equal(body.stages.asr.labelKey, 'step3')
+  } finally {
+    await harness.dispose()
+  }
+})

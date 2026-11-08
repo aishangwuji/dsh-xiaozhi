@@ -1,92 +1,48 @@
+import { PROVIDERS as BUNDLED_PROVIDERS, STAGE_META as BUNDLED_STAGE_META } from '../providers.js'
     const NS = 'dsh.xiaozhi';
     const API = '/dsh-xiaozhi-7c3a';
     const POLL_MS = 5000;
     // 音色目录来自服务端（与 Go 的 voice_constants.go 同源），只拉一次。
     let VOICES = {};
 
-    /** 厂商显示名（通用）：设备卡片等只读展示用；具体步骤里用 stageProviderLabel()。 */
-    const PROVIDER_LABELS = {
-      mock: '本地模拟',
-      host: 'Harness 厂商',
-      deepseek: 'DeepSeek',
-      mimo: '小米 MiMo',
-      openai: 'OpenAI',
-      volc: '火山引擎豆包',
-      spark: '讯飞星火',
-      edge: '微软 Edge',
-      xunfei: '讯飞',
-      local: '本地 SenseVoice',
-      funasr: 'FunASR（本地）'
-    };
-    const providerLabel = (id) => PROVIDER_LABELS[id] || id;
+    // 服务商描述符：打包一份兜底；`GET /providers` 回来后替换（服务端加厂商前端不用发版）。
+    let PROVIDERS = BUNDLED_PROVIDERS;
+    let STAGE_META = BUNDLED_STAGE_META;
+    let PROVIDER_INDEX = new Map(PROVIDERS.map((provider) => [provider.id, provider]));
 
-    /**
-     * 可配置的服务商目录（三段共用同一结构）。
-     *
-     * 只收录**真实可用**的服务商：`mock` 只用于桌面联调、`host` 是 Harness 自带厂商
-     * （没有服务商 Key）、`funasr` 依赖本机额外部署的 FunASR 服务（当前环境没有），
-     * 都不出现在下拉里。要新增一家，只改这里：选项、分组、是否免密钥、字段提示都从目录派生。
-     *
-     * `group` 只影响选择器里的分组标题（云端服务 / 本地服务）。
-     */
-    const PROVIDER_CATALOG = {
-      llm: {
-        deepseek: { name: 'DeepSeek', group: 'cloud', baseUrlHint: 'https://api.deepseek.com/v1', modelHint: 'deepseek-chat' },
-        // 小米 MiMo：OpenAI Chat Completions 兼容，但鉴权是 `api-key` 头而不是 Bearer。
-        // 模型 id **不在这写死**：控制台通过后端 `POST /models`（带当前填写的 Key）实时拉
-        // `GET https://api.xiaomimimo.com/v1/models`，拉不到就退回文本框手填。
-        mimo: { name: '小米 MiMo', group: 'cloud', baseUrlHint: 'https://api.xiaomimimo.com/v1' },
-        openai: { name: 'OpenAI', group: 'cloud', baseUrlHint: 'https://api.openai.com/v1', modelHint: 'gpt-4o-mini' },
-        volc: { name: '火山引擎豆包', group: 'cloud', baseUrlHint: 'https://ark.cn-beijing.volces.com/api/v3', modelHint: 'doubao-1.5-pro-32k' },
-        spark: { name: '讯飞星火', group: 'cloud', baseUrlHint: 'https://spark-api-open.xf-yun.com/v1', modelHint: 'generalv3.5' }
-      },
-      tts: {
-        volc: { name: '火山引擎豆包', group: 'cloud' },
-        xunfei: { name: '讯飞语音合成', group: 'cloud' },
-        edge: { name: '微软 Edge', group: 'local', keyless: true }
-      },
-      asr: {
-        volc: { name: '火山引擎豆包', group: 'cloud' },
-        xunfei: { name: '讯飞语音听写', group: 'cloud' },
-        local: { name: '本地 SenseVoice', group: 'local', keyless: true }
+    /** 用 `GET /providers` 的响应替换描述符（幂等；空响应保持兜底）。 */
+    const setProviders = (payload) => {
+      if (Array.isArray(payload?.providers) && payload.providers.length > 0) {
+        PROVIDERS = payload.providers;
+        PROVIDER_INDEX = new Map(PROVIDERS.map((provider) => [provider.id, provider]));
       }
+      if (payload?.stages && typeof payload.stages === 'object') STAGE_META = payload.stages;
     };
 
+    const providerById = (id) => PROVIDER_INDEX.get(String(id ?? '')) || null;
+    const stageDescriptor = (id, stage) => providerById(id)?.stages?.[stage] || null;
     /** 某一段可选的 provider id（顺序即下拉里的顺序）。 */
-    const stageProviders = (stage) => Object.keys(PROVIDER_CATALOG[stage] || {});
-    /** 某一段某一家 provider 在界面上的标准名称。 */
-    const stageProviderLabel = (stage, id) => PROVIDER_CATALOG[stage]?.[id]?.name || providerLabel(id);
-
-    // ---------------------------------------------------------------- 服务商（主用 + 备用）
-    // 契约：docs/backup-providers.md。三段各一行 backups 数组，顺序即优先级。
-    // 备用条数**不设上限**（2026-11-08 去掉 5 条上限）：服务端不再拒绝超长列表，
-    // 这里也不禁用「添加」按钮。
-    /**
-     * 主用服务商卡编辑弹窗会写回设置的字段（备用条目走自己的整条合并）。
-     * 注意 TTS 的 `rate` / `speed` 不在这里：回复速度是全局/智能体级设置，不属于某个服务商，
-     * 编辑主用服务商不能把用户刚调好的语速顺手清掉。
-     *
-     * TTS 的 `voice` / `model` / `resourceId` 也不在这里：全局只配「厂商 + 凭据」，
-     * 音色（= TTS 模型）只在「智能体 → 配置」里按智能体选；`url` 同理只保留原值、不在界面展示。
-     */
-    const PRIMARY_EDIT_FIELDS = {
-      llm: ['model', 'baseUrl', 'appId', 'apiKey'],
-      tts: ['appId', 'apiKey', 'apiSecret'],
-      asr: ['url', 'language', 'accent', 'resourceId', 'appId', 'apiKey', 'apiSecret']
-    };
+    const stageProviders = (stage) => PROVIDERS.filter((provider) => provider.stages?.[stage]).map((provider) => provider.id);
+    /** 某一段某一家 provider 在界面上的标准名称（允许 stage 级覆盖，如讯飞 TTS/ASR 名字不同）。 */
+    const stageProviderLabel = (stage, id) => stageDescriptor(id, stage)?.name || providerById(id)?.name || String(id ?? '');
+    const providerLabel = (id) => providerById(id)?.name || String(id ?? '');
 
     /** 编辑弹窗里 provider 胶囊的选项：按「云端服务 / 本地服务」分组。 */
-    const providerOptionsFor = (stage) => stageProviders(stage).map((provider) => {
-      const meta = PROVIDER_CATALOG[stage][provider];
+    const providerOptionsFor = (stage) => stageProviders(stage).map((id) => {
+      const meta = stageDescriptor(id, stage) || {};
+      const group = meta.group || providerById(id)?.group || 'cloud';
       return {
-        value: provider,
-        label: meta.name,
-        group: meta.group === 'local' ? t('backupGroupLocal') : t('backupGroupCloud')
+        value: id,
+        label: meta.name || providerById(id)?.name || id,
+        group: group === 'local' ? t('backupGroupLocal') : t('backupGroupCloud')
       };
     });
 
-    /** 该 provider 是否需要密钥（卡片上显示「无需密钥」而不是「未配置」）。 */
-    const isKeylessProvider = (stage, provider) => PROVIDER_CATALOG[stage]?.[provider]?.keyless === true;
+    /** 该 provider 在该段是否免密钥（卡片上显示「无需密钥」而不是「未配置」）。 */
+    const isKeylessProvider = (stage, id) => stageDescriptor(id, stage)?.keyless === true;
+
+    /** 主用编辑弹窗会写回的字段（换厂商时用于清掉上一家的残留值）。 */
+    const primaryEditFields = (stage) => STAGE_META[stage]?.editFields || [];
 
     /** 音色 ID → 下拉里那个中文名；目录还没拉到或确实没有这个 ID 时原样显示。 */
     const voiceLabel = (value, provider) => {
@@ -115,18 +71,10 @@
       return kept.length > 0 ? kept : list;
     };
 
-    /** 一条服务商配置的空骨架：只放该段契约里允许的字段。 */
+    /** 一条服务商配置的空骨架：只放该段存储契约里允许的字段（描述符只决定「显示什么」）。 */
     const blankBackup = (stage, provider) => {
       const entry = { provider };
-      if (stage === 'llm') Object.assign(entry, { model: '', baseUrl: '', appId: '', apiKey: '' });
-      if (stage === 'tts') {
-        Object.assign(entry, {
-          voice: '', rate: '', speed: '', model: '', resourceId: '', url: '', appId: '', apiKey: '', apiSecret: ''
-        });
-      }
-      if (stage === 'asr') {
-        Object.assign(entry, { url: '', language: '', accent: '', resourceId: '', appId: '', apiKey: '', apiSecret: '' });
-      }
+      for (const key of STAGE_META[stage]?.storageFields || []) entry[key] = '';
       return entry;
     };
 
@@ -145,26 +93,32 @@
       return { ...settings, voice };
     };
 
-    /** 卡片上的密钥状态：永远只显示掩码，绝不回显明文（新填未保存的显示待保存）。 */
+    /** 卡片上的密钥状态：只看描述符声明的 secretFields，永远只显示掩码，绝不回显明文。 */
     const backupKeyState = (stage, entry) => {
-      const apiKey = typeof entry?.apiKey === 'string' ? entry.apiKey : '';
-      const apiSecret = typeof entry?.apiSecret === 'string' ? entry.apiSecret : '';
-      const masked = apiKey.includes('•') ? apiKey : apiSecret.includes('•') ? apiSecret : '';
-      if (masked) return { ok: true, text: masked };
+      const desc = stageDescriptor(entry?.provider, stage) || {};
+      const secrets = Array.isArray(desc.secretFields) && desc.secretFields.length > 0
+        ? desc.secretFields
+        : ['apiKey', 'apiSecret'];
+      for (const key of secrets) {
+        const value = typeof entry?.[key] === 'string' ? entry[key] : '';
+        if (value.includes('•')) return { ok: true, text: value };
+      }
       if (entry?.hasApiKey === true || entry?.hasApiSecret === true) return { ok: true, text: t('backupKeySet') };
-      if (isKeylessProvider(stage, entry?.provider)) return { ok: true, text: t('backupKeyFree') };
-      if (apiKey || apiSecret) return { ok: false, text: t('backupKeyPending') };
+      if (desc.keyless === true) return { ok: true, text: t('backupKeyFree') };
+      if (secrets.some((key) => typeof entry?.[key] === 'string' && entry[key])) {
+        return { ok: false, text: t('backupKeyPending') };
+      }
       return { ok: false, text: t('backupKeyNone') };
     };
 
-    /**
-     * 卡片上的关键摘要：LLM 看模型、ASR 看地址 / 资源。
-     * TTS 全局只剩「厂商 + 凭据」，没有可展示的摘要（音色在智能体级），调用方会跳过这一行。
-     */
+    /** 卡片上的关键摘要：按描述符 summary 顺序取第一个非空字段。 */
     const backupSummaryText = (stage, entry) => {
-      if (stage === 'llm') return entry.model || entry.baseUrl || '—';
-      if (stage === 'tts') return '—';
-      return entry.url || entry.resourceId || entry.language || '—';
+      const desc = stageDescriptor(entry?.provider, stage) || {};
+      for (const key of Array.isArray(desc.summary) ? desc.summary : []) {
+        const value = entry?.[key];
+        if (value) return String(value);
+      }
+      return '—';
     };
 
     /** 测试结果的小字：LLM 给 ms + 首 token，TTS 给 ms + 字节数。 */
@@ -180,7 +134,7 @@
     };
 
     /** 各步骤的中文名，编弹窗标题用（复用步骤条文案）。 */
-    const stageLabel = (stage) => (stage === 'asr' ? t('step3') : stage === 'llm' ? t('step4') : t('step5'));
+    const stageLabel = (stage) => t(STAGE_META[stage]?.labelKey || 'step5');
 
     let t = (key) => key;
     function formatAgo(value, now = Date.now()) {
@@ -254,8 +208,8 @@ export function setVoices(next) { VOICES = next }
 export function setT(fn) { t = fn }
 export {
   NS, API, POLL_MS, VOICES, t,
-  PROVIDER_LABELS, providerLabel, PROVIDER_CATALOG,
-  stageProviders, stageProviderLabel, PRIMARY_EDIT_FIELDS,
+  providerById, providerLabel, stageDescriptor, setProviders,
+  stageProviders, stageProviderLabel, primaryEditFields,
   providerOptionsFor, isKeylessProvider, voiceLabel,
   resourceTier, voicesForResource, blankBackup, withBackups,
   backupKeyState, backupSummaryText, backupTestText, stageLabel,

@@ -1,0 +1,26 @@
+# 依赖（pnpm/npm 安装产物，绝不入库）
+node_modules/
+
+# 构建 / 测试产物
+coverage/
+*.tsbuildinfo
+
+# 日志与运行时数据（~/.dsh-xiaozhi 才是数据目录，这里只防误提交）
+*.log
+crash.log
+voice.log
+*.corrupt-*
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# 本地环境变量
+.env
+.env.*
+
+# 注意：client.js 是 `npm run build` 的产物，但插件运行时由宿主直接加载它，
+# 安装时没有构建步骤，所以**必须提交**，不要加进忽略列表。

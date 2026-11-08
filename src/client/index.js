@@ -15,7 +15,7 @@
  *   settings/      全局设置页 + 服务商卡片/弹窗/模型选择器
  *   console/       控制台外壳（导航/滚动）与面板根组件
  */
-import { NS, t, setT, setVoices } from './core.js'
+import { NS, t, setT, setVoices, setProviders } from './core.js'
 import { zh } from './i18n/zh.js'
 import { en } from './i18n/en.js'
 import { CSS } from './styles.js'
@@ -93,6 +93,21 @@ export function apply(ctx) {
       alive = false
     }
   }, 'dsh-xiaozhi: voice catalog')
+
+  // 服务商描述符：`GET /providers` 回来后替换打包兜底，服务端加厂商前端不用发版。
+  ctx.effect(() => {
+    let alive = true
+    fetch('dsh-xiaozhi-7c3a/providers')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (alive && data) setProviders(data)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, 'dsh-xiaozhi: provider descriptors')
+
   setT(ctx.locale.bind(NS))
 
   ctx.slots.inject('main', () =>

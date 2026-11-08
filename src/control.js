@@ -20,6 +20,7 @@ import { hostProviderIssue } from './voice/host-provider.js'
 import { modelsFor } from './models.js'
 import { openAiCompatiblePreset } from './voice/adapters/index.js'
 import { localProviders } from './voice/adapters/local-asr.js'
+import { providersPayload } from './providers.js'
 
 const CONTROL_PREFIX = '/dsh-xiaozhi-7c3a'
 const MAX_JSON_BODY = 64 * 1024
@@ -699,6 +700,16 @@ export function createControlHandler({
       const options = {}
       for (const provider of ['edge', 'xunfei', 'volc']) options[provider] = voiceOptionsFor(provider)
       sendJson(res, 200, { options })
+      return
+    }
+
+    /**
+     * 服务商描述符：控制台按这份数据渲染「有哪些厂商、每家要填什么、摘要看哪些字段」。
+     * 加一个厂商只改 `src/providers.js`（描述符）+ 适配器，前端不发版。
+     * 同一份数据也打包在 client.js 里做首屏兜底。
+     */
+    if (method === 'GET' && path === '/providers') {
+      sendJson(res, 200, providersPayload())
       return
     }
 

@@ -107,7 +107,7 @@
 
 > 布局抖动的兜底：`.xz-app` 与 `.xz-content` 都设有 `scrollbar-gutter: stable`，即使某处
 > 仍有滚动条出现/消失，内容宽度也不会跳。配置界面本身也尽量不改变页面高度：全局设置是
-> **单页分区**（服务商为主体，无左侧步骤侧边栏/步骤弹窗），设备的「配置」是弹窗（`DeviceConfigDialog`）。
+> **三个环节概览卡 + 二级弹窗**（服务商为主体，无左侧步骤侧边栏），设备的「配置」是弹窗（`AgentConfigDialog`）。
 
 ## 变体
 
@@ -135,7 +135,7 @@
 | `src/client/ui/menu.js` `MenuItem` / `IconCheck` | 行（胶囊）与勾选图标 |
 | `src/client/styles.js` `.xz-pillselect-trigger` / `.xz-field .xz-pillselect-trigger` | 页面级 26px / 字段内 32px，两者都是 `999px` 胶囊 |
 | `src/client/styles.js` `.xz-menu` | `position:fixed`、`z-index:60`、`max-height:340px`、内部滚动 |
-| `src/client/settings/ConfigWizard.js` | 全局设置 = 单页分区：服务商（ASR/LLM/TTS 三块）+ 语音默认参数 + 接入与网关 + 底部保存；无人设、无侧边栏（2026-11-07） |
+| `src/client/settings/ConfigWizard.js` | 全局设置 = 三张环节概览卡（ASR/LLM/TTS）+ 点「管理」进 `xz-stage-modal`；语音默认参数 + 接入与网关 + 底部 sticky 保存；无人设、无侧边栏（2026-11-08） |
 
 ## 已知限制 / 后续可补
 

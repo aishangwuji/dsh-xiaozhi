@@ -43,63 +43,212 @@ var DshXiaozhi = (() => {
     inject: () => inject
   });
 
+  // src/providers.js
+  var STAGE_META = {
+    llm: {
+      labelKey: "step4",
+      storageFields: ["model", "baseUrl", "appId", "apiKey"],
+      editFields: ["model", "baseUrl", "appId", "apiKey"]
+    },
+    tts: {
+      labelKey: "step5",
+      storageFields: ["voice", "rate", "speed", "model", "resourceId", "url", "appId", "apiKey", "apiSecret"],
+      editFields: ["appId", "apiKey", "apiSecret"]
+    },
+    asr: {
+      labelKey: "step3",
+      storageFields: ["url", "language", "accent", "resourceId", "appId", "apiKey", "apiSecret"],
+      editFields: ["url", "language", "accent", "resourceId", "appId", "apiKey", "apiSecret"]
+    }
+  };
+  var secret = (key, label = key) => ({ key, type: "secret", label, required: true });
+  function llmStage(baseUrlHint, modelHint = "") {
+    return {
+      baseUrlHint,
+      modelHint,
+      fields: [
+        // 模型清单从厂商 /v1/models 拉；placeholder 用 i18n key，避免写死具体模型 id。
+        { key: "model", type: "model", modelKind: "llm", label: "model", placeholderKey: "modelFromApi" },
+        { key: "baseUrl", type: "url", label: "baseUrl", placeholder: baseUrlHint },
+        secret("apiKey")
+      ],
+      summary: ["model", "baseUrl"],
+      secretFields: ["apiKey"],
+      probe: { kind: "chat" }
+    };
+  }
+  var PROVIDERS = [
+    {
+      id: "deepseek",
+      name: "DeepSeek",
+      group: "cloud",
+      stages: { llm: llmStage("https://api.deepseek.com/v1", "deepseek-chat") }
+    },
+    {
+      // 小米 MiMo：OpenAI Chat Completions 兼容，但鉴权是 `api-key` 头而不是 Bearer。
+      // 模型 id 不写死：控制台通过后端 POST /models 实时拉 GET /v1/models。
+      id: "mimo",
+      name: "\u5C0F\u7C73 MiMo",
+      group: "cloud",
+      stages: { llm: llmStage("https://api.xiaomimimo.com/v1") }
+    },
+    {
+      id: "openai",
+      name: "OpenAI",
+      group: "cloud",
+      stages: { llm: llmStage("https://api.openai.com/v1", "gpt-4o-mini") }
+    },
+    {
+      id: "volc",
+      name: "\u706B\u5C71\u5F15\u64CE\u8C46\u5305",
+      group: "cloud",
+      stages: {
+        llm: llmStage("https://ark.cn-beijing.volces.com/api/v3", "doubao-1.5-pro-32k"),
+        tts: {
+          fields: [secret("apiKey")],
+          summary: [],
+          secretFields: ["apiKey"],
+          probe: { kind: "tts" }
+        },
+        asr: {
+          fields: [
+            secret("apiKey"),
+            {
+              key: "resourceId",
+              type: "model",
+              modelKind: "asrResource",
+              label: "resourceId",
+              placeholder: "volc.seedasr.sauc.duration"
+            },
+            {
+              key: "url",
+              type: "url",
+              label: "asrUrl",
+              placeholder: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
+            }
+          ],
+          summary: ["url", "resourceId"],
+          secretFields: ["apiKey"],
+          probe: { kind: "none" }
+        }
+      }
+    },
+    {
+      id: "spark",
+      name: "\u8BAF\u98DE\u661F\u706B",
+      group: "cloud",
+      stages: { llm: llmStage("https://spark-api-open.xf-yun.com/v1", "generalv3.5") }
+    },
+    {
+      id: "xunfei",
+      name: "\u8BAF\u98DE",
+      group: "cloud",
+      stages: {
+        tts: {
+          name: "\u8BAF\u98DE\u8BED\u97F3\u5408\u6210",
+          fields: [
+            { key: "appId", type: "text", label: "appId", placeholder: "5f1b\u2026" },
+            secret("apiKey"),
+            secret("apiSecret")
+          ],
+          summary: [],
+          secretFields: ["apiKey", "apiSecret"],
+          probe: { kind: "tts" }
+        },
+        asr: {
+          name: "\u8BAF\u98DE\u8BED\u97F3\u542C\u5199",
+          fields: [
+            { key: "appId", type: "text", label: "appId", placeholder: "5f1b\u2026" },
+            secret("apiKey"),
+            secret("apiSecret"),
+            { key: "language", type: "text", label: "asrLanguage", placeholder: "zh_cn" }
+          ],
+          summary: ["language"],
+          secretFields: ["apiKey", "apiSecret"],
+          probe: { kind: "none" }
+        }
+      }
+    },
+    {
+      id: "edge",
+      name: "\u5FAE\u8F6F Edge",
+      group: "local",
+      stages: {
+        tts: {
+          // Edge 免密钥：没有要填的凭据（MP3→PCM 由服务端 ffmpeg 处理）。
+          keyless: true,
+          note: "ttsEdgeKeyless",
+          fields: [],
+          summary: [],
+          secretFields: [],
+          probe: { kind: "tts" }
+        }
+      }
+    },
+    {
+      id: "local",
+      name: "\u672C\u5730 SenseVoice",
+      group: "local",
+      stages: {
+        asr: {
+          // 本地 SenseVoice：使用 Harness 内置识别服务，不需要地址与密钥。
+          keyless: true,
+          note: "localAsrNote",
+          fields: [{ key: "language", type: "text", label: "asrLanguage", placeholder: "zh_cn" }],
+          summary: ["language"],
+          secretFields: [],
+          probe: { kind: "none" }
+        }
+      }
+    },
+    {
+      // funasr 需要本机自部署 FunASR 服务，控制台**不展示**（hidden），但存储白名单保留：
+      // 手写过 funasr 配置的用户保存时不会被清掉。适配器仍在服务端。
+      id: "funasr",
+      name: "FunASR\uFF08\u672C\u5730\uFF09",
+      group: "local",
+      hidden: true,
+      stages: {
+        asr: {
+          keyless: true,
+          fields: [],
+          summary: [],
+          secretFields: [],
+          probe: { kind: "none" }
+        }
+      }
+    }
+  ];
+
   // src/client/core.js
   var NS = "dsh.xiaozhi";
   var API = "/dsh-xiaozhi-7c3a";
   var POLL_MS = 5e3;
   var VOICES = {};
-  var PROVIDER_LABELS = {
-    mock: "\u672C\u5730\u6A21\u62DF",
-    host: "Harness \u5382\u5546",
-    deepseek: "DeepSeek",
-    mimo: "\u5C0F\u7C73 MiMo",
-    openai: "OpenAI",
-    volc: "\u706B\u5C71\u5F15\u64CE\u8C46\u5305",
-    spark: "\u8BAF\u98DE\u661F\u706B",
-    edge: "\u5FAE\u8F6F Edge",
-    xunfei: "\u8BAF\u98DE",
-    local: "\u672C\u5730 SenseVoice",
-    funasr: "FunASR\uFF08\u672C\u5730\uFF09"
-  };
-  var providerLabel = (id) => PROVIDER_LABELS[id] || id;
-  var PROVIDER_CATALOG = {
-    llm: {
-      deepseek: { name: "DeepSeek", group: "cloud", baseUrlHint: "https://api.deepseek.com/v1", modelHint: "deepseek-chat" },
-      // 小米 MiMo：OpenAI Chat Completions 兼容，但鉴权是 `api-key` 头而不是 Bearer。
-      // 模型 id **不在这写死**：控制台通过后端 `POST /models`（带当前填写的 Key）实时拉
-      // `GET https://api.xiaomimimo.com/v1/models`，拉不到就退回文本框手填。
-      mimo: { name: "\u5C0F\u7C73 MiMo", group: "cloud", baseUrlHint: "https://api.xiaomimimo.com/v1" },
-      openai: { name: "OpenAI", group: "cloud", baseUrlHint: "https://api.openai.com/v1", modelHint: "gpt-4o-mini" },
-      volc: { name: "\u706B\u5C71\u5F15\u64CE\u8C46\u5305", group: "cloud", baseUrlHint: "https://ark.cn-beijing.volces.com/api/v3", modelHint: "doubao-1.5-pro-32k" },
-      spark: { name: "\u8BAF\u98DE\u661F\u706B", group: "cloud", baseUrlHint: "https://spark-api-open.xf-yun.com/v1", modelHint: "generalv3.5" }
-    },
-    tts: {
-      volc: { name: "\u706B\u5C71\u5F15\u64CE\u8C46\u5305", group: "cloud" },
-      xunfei: { name: "\u8BAF\u98DE\u8BED\u97F3\u5408\u6210", group: "cloud" },
-      edge: { name: "\u5FAE\u8F6F Edge", group: "local", keyless: true }
-    },
-    asr: {
-      volc: { name: "\u706B\u5C71\u5F15\u64CE\u8C46\u5305", group: "cloud" },
-      xunfei: { name: "\u8BAF\u98DE\u8BED\u97F3\u542C\u5199", group: "cloud" },
-      local: { name: "\u672C\u5730 SenseVoice", group: "local", keyless: true }
+  var PROVIDERS2 = PROVIDERS;
+  var STAGE_META2 = STAGE_META;
+  var PROVIDER_INDEX = new Map(PROVIDERS2.map((provider) => [provider.id, provider]));
+  var setProviders = (payload) => {
+    if (Array.isArray(payload?.providers) && payload.providers.length > 0) {
+      PROVIDERS2 = payload.providers;
+      PROVIDER_INDEX = new Map(PROVIDERS2.map((provider) => [provider.id, provider]));
     }
+    if (payload?.stages && typeof payload.stages === "object") STAGE_META2 = payload.stages;
   };
-  var stageProviders = (stage) => Object.keys(PROVIDER_CATALOG[stage] || {});
-  var stageProviderLabel = (stage, id) => PROVIDER_CATALOG[stage]?.[id]?.name || providerLabel(id);
-  var PRIMARY_EDIT_FIELDS = {
-    llm: ["model", "baseUrl", "appId", "apiKey"],
-    tts: ["appId", "apiKey", "apiSecret"],
-    asr: ["url", "language", "accent", "resourceId", "appId", "apiKey", "apiSecret"]
-  };
-  var providerOptionsFor = (stage) => stageProviders(stage).map((provider) => {
-    const meta = PROVIDER_CATALOG[stage][provider];
+  var providerById = (id) => PROVIDER_INDEX.get(String(id ?? "")) || null;
+  var stageDescriptor = (id, stage) => providerById(id)?.stages?.[stage] || null;
+  var stageProviders = (stage) => PROVIDERS2.filter((provider) => provider.stages?.[stage]).map((provider) => provider.id);
+  var stageProviderLabel = (stage, id) => stageDescriptor(id, stage)?.name || providerById(id)?.name || String(id ?? "");
+  var providerOptionsFor = (stage) => stageProviders(stage).map((id) => {
+    const meta = stageDescriptor(id, stage) || {};
+    const group = meta.group || providerById(id)?.group || "cloud";
     return {
-      value: provider,
-      label: meta.name,
-      group: meta.group === "local" ? t("backupGroupLocal") : t("backupGroupCloud")
+      value: id,
+      label: meta.name || providerById(id)?.name || id,
+      group: group === "local" ? t("backupGroupLocal") : t("backupGroupCloud")
     };
   });
-  var isKeylessProvider = (stage, provider) => PROVIDER_CATALOG[stage]?.[provider]?.keyless === true;
+  var primaryEditFields = (stage) => STAGE_META2[stage]?.editFields || [];
   var voiceLabel = (value, provider) => {
     if (!value) return "\u2014";
     const pools = [VOICES[provider], VOICES.volc, VOICES.xunfei, VOICES.edge].filter(Array.isArray);
@@ -123,23 +272,7 @@ var DshXiaozhi = (() => {
   };
   var blankBackup = (stage, provider) => {
     const entry = { provider };
-    if (stage === "llm") Object.assign(entry, { model: "", baseUrl: "", appId: "", apiKey: "" });
-    if (stage === "tts") {
-      Object.assign(entry, {
-        voice: "",
-        rate: "",
-        speed: "",
-        model: "",
-        resourceId: "",
-        url: "",
-        appId: "",
-        apiKey: "",
-        apiSecret: ""
-      });
-    }
-    if (stage === "asr") {
-      Object.assign(entry, { url: "", language: "", accent: "", resourceId: "", appId: "", apiKey: "", apiSecret: "" });
-    }
+    for (const key of STAGE_META2[stage]?.storageFields || []) entry[key] = "";
     return entry;
   };
   var withBackups = (settings) => {
@@ -156,19 +289,26 @@ var DshXiaozhi = (() => {
     return { ...settings, voice };
   };
   var backupKeyState = (stage, entry) => {
-    const apiKey = typeof entry?.apiKey === "string" ? entry.apiKey : "";
-    const apiSecret = typeof entry?.apiSecret === "string" ? entry.apiSecret : "";
-    const masked = apiKey.includes("\u2022") ? apiKey : apiSecret.includes("\u2022") ? apiSecret : "";
-    if (masked) return { ok: true, text: masked };
+    const desc = stageDescriptor(entry?.provider, stage) || {};
+    const secrets = Array.isArray(desc.secretFields) && desc.secretFields.length > 0 ? desc.secretFields : ["apiKey", "apiSecret"];
+    for (const key of secrets) {
+      const value = typeof entry?.[key] === "string" ? entry[key] : "";
+      if (value.includes("\u2022")) return { ok: true, text: value };
+    }
     if (entry?.hasApiKey === true || entry?.hasApiSecret === true) return { ok: true, text: t("backupKeySet") };
-    if (isKeylessProvider(stage, entry?.provider)) return { ok: true, text: t("backupKeyFree") };
-    if (apiKey || apiSecret) return { ok: false, text: t("backupKeyPending") };
+    if (desc.keyless === true) return { ok: true, text: t("backupKeyFree") };
+    if (secrets.some((key) => typeof entry?.[key] === "string" && entry[key])) {
+      return { ok: false, text: t("backupKeyPending") };
+    }
     return { ok: false, text: t("backupKeyNone") };
   };
   var backupSummaryText = (stage, entry) => {
-    if (stage === "llm") return entry.model || entry.baseUrl || "\u2014";
-    if (stage === "tts") return "\u2014";
-    return entry.url || entry.resourceId || entry.language || "\u2014";
+    const desc = stageDescriptor(entry?.provider, stage) || {};
+    for (const key of Array.isArray(desc.summary) ? desc.summary : []) {
+      const value = entry?.[key];
+      if (value) return String(value);
+    }
+    return "\u2014";
   };
   var backupTestText = (stage, result) => {
     if (!result) return "";
@@ -180,7 +320,7 @@ var DshXiaozhi = (() => {
     }
     return `${total} ms \xB7 ${result.bytes ?? 0} ${t("bytes")}`;
   };
-  var stageLabel = (stage) => stage === "asr" ? t("step3") : stage === "llm" ? t("step4") : t("step5");
+  var stageLabel = (stage) => t(STAGE_META2[stage]?.labelKey || "step5");
   var t = (key) => key;
   function formatAgo(value, now = Date.now()) {
     if (!value) return t("never");
@@ -420,7 +560,6 @@ var DshXiaozhi = (() => {
     ttsEdgeKeyless: "\u514D\u5BC6\u94A5\uFF0C\u65E0\u9700\u914D\u7F6E",
     firstToken: "\u9996 token",
     bytes: "\u5B57\u8282",
-    asrTestUnsupported: "\u8BED\u97F3\u8BC6\u522B\u6682\u4E0D\u652F\u6301\u5728\u7EBF\u6D4B\u8BD5",
     saveConfig: "\u4FDD\u5B58\u914D\u7F6E",
     saved: "\u5DF2\u4FDD\u5B58",
     loadFailed: "\u52A0\u8F7D\u5931\u8D25",
@@ -431,6 +570,21 @@ var DshXiaozhi = (() => {
     configAccessTitle: "\u63A5\u5165\u4E0E\u7F51\u5173",
     configSaveHint: "\u4FDD\u5B58\u540E\u8BBE\u5907\u4E0B\u6B21\u8FDE\u63A5\u751F\u6548",
     configBackupCount: "\u5907\u7528 {n} \u4E2A",
+    // 全局设置（2026-11-08）：三个环节概览卡 + 点进去管理；弹窗里的返回/保存并测试。
+    back: "\u8FD4\u56DE",
+    configStageAsrDesc: "\u8BED\u97F3\u8BC6\u522B\uFF1A\u628A\u8BBE\u5907\u4E0A\u4F20\u7684\u8BED\u97F3\u8F6C\u6210\u6587\u5B57",
+    configStageLlmDesc: "\u5927\u6A21\u578B\uFF1A\u7406\u89E3\u5BF9\u8BDD\u5E76\u751F\u6210\u56DE\u590D",
+    configStageTtsDesc: "\u8BED\u97F3\u5408\u6210\uFF1A\u628A\u56DE\u590D\u6587\u672C\u8F6C\u6210\u8BED\u97F3",
+    stageManage: "\u7BA1\u7406",
+    stageHealthOk: "\u5DF2\u5C31\u7EEA",
+    stageHealthWarn: "\u5BC6\u94A5\u672A\u914D\u7F6E",
+    stageHealthDirty: "\u6709\u672A\u4FDD\u5B58\u4FEE\u6539",
+    backupEmpty: "\u6CA1\u6709\u5907\u7528\u670D\u52A1\u5546\uFF1B\u4E3B\u7528\u4E0D\u53EF\u7528\u65F6\u4E0D\u4F1A\u81EA\u52A8\u5207\u6362",
+    backupActions: "\u66F4\u591A\u64CD\u4F5C",
+    backupChain: "\u964D\u7EA7\u94FE",
+    saveAndTest: "\u4FDD\u5B58\u5E76\u6D4B\u8BD5",
+    providerUnsupported: "\u8FD9\u4E2A\u670D\u52A1\u5546\u8FD8\u4E0D\u652F\u6301\u5F53\u524D\u73AF\u8282",
+    probeUnsupported: "\u8FD9\u4E2A\u73AF\u8282\u4E0D\u652F\u6301\u5728\u7EBF\u6D4B\u8BD5",
     ttsVoicePerDevice: "\u97F3\u8272\u5728\u300C\u667A\u80FD\u4F53 \u2192 \u914D\u7F6E\u300D\u91CC\u6309\u667A\u80FD\u4F53\u9009\u62E9",
     // 历史对话弹窗（设备卡片「历史」）：左会话列表 + 右消息气泡。
     history: "\u5386\u53F2",
@@ -624,7 +778,6 @@ var DshXiaozhi = (() => {
     ttsEdgeKeyless: "No key required",
     firstToken: "first token",
     bytes: "bytes",
-    asrTestUnsupported: "Online testing is not available for speech recognition",
     saveConfig: "Save configuration",
     saved: "Saved",
     loadFailed: "Load failed",
@@ -635,6 +788,21 @@ var DshXiaozhi = (() => {
     configAccessTitle: "Access & gateway",
     configSaveHint: "Applies on the device\u2019s next connection",
     configBackupCount: "{n} backups",
+    // Global settings (2026-11-08): three stage overview cards, manage in a modal.
+    back: "Back",
+    configStageAsrDesc: "Speech recognition: turn device audio into text",
+    configStageLlmDesc: "LLM: understand the conversation and write replies",
+    configStageTtsDesc: "Speech synthesis: turn replies into audio",
+    stageManage: "Manage",
+    stageHealthOk: "Ready",
+    stageHealthWarn: "API key missing",
+    stageHealthDirty: "Unsaved changes",
+    backupEmpty: "No backup provider; nothing switches over if the primary fails",
+    backupActions: "More actions",
+    backupChain: "Failover chain",
+    saveAndTest: "Save and test",
+    providerUnsupported: "This provider does not support this stage yet",
+    probeUnsupported: "Online test is not supported for this stage",
     ttsVoicePerDevice: "Voice is chosen per device in \u201CDevices \u2192 Configure\u201D.",
     // Conversation history dialog (device card "History"): session list + message bubbles.
     history: "History",
@@ -913,24 +1081,59 @@ var DshXiaozhi = (() => {
 /* ---- \u5168\u5C40\u8BBE\u7F6E\u5355\u9875 IA\uFF082026-11-07\uFF09\uFF1A\u4EE5\u670D\u52A1\u5546\u4E3A\u4E3B\u4F53\uFF0C\u8BED\u97F3\u9ED8\u8BA4\u53C2\u6570 / \u63A5\u5165\u4E0E\u7F51\u5173\u6B21\u4E4B ---- */
 .xz-config-page{display:flex;flex-direction:column;gap:14px;padding-bottom:10px}
 .xz-config-page>.xz-card{margin-bottom:0}
-/* \u4E09\u6BB5\u670D\u52A1\u5546\uFF1A\u533A\u5757\u4E4B\u95F4\u7528\u5206\u9694\u7EBF + \u7559\u767D\uFF1B\u533A\u5757\u5185\u76F4\u63A5\u590D\u7528 ProviderSection\uFF08\u7EC4\u4EF6\u672C\u8EAB\u4E0D\u6539\uFF09 */
-.xz-provider-stage{margin-top:18px;padding-top:16px;border-top:1px solid var(--xz-line)}
-.xz-provider-stage:first-of-type{border-top:none;margin-top:8px;padding-top:4px}
-.xz-provider-stage-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:2px}
-.xz-provider-stage-title{margin:0;font-size:14px;font-weight:650}
-.xz-provider-stage-summary{min-width:0;flex:1;font-size:11.5px;color:var(--xz-text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* ProviderSection \u81EA\u5E26\u300C\u670D\u52A1\u5546\u914D\u7F6E\u300D\u6807\u9898\u548C\u4E0A\u8FB9\u7EBF\uFF1A\u533A\u5757\u4E4B\u95F4\u5DF2\u7ECF\u6709\u5206\u9694\u7EBF\uFF0C\u8FD9\u91CC\u53BB\u6389\u91CD\u590D\u7684\u90A3\u5C42 */
-.xz-provider-stage .xz-backup-section{margin-top:6px;padding-top:0;border-top:none}
+/* \u4E00\u7EA7\uFF1A\u4E09\u4E2A\u73AF\u8282\u6982\u89C8\u5361\uFF082026-11-08\uFF09\u3002\u684C\u9762 3 \u5217 / \u5E73\u677F 2 \u5217 / \u624B\u673A 1 \u5217\uFF0C\u4E00\u5C4F\u80FD\u626B\u5B8C\u3002 */
+.xz-stage-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.xz-stage-card{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--xz-line);border-radius:16px;background:var(--xz-surface-strong);cursor:pointer;text-align:left;font:inherit;color:inherit;transition:border-color .16s ease,box-shadow .16s ease}
+.xz-stage-card:hover{border-color:rgba(0,122,255,.35);box-shadow:var(--xz-shadow-sm)}
+.xz-stage-card.is-warn{border-color:rgba(255,159,10,.3)}
+.xz-stage-card-head{display:flex;align-items:center;gap:10px}
+.xz-stage-icon{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--xz-primary-soft);color:var(--xz-primary);font-size:13px;font-weight:700;flex:none}
+.xz-stage-card-heading{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.xz-stage-card-heading strong{font-size:13.5px}
+.xz-stage-card-desc{font-size:10.5px;color:var(--xz-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-stage-card-primary{display:flex;flex-direction:column;gap:2px;min-width:0}
+.xz-stage-card-primary strong{font-size:15px}
+.xz-stage-card-detail{font-size:11.5px;color:var(--xz-text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-stage-card-facts{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--xz-text-2)}
+.xz-stage-card-chain{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-stage-card-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding-top:2px}
+.xz-stage-card-health{font-size:11px;color:var(--xz-text-3)}
+.xz-stage-card-health.ok{color:var(--xz-success)}
+.xz-stage-card-health.warn{color:var(--xz-warning)}
+.xz-stage-card-manage{font-size:12px;font-weight:600;color:var(--xz-primary)}
+/* \u4E8C\u7EA7\uFF1A\u4E00\u4E2A\u73AF\u8282\u7684\u7BA1\u7406\u5F39\u7A97\uFF08\u590D\u7528 devices modal \u7684\u300C\u56FA\u5B9A\u5934 + \u53EF\u6EDA\u4F53 + \u56FA\u5B9A\u811A\u300D\u9AA8\u67B6\uFF09 */
+.xz-stage-modal{width:min(680px,94vw);height:min(600px,88vh);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;padding:0}
+.xz-stage-modal .xz-modal-head{padding:16px 20px 12px;border-bottom:1px solid var(--xz-line);flex:none}
+.xz-stage-modal .xz-modal-body{flex:1 1 auto;min-height:0;overflow:auto;padding:14px 20px;scrollbar-gutter:stable}
+.xz-stage-modal .xz-modal-foot{padding:12px 20px;border-top:1px solid var(--xz-line);flex:none;display:flex;justify-content:flex-end;gap:8px}
+/* \u5907\u7528\uFF1A\u7EB5\u5411\u5217\u8868\uFF08\u4E0D\u662F grid\uFF09\uFF0C\u884C\u5185\u4FE1\u606F + \u53F3\u4FA7\u7F16\u8F91/\u22EF\uFF0C\u64CD\u4F5C\u533A\u5C55\u5F00\u5728\u884C\u4E0B\u65B9 */
+.xz-provider-list{display:flex;flex-direction:column;margin-top:12px}
+.xz-provider-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--xz-line);min-width:0}
+.xz-provider-row:last-child{border-bottom:none}
+.xz-provider-row.is-draft{border-bottom-style:dashed}
+.xz-provider-row-main{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 260px}
+.xz-provider-row-title{display:flex;align-items:center;gap:8px;min-width:0}
+.xz-provider-row-title strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-provider-row-facts{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--xz-text-2)}
+.xz-provider-row-facts span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-provider-row-actions{display:flex;gap:6px;flex:none;margin-left:auto}
+.xz-provider-row-menu{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 6px 34px}
+.xz-provider-empty{margin:10px 0 2px;padding:12px;border:1px dashed var(--xz-line);border-radius:12px;background:var(--xz-surface-muted)}
+/* \u6DFB\u52A0\u5907\u7528\uFF1A\u5217\u8868\u5E95\u90E8\u4E00\u6574\u884C\uFF0C\u4E0D\u518D\u662F\u540C\u5C3A\u5BF8 dashed \u65B9\u5757 */
+.xz-backup-add-row{display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;margin-top:8px;padding:10px 12px;border:1px dashed var(--xz-line);border-radius:12px;background:transparent;color:var(--xz-primary);font:inherit;font-size:12.5px;cursor:pointer}
+.xz-backup-add-row:hover:not(:disabled){background:var(--xz-primary-soft);border-color:rgba(0,122,255,.4)}
 /* \u63A5\u5165\u4E0E\u7F51\u5173\uFF1A\u53EF\u6298\u53E0\u3001\u9ED8\u8BA4\u6536\u8D77\uFF0C\u9875\u9762\u7684\u89C6\u89C9\u91CD\u70B9\u7559\u7ED9\u670D\u52A1\u5546 */
 .xz-config-access>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:650}
 .xz-config-access>summary::-webkit-details-marker{display:none}
 .xz-config-access>summary::after{content:'\u25BE';margin-left:auto;font-size:11px;color:var(--xz-text-3);transition:transform .18s ease}
 .xz-config-access[open]>summary::after{transform:rotate(180deg)}
 .xz-config-access[open]>summary{margin-bottom:12px}
-/* \u9875\u9762\u5E95\u90E8\uFF1A\u4E00\u884C\u300C\u4FDD\u5B58\u540E\u751F\u6548\u300D\u63D0\u793A + \u4FDD\u5B58\u6309\u94AE */
-.xz-config-footer{display:flex;align-items:center;gap:12px;justify-content:flex-end;margin:2px 2px 10px}
+/* \u9875\u9762\u5E95\u90E8\uFF1Asticky \u4FDD\u5B58\u6761\uFF0C\u6EDA\u5230\u54EA\u90FD\u80FD\u70B9\uFF082026-11-08\uFF09 */
+.xz-config-footer{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:12px;justify-content:flex-end;margin:2px 2px 10px;padding:10px 12px;border:1px solid var(--xz-line);border-radius:14px;background:var(--xz-surface-strong);box-shadow:var(--xz-shadow-sm)}
 .xz-config-footer .xz-hint{margin-right:auto}
 @media (max-width:768px){.xz-config-footer{flex-wrap:wrap;justify-content:flex-end}.xz-config-footer .xz-hint{flex:1 1 100%;margin-right:0}}
+@media (max-width:640px){.xz-stage-cards{grid-template-columns:1fr}.xz-stage-modal{width:96vw;height:92vh;max-height:92vh}.xz-provider-row-menu{padding-left:0}}
+
 /* \u5F39\u7A97\u9AA8\u67B6\u4ECD\u88AB\u300C\u667A\u80FD\u4F53 \u2192 \u914D\u7F6E\u300D\u7684 AgentConfigDialog \u590D\u7528\uFF1A\u56FA\u5B9A\u5934 + \u53EF\u6EDA\u52A8\u9875\u7B7E\u5185\u5BB9 + \u9875\u811A\u3002
    \u9AD8\u5EA6\u5FC5\u987B\u5199\u6B7B\uFF0C\u4E0D\u80FD\u53EA\u7ED9 max-height\uFF082026-11-08 \u4FEE\uFF09\uFF1A\u4E09\u4E2A\u9875\u7B7E\u5185\u5BB9\u9AD8\u5EA6\u5DEE\u5F88\u5927\uFF0C\u5F39\u7A97\u6309\u5185\u5BB9
    \u6536\u7F29\u65F6\u5782\u76F4\u5C45\u4E2D\u4F1A\u8BA9\u6807\u9898/\u9875\u7B7E\u8DDF\u7740\u4E0A\u4E0B\u8DF3\uFF1B\u56FA\u5B9A\u9AD8\u5EA6\u540E\u53EA\u6709\u9875\u7B7E\u5185\u90E8\u6EDA\u52A8\u3002 */
@@ -965,12 +1168,12 @@ var DshXiaozhi = (() => {
 `;
 
   // src/client/react.js
-  var React2 = __toESM(__require("react"), 1);
-  var h = React2.createElement;
-  var useState2 = React2.useState;
-  var useEffect2 = React2.useEffect;
-  var useCallback2 = React2.useCallback;
-  var useRef2 = React2.useRef;
+  var React = __toESM(__require("react"), 1);
+  var h = React.createElement;
+  var useState2 = React.useState;
+  var useEffect2 = React.useEffect;
+  var useCallback2 = React.useCallback;
+  var useRef2 = React.useRef;
 
   // src/client/ui/Icon.js
   var ICONS = {
@@ -2418,20 +2621,23 @@ var DshXiaozhi = (() => {
     onTest,
     onTestPrimary
   }) {
+    const [openRow, setOpenRow] = useState2(null);
     const primaryKey = backupKeyState(stage, primary);
     const primaryTesting = testingPrimary === stage;
-    const primaryTestDisabled = stage === "asr" || primaryTesting || providersDirty;
-    const primaryTestTitle = stage === "asr" ? t("asrTestUnsupported") : providersDirty ? t("backupSaveFirst") : t("backupTest");
+    const primaryProbe = stageDescriptor(primary.provider, stage)?.probe?.kind || "none";
+    const primaryTestDisabled = primaryProbe === "none" || primaryTesting;
+    const testLabel = providersDirty ? t("saveAndTest") : t("backupTest");
     const summaryKey = stage === "llm" ? t("model") : stage === "asr" ? t("asrUrl") : "";
+    const fact = (key, value) => h(
+      "div",
+      { className: "xz-backup-fact" },
+      h("span", { className: "k" }, key),
+      h("span", { className: "v", title: value }, value)
+    );
     return h(
       "div",
       { className: "xz-backup-section" },
-      // 标题右侧不再挂「备用 N 个」提示：数量在卡片区里一眼能数，头部只留标题。
-      h(
-        "div",
-        { className: "xz-row", style: { marginBottom: 10 } },
-        h("h3", { style: { margin: 0 } }, t("providerSectionTitle"))
-      ),
+      // ---------------------------------------------------------------- 主用：独占一行
       h(
         "div",
         { className: `xz-devcard xz-backup-card xz-primary-card${providersDirty ? " is-draft" : ""}` },
@@ -2450,118 +2656,126 @@ var DshXiaozhi = (() => {
         h(
           "div",
           { className: "xz-backup-facts" },
-          summaryKey ? h(
-            "div",
-            { className: "xz-backup-fact" },
-            h("span", { className: "k" }, summaryKey),
-            h("span", { className: "v", title: backupSummaryText(stage, primary) }, backupSummaryText(stage, primary))
-          ) : null,
-          h(
-            "div",
-            { className: "xz-backup-fact" },
-            h("span", { className: "k" }, t("backupSecret")),
-            h("span", { className: "v" }, primaryKey.text)
-          )
+          summaryKey ? fact(summaryKey, backupSummaryText(stage, primary)) : null,
+          fact(t("backupSecret"), primaryKey.text)
         ),
         primaryTest ? h("div", { className: "xz-backup-test" }, backupTestText(stage, primaryTest)) : null,
         h(
           "div",
           { className: "xz-backup-actions" },
           h("button", { type: "button", className: "xz-btn", onClick: onEditPrimary }, t("backupEdit")),
-          stage === "asr" ? null : h("button", {
+          primaryProbe === "none" ? null : h("button", {
             type: "button",
             className: "xz-btn",
             disabled: primaryTestDisabled,
-            title: primaryTestTitle,
+            title: testLabel,
             onClick: onTestPrimary
-          }, primaryTesting ? t("backupTesting") : t("backupTest"))
+          }, primaryTesting ? t("backupTesting") : testLabel)
         )
       ),
+      // ---------------------------------------------------------------- 备用：纵向列表
       h(
         "div",
-        { className: "xz-card-grid xz-backup-grid" },
-        entries.map((entry, index) => {
+        { className: "xz-provider-list" },
+        entries.length === 0 ? h("p", { className: "xz-hint xz-provider-empty" }, t("backupEmpty")) : entries.map((entry, index) => {
           const cardKey = entry.id || `draft-${index}`;
           const keyState = backupKeyState(stage, entry);
           const result = entry.id ? testResults[entry.id] : null;
           const isTesting = Boolean(entry.id) && testingId === entry.id;
-          const testDisabled = stage === "asr" || isTesting;
-          const testTitle = stage === "asr" ? t("asrTestUnsupported") : !entry.id || providersDirty ? t("backupSaveFirst") : t("backupTest");
+          const expanded = openRow === index;
+          const probeKind = stageDescriptor(entry.provider, stage)?.probe?.kind || "none";
+          const testDisabled = probeKind === "none" || isTesting;
+          const testTitle = probeKind === "none" ? t("probeUnsupported") : testLabel;
+          const rowFacts = [
+            summaryKey ? `${summaryKey}: ${backupSummaryText(stage, entry)}` : null,
+            `${t("backupSecret")}: ${keyState.text}`,
+            result ? backupTestText(stage, result) : null
+          ].filter(Boolean);
           return h(
             "div",
             {
               key: cardKey,
-              className: `xz-devcard xz-backup-card${entry.id ? "" : " is-draft"}`
+              className: `xz-provider-row${entry.id ? "" : " is-draft"}${expanded ? " is-open" : ""}`
             },
             h(
               "div",
-              { className: "xz-devcard-head" },
-              h("div", {
-                className: "xz-devcard-ord",
-                title: t("backupSeq").replace("{n}", String(index + 1))
-              }, String(index + 1)),
+              { className: "xz-provider-row-main" },
               h(
                 "div",
-                { className: "xz-devcard-title" },
+                { className: "xz-provider-row-title" },
+                h("span", { className: "xz-devcard-ord" }, String(index + 1)),
                 h("strong", null, stageProviderLabel(stage, entry.provider)),
-                entry.id ? null : h("span", { className: "xz-chip mute", style: { marginLeft: 8 } }, t("backupDraft"))
+                entry.id ? null : h("span", { className: "xz-chip mute" }, t("backupDraft")),
+                h("span", { className: `xz-dot ${keyState.ok ? "on" : ""}` })
               ),
-              h("span", { className: `xz-dot ${keyState.ok ? "on" : ""}` })
-            ),
-            h(
-              "div",
-              { className: "xz-backup-facts" },
-              summaryKey ? h(
-                "div",
-                { className: "xz-backup-fact" },
-                h("span", { className: "k" }, summaryKey),
-                h("span", { className: "v", title: backupSummaryText(stage, entry) }, backupSummaryText(stage, entry))
-              ) : null,
               h(
                 "div",
-                { className: "xz-backup-fact" },
-                h("span", { className: "k" }, t("backupSecret")),
-                h("span", { className: "v" }, keyState.text)
+                { className: "xz-provider-row-facts" },
+                rowFacts.map((text, position) => h("span", { key: position }, text))
               )
             ),
-            result ? h("div", { className: "xz-backup-test" }, backupTestText(stage, result)) : null,
             h(
               "div",
-              { className: "xz-backup-actions" },
+              { className: "xz-provider-row-actions" },
               h("button", { type: "button", className: "xz-btn", onClick: () => onEdit(index) }, t("backupEdit")),
+              h("button", {
+                type: "button",
+                className: "xz-btn ghost xz-provider-more",
+                "aria-expanded": expanded ? "true" : "false",
+                "aria-label": t("backupActions"),
+                title: t("backupActions"),
+                onClick: () => setOpenRow(expanded ? null : index)
+              }, "\u22EF")
+            ),
+            expanded ? h(
+              "div",
+              { className: "xz-provider-row-menu" },
               h("button", {
                 type: "button",
                 className: "xz-btn",
                 disabled: index === 0,
-                onClick: () => onMove(index, -1)
+                onClick: () => {
+                  setOpenRow(null);
+                  onMove(index, -1);
+                }
               }, t("backupMoveUp")),
               h("button", {
                 type: "button",
                 className: "xz-btn",
                 disabled: index === entries.length - 1,
-                onClick: () => onMove(index, 1)
+                onClick: () => {
+                  setOpenRow(null);
+                  onMove(index, 1);
+                }
               }, t("backupMoveDown")),
               h("button", {
                 type: "button",
                 className: "xz-btn",
                 disabled: testDisabled,
                 title: testTitle,
-                onClick: () => onTest(index)
-              }, isTesting ? t("backupTesting") : t("backupTest")),
+                onClick: () => {
+                  setOpenRow(null);
+                  onTest(index);
+                }
+              }, isTesting ? t("backupTesting") : testLabel),
               h("button", {
                 type: "button",
                 className: `xz-btn danger${confirmDelete === cardKey ? " confirm" : ""}`,
-                onClick: () => onDelete(index, cardKey)
+                onClick: () => {
+                  if (confirmDelete === cardKey) setOpenRow(null);
+                  onDelete(index, cardKey);
+                }
               }, confirmDelete === cardKey ? t("backupDeleteConfirm") : t("remove"))
-            )
+            ) : null
           );
-        }),
-        h("button", {
-          type: "button",
-          className: "xz-backup-add",
-          title: t("backupAdd"),
-          onClick: onAdd
-        }, h("span", { "aria-hidden": "true", style: { fontSize: 16, lineHeight: 1 } }, "+"), t("backupAdd"))
+        })
+      ),
+      // ---------------------------------------------------------------- 添加：列表底部一整行
+      h(
+        "button",
+        { type: "button", className: "xz-backup-add-row", onClick: onAdd },
+        h("span", { "aria-hidden": "true", style: { fontSize: 16, lineHeight: 1 } }, "+"),
+        t("backupAdd")
       )
     );
   }
@@ -2613,6 +2827,88 @@ var DshXiaozhi = (() => {
     });
   }
 
+  // src/client/settings/SchemaForm.js
+  var isMasked = (value) => typeof value === "string" && value.includes("\u2022");
+  var FIELD_RENDERERS = {
+    text: (field, value, onChange) => h("input", {
+      className: "xz-input",
+      value: value ?? "",
+      placeholder: field.placeholder || "",
+      onChange: (event) => onChange(event.target.value)
+    }),
+    url: (field, value, onChange) => h("input", {
+      className: "xz-input",
+      type: "url",
+      value: value ?? "",
+      placeholder: field.placeholder || "",
+      onChange: (event) => onChange(event.target.value)
+    }),
+    number: (field, value, onChange) => h("input", {
+      className: "xz-input",
+      type: "number",
+      min: field.min,
+      max: field.max,
+      step: field.step,
+      value: value ?? "",
+      onChange: (event) => onChange(event.target.value)
+    }),
+    checkbox: (field, value, onChange) => h("input", {
+      type: "checkbox",
+      checked: Boolean(value),
+      onChange: (event) => onChange(event.target.checked)
+    }),
+    secret: (field, value, onChange) => h("input", {
+      className: "xz-input",
+      type: "password",
+      autoComplete: "new-password",
+      value: value || "",
+      // 掩码是占位符不是密钥：回显时清空输入框，提示「留空 = 保留」。
+      placeholder: isMasked(value) ? "" : t("tokenKeep"),
+      onChange: (event) => onChange(event.target.value)
+    }),
+    select: (field, value, onChange) => h(PillSelect, {
+      value: value ?? "",
+      options: field.options || [],
+      ariaLabel: t(field.label),
+      onChange
+    }),
+    model: (field, value, onChange, context) => h(ModelField, {
+      kind: field.modelKind || "llm",
+      provider: context.provider,
+      source: context.mode === "primary" ? "primary" : "backup",
+      index: context.mode === "primary" ? void 0 : Number.isInteger(context.index) ? context.index : void 0,
+      value: value || "",
+      placeholder: field.placeholderKey ? t(field.placeholderKey) : field.placeholder || "",
+      baseUrl: context.draft.baseUrl || context.baseUrlHint || "",
+      probeKey: context.draft.apiKey || "",
+      onChange
+    })
+  };
+  function secretNote(field, draft) {
+    if (field.note) return t(field.note);
+    if (isMasked(draft[field.key]) || draft.hasApiKey || draft.hasApiSecret) return t("apiKeyKeep");
+    return t("backupKeyHint");
+  }
+  function SchemaForm({ stage, provider, mode, index, fields, value, onChange, baseUrlHint }) {
+    const context = { stage, provider, mode, index, draft: value, baseUrlHint };
+    return h(
+      "div",
+      { className: "xz-grid xz-dialog-grid" },
+      (fields || []).map((field, position) => {
+        if (field.showWhen && value[field.showWhen.key] !== field.showWhen.equals) return null;
+        const render = FIELD_RENDERERS[field.type] || FIELD_RENDERERS.text;
+        const note = field.type === "secret" ? secretNote(field, value) : field.note ? t(field.note) : "";
+        return h(
+          "div",
+          { key: field.key || `field-${position}`, className: "xz-field" },
+          h("label", null, t(field.label)),
+          render(field, value[field.key], (next) => onChange({ ...value, [field.key]: next }), context),
+          note ? h("span", { className: "note" }, note) : null
+        );
+      })
+    );
+  }
+
   // src/client/settings/ProviderDialog.js
   function ProviderDialog({ stage, mode = "backup", index = null, draft, isNew, onDraft, onConfirm, onCancel }) {
     useEffect2(() => {
@@ -2623,112 +2919,7 @@ var DshXiaozhi = (() => {
       return () => document.removeEventListener("keydown", onKeyDown, true);
     }, [onCancel]);
     const provider = draft.provider || stageProviders(stage)[0];
-    const set = (values) => onDraft({ ...draft, ...values });
-    const kept = (value) => typeof value === "string" && value.includes("\u2022");
-    const field = (label, child, note) => h(
-      "div",
-      { className: "xz-field" },
-      h("label", null, label),
-      child,
-      note ? h("span", { className: "note" }, note) : null
-    );
-    const secretField = (key, label) => field(
-      label,
-      h("input", {
-        className: "xz-input",
-        type: "password",
-        autoComplete: "new-password",
-        value: draft[key] || "",
-        placeholder: kept(draft[key]) ? "" : t("tokenKeep"),
-        onChange: (event) => set({ [key]: event.target.value })
-      }),
-      kept(draft[key]) || draft.hasApiKey || draft.hasApiSecret ? t("apiKeyKeep") : t("backupKeyHint")
-    );
-    const appIdField = () => field(
-      t("appId"),
-      h("input", {
-        className: "xz-input",
-        value: draft.appId || "",
-        placeholder: "5f1b\u2026",
-        onChange: (event) => set({ appId: event.target.value })
-      })
-    );
-    let fields = [];
-    if (stage === "llm") {
-      const meta = PROVIDER_CATALOG.llm[provider] || {};
-      fields = [
-        field(t("model"), h(ModelField, {
-          kind: "llm",
-          provider,
-          source: mode === "primary" ? "primary" : "backup",
-          index: mode === "primary" ? void 0 : Number.isInteger(index) ? index : void 0,
-          value: draft.model || "",
-          // 占位提示不写具体模型 id：模型清单由厂商 /v1/models 提供，选到后面有下拉。
-          placeholder: meta.modelHint || t("modelFromApi"),
-          baseUrl: draft.baseUrl || meta.baseUrlHint || "",
-          probeKey: draft.apiKey || "",
-          onChange: (value) => set({ model: value })
-        })),
-        field(t("baseUrl"), h("input", {
-          className: "xz-input",
-          value: draft.baseUrl || "",
-          placeholder: meta.baseUrlHint || "",
-          onChange: (event) => set({ baseUrl: event.target.value })
-        })),
-        secretField("apiKey", t("apiKey"))
-      ];
-    } else if (stage === "tts") {
-      if (provider === "xunfei") {
-        fields = [
-          appIdField(),
-          secretField("apiKey", t("apiKey")),
-          secretField("apiSecret", t("apiSecret"))
-        ];
-      } else if (provider === "volc") {
-        fields = [secretField("apiKey", t("apiKey"))];
-      } else {
-        fields = [h("div", { className: "note" }, t("ttsEdgeKeyless"))];
-      }
-    } else if (provider === "xunfei") {
-      fields = [
-        appIdField(),
-        secretField("apiKey", t("apiKey")),
-        secretField("apiSecret", t("apiSecret")),
-        field(t("asrLanguage"), h("input", {
-          className: "xz-input",
-          value: draft.language || "",
-          placeholder: "zh_cn",
-          onChange: (event) => set({ language: event.target.value })
-        }))
-      ];
-    } else if (provider === "volc") {
-      fields = [
-        secretField("apiKey", t("apiKey")),
-        field("Resource ID", h(ModelField, {
-          kind: "asrResource",
-          provider: "volc",
-          value: draft.resourceId || "",
-          placeholder: "volc.seedasr.sauc.duration",
-          onChange: (value) => set({ resourceId: value })
-        })),
-        field(t("asrUrl"), h("input", {
-          className: "xz-input",
-          value: draft.url || "",
-          placeholder: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async",
-          onChange: (event) => set({ url: event.target.value })
-        }))
-      ];
-    } else {
-      fields = [
-        field(t("asrLanguage"), h("input", {
-          className: "xz-input",
-          value: draft.language || "",
-          placeholder: "zh_cn",
-          onChange: (event) => set({ language: event.target.value })
-        })),
-        h("div", { className: "note" }, t("localAsrNote"))
-      ];
-    }
+    const desc = stageDescriptor(provider, stage);
     const switchProvider = (nextProvider) => {
       if (nextProvider === provider) return;
       onDraft({ ...blankBackup(stage, nextProvider), providerChanged: true });
@@ -2745,8 +2936,8 @@ var DshXiaozhi = (() => {
           { className: "xz-modal-head" },
           h("h3", null, title)
         ),
-        // 固定高度的表单区：换厂商时字段数量会变（TTS 下 Edge 0 个、火山 1 个、讯飞 3 个，
-        // ASR/LLM 更多），这里用 min-height 撑住，弹窗不会再跟着下拉选择忽长忽短。
+        // 固定高度的表单区：换厂商时字段数量会变（Edge 0 个、火山 1 个、讯飞 3 个），
+        // 这里用固定外框撑住，弹窗不会再跟着下拉选择忽长忽短。
         h(
           "div",
           { className: "xz-modal-body" },
@@ -2761,11 +2952,17 @@ var DshXiaozhi = (() => {
               onChange: switchProvider
             })
           ),
-          h(
-            "div",
-            { className: "xz-grid xz-dialog-grid" },
-            fields.map((child, index2) => h(React.Fragment, { key: index2 }, child))
-          )
+          desc ? h(SchemaForm, {
+            stage,
+            provider,
+            mode,
+            index,
+            fields: desc.fields || [],
+            value: draft,
+            onChange: onDraft,
+            baseUrlHint: desc.baseUrlHint || ""
+          }) : h("div", { className: "xz-empty" }, t("providerUnsupported")),
+          desc?.note ? h("div", { className: "note" }, t(desc.note)) : null
         ),
         h(
           "div",
@@ -2778,11 +2975,16 @@ var DshXiaozhi = (() => {
   }
 
   // src/client/settings/ConfigWizard.js
+  var STAGES = ["asr", "llm", "tts"];
+  var STEP_KEY = { asr: "step3", llm: "step4", tts: "step5" };
+  var DESC_KEY = { asr: "configStageAsrDesc", llm: "configStageLlmDesc", tts: "configStageTtsDesc" };
+  var ICON_TEXT = { asr: "A", llm: "L", tts: "T" };
   function ConfigWizard({ state, notify }) {
     const [settings, setSettings] = useState2(null);
     const [defaults, setDefaults] = useState2({ systemPrompt: "", silenceMs: null });
     const [error, setError] = useState2("");
     const [saving, setSaving] = useState2(false);
+    const [openStage, setOpenStage] = useState2(null);
     const [editor, setEditor] = useState2(null);
     const [testResults, setTestResults] = useState2({});
     const [testingId, setTestingId] = useState2("");
@@ -2800,14 +3002,25 @@ var DshXiaozhi = (() => {
     if (!settings) return h("div", { className: "xz-empty" }, error || "\u2026");
     const patch = (group, values) => setSettings({ ...settings, [group]: { ...settings[group], ...values } });
     const nested = (group, key, values) => setSettings({ ...settings, [group]: { ...settings[group], [key]: { ...settings[group][key], ...values } } });
-    const stageSummary = (stage) => {
+    const backupsOf = (stage) => {
+      const list = settings.voice?.[stage]?.backups || [];
+      return Array.isArray(list) ? list : [];
+    };
+    const stageDetail = (stage) => {
       const primary = settings.voice?.[stage] || {};
-      const label = stageProviderLabel(stage, primary.provider);
-      const detail = stage === "llm" ? primary.model || "" : stage === "tts" ? "" : primary.url || primary.resourceId || "";
-      const backups = backupsOf(stage).length;
-      const parts = [label && detail ? `${label} / ${detail}` : label || detail];
-      if (backups > 0) parts.push(t("configBackupCount").replace("{n}", String(backups)));
-      return parts.filter(Boolean).join(" \xB7 ") || "\u2014";
+      if (stage === "llm") return primary.model || "";
+      if (stage === "tts") return "";
+      return primary.url || primary.resourceId || "";
+    };
+    const stageChain = (stage) => {
+      const list = [settings.voice?.[stage]?.provider, ...backupsOf(stage).map((entry) => entry.provider)].filter(Boolean);
+      if (list.length <= 1) return "";
+      return list.map((provider) => stageProviderLabel(stage, provider)).join(" \u2192 ");
+    };
+    const stageHealth = (stage) => {
+      if (providersDirty) return { kind: "warn", text: t("stageHealthDirty") };
+      const key = backupKeyState(stage, settings.voice?.[stage] || {});
+      return key.ok ? { kind: "ok", text: t("stageHealthOk") } : { kind: "warn", text: t("stageHealthWarn") };
     };
     const providerSectionProps = (stage) => ({
       stage,
@@ -2827,10 +3040,6 @@ var DshXiaozhi = (() => {
       onTest: (index) => runBackupTest(stage, index),
       onTestPrimary: () => runPrimaryTest(stage)
     });
-    const backupsOf = (stage) => {
-      const list = settings.voice?.[stage]?.backups || [];
-      return Array.isArray(list) ? list : [];
-    };
     const setBackups = (stage, next) => {
       setProvidersDirty(true);
       setSettings((previous) => withBackups({
@@ -2863,7 +3072,7 @@ var DshXiaozhi = (() => {
       setProvidersDirty(true);
       if (mode === "primary") {
         const stageSettings = { ...settings.voice?.[stage] || {} };
-        for (const key of PRIMARY_EDIT_FIELDS[stage]) stageSettings[key] = next[key] ?? "";
+        for (const key of primaryEditFields(stage)) stageSettings[key] = next[key] ?? "";
         stageSettings.provider = next.provider;
         if (stage === "tts") {
           stageSettings.voice = "";
@@ -2910,17 +3119,18 @@ var DshXiaozhi = (() => {
       setBackups(stage, backupsOf(stage).filter((_, position) => position !== index));
     };
     const runBackupTest = async (stage, index) => {
-      const entry = backupsOf(stage)[index];
-      if (!entry) return;
-      if (stage === "asr") {
-        notify(t("asrTestUnsupported"), "bad");
+      const providerId = backupsOf(stage)[index]?.provider;
+      if (stageDescriptor(providerId, stage)?.probe?.kind === "none") {
+        notify(t("probeUnsupported"), "bad");
         return;
       }
-      if (!entry.id) {
-        notify(t("backupSaveFirst"), "bad");
-        return;
-      }
+      let current = settings;
       if (providersDirty) {
+        current = await save();
+        if (!current) return;
+      }
+      const entry = (current.voice?.[stage]?.backups || [])[index];
+      if (!entry?.id) {
         notify(t("backupSaveFirst"), "bad");
         return;
       }
@@ -2942,13 +3152,13 @@ var DshXiaozhi = (() => {
       }
     };
     const runPrimaryTest = async (stage) => {
-      if (stage === "asr") {
-        notify(t("asrTestUnsupported"), "bad");
+      if (stageDescriptor(settings.voice?.[stage]?.provider, stage)?.probe?.kind === "none") {
+        notify(t("probeUnsupported"), "bad");
         return;
       }
       if (providersDirty) {
-        notify(t("backupSaveFirst"), "bad");
-        return;
+        const saved = await save();
+        if (!saved) return;
       }
       setTestingPrimary(stage);
       try {
@@ -2967,7 +3177,7 @@ var DshXiaozhi = (() => {
     const save = async () => {
       setSaving(true);
       try {
-        const secret = (value) => typeof value === "string" && value.includes("\u2022") ? "" : value || "";
+        const secret2 = (value) => typeof value === "string" && value.includes("\u2022") ? "" : value || "";
         const backupBody = (stage) => backupsOf(stage).map((entry) => {
           const base = { provider: entry.provider };
           if (entry.id) base.id = entry.id;
@@ -2977,15 +3187,15 @@ var DshXiaozhi = (() => {
               model: entry.model || "",
               baseUrl: entry.baseUrl || "",
               appId: entry.appId || "",
-              apiKey: secret(entry.apiKey)
+              apiKey: secret2(entry.apiKey)
             };
           }
           if (stage === "tts") {
             return {
               ...base,
               appId: entry.appId || "",
-              apiKey: secret(entry.apiKey),
-              apiSecret: secret(entry.apiSecret)
+              apiKey: secret2(entry.apiKey),
+              apiSecret: secret2(entry.apiSecret)
             };
           }
           return {
@@ -2995,8 +3205,8 @@ var DshXiaozhi = (() => {
             accent: entry.accent || "",
             resourceId: entry.resourceId || "",
             appId: entry.appId || "",
-            apiKey: secret(entry.apiKey),
-            apiSecret: secret(entry.apiSecret)
+            apiKey: secret2(entry.apiKey),
+            apiSecret: secret2(entry.apiSecret)
           };
         });
         const clearFlags = (stage) => {
@@ -3012,11 +3222,11 @@ var DshXiaozhi = (() => {
           endpoints: {
             lanWsUrl: settings.endpoints.lanWsUrl,
             wanWsUrl: settings.endpoints.wanWsUrl,
-            token: secret(settings.endpoints.token)
+            token: secret2(settings.endpoints.token)
           },
           firmware: settings.firmware,
           gateway: {
-            token: secret(settings.gateway.token)
+            token: secret2(settings.gateway.token)
           },
           voice: {
             // 全局人设编辑已删除（人设只在「智能体 → 配置 → 角色」按智能体配置）；
@@ -3028,7 +3238,7 @@ var DshXiaozhi = (() => {
               model: settings.voice.llm.model,
               baseUrl: settings.voice.llm.baseUrl,
               appId: settings.voice.llm.appId,
-              apiKey: secret(settings.voice.llm.apiKey),
+              apiKey: secret2(settings.voice.llm.apiKey),
               maxTokens: settings.voice.llm.maxTokens,
               ...clearFlags("llm"),
               backups: backupBody("llm")
@@ -3045,8 +3255,8 @@ var DshXiaozhi = (() => {
               url: settings.voice.tts.url,
               language: settings.voice.tts.language,
               appId: settings.voice.tts.appId,
-              apiKey: secret(settings.voice.tts.apiKey),
-              apiSecret: secret(settings.voice.tts.apiSecret),
+              apiKey: secret2(settings.voice.tts.apiKey),
+              apiSecret: secret2(settings.voice.tts.apiSecret),
               ...clearFlags("tts"),
               backups: backupBody("tts")
             },
@@ -3057,8 +3267,8 @@ var DshXiaozhi = (() => {
               accent: settings.voice.asr.accent,
               resourceId: settings.voice.asr.resourceId,
               appId: settings.voice.asr.appId,
-              apiKey: secret(settings.voice.asr.apiKey),
-              apiSecret: secret(settings.voice.asr.apiSecret),
+              apiKey: secret2(settings.voice.asr.apiKey),
+              apiSecret: secret2(settings.voice.asr.apiSecret),
               ...clearFlags("asr"),
               backups: backupBody("asr")
             }
@@ -3071,56 +3281,118 @@ var DshXiaozhi = (() => {
         setConfirmDelete("");
         if (result.defaults) setDefaults(result.defaults);
         notify(t("saved"));
+        return withBackups(result.settings);
       } catch (err) {
         notify(`${t("actionFailed")}${err.message}`, "bad");
+        return null;
       } finally {
         setSaving(false);
       }
     };
+    const stageCard = (stage) => {
+      const primary = settings.voice?.[stage] || {};
+      const health = stageHealth(stage);
+      const backups = backupsOf(stage);
+      const detail = stageDetail(stage);
+      const chain = stageChain(stage);
+      const key = backupKeyState(stage, primary);
+      return h(
+        "button",
+        {
+          key: stage,
+          type: "button",
+          className: `xz-stage-card${health.kind === "warn" ? " is-warn" : ""}`,
+          onClick: () => setOpenStage(stage)
+        },
+        h(
+          "div",
+          { className: "xz-stage-card-head" },
+          h("div", { className: "xz-stage-icon", "aria-hidden": "true" }, ICON_TEXT[stage]),
+          h(
+            "div",
+            { className: "xz-stage-card-heading" },
+            h("strong", null, t(STEP_KEY[stage])),
+            h("span", { className: "xz-stage-card-desc" }, t(DESC_KEY[stage]))
+          ),
+          h("span", { className: `xz-dot ${health.kind === "ok" ? "on" : ""}` })
+        ),
+        h(
+          "div",
+          { className: "xz-stage-card-primary" },
+          h("strong", null, stageProviderLabel(stage, primary.provider)),
+          detail ? h("span", { className: "xz-stage-card-detail", title: detail }, detail) : null
+        ),
+        h(
+          "div",
+          { className: "xz-stage-card-facts" },
+          h("span", null, `${t("backupSecret")}: ${key.text}`),
+          h("span", null, t("configBackupCount").replace("{n}", String(backups.length))),
+          chain ? h("span", { className: "xz-stage-card-chain", title: chain }, `${t("backupChain")}: ${chain}`) : null
+        ),
+        h(
+          "div",
+          { className: "xz-stage-card-foot" },
+          h("span", { className: `xz-stage-card-health ${health.kind}` }, health.text),
+          h("span", { className: "xz-stage-card-manage" }, `${t("stageManage")} \u203A`)
+        )
+      );
+    };
+    const stageModal = openStage ? h(
+      "div",
+      { className: "xz-modal-mask", onClick: () => setOpenStage(null) },
+      h(
+        "div",
+        {
+          className: "xz-modal xz-stage-modal",
+          role: "dialog",
+          "aria-modal": "true",
+          onClick: (event) => event.stopPropagation()
+        },
+        h(
+          "div",
+          { className: "xz-modal-head" },
+          h(
+            "div",
+            { className: "xz-row", style: { gap: 10, alignItems: "center" } },
+            h("button", { type: "button", className: "xz-btn ghost", onClick: () => setOpenStage(null) }, "\u2039 " + t("back")),
+            h("h3", { style: { margin: 0 } }, t(STEP_KEY[openStage])),
+            h("span", { className: `xz-dot ${stageHealth(openStage).kind === "ok" ? "on" : ""}` }),
+            h("span", { className: "xz-hint", style: { margin: 0 } }, stageHealth(openStage).text)
+          ),
+          h("p", { className: "xz-hint", style: { margin: "6px 0 0" } }, t(DESC_KEY[openStage]))
+        ),
+        h(
+          "div",
+          { className: "xz-modal-body" },
+          h(ProviderSection, providerSectionProps(openStage)),
+          openStage === "tts" ? h("p", { className: "xz-hint", style: { margin: "10px 0 0" } }, t("ttsVoicePerDevice")) : null
+        ),
+        h(
+          "div",
+          { className: "xz-modal-foot" },
+          h("button", { type: "button", className: "xz-btn", onClick: () => setOpenStage(null) }, t("close")),
+          h("button", {
+            type: "button",
+            className: "xz-btn primary",
+            disabled: saving,
+            onClick: async () => {
+              const saved = await save();
+              if (saved) setOpenStage(null);
+            }
+          }, saving ? "\u2026" : t("saveConfig"))
+        )
+      )
+    ) : null;
     return h(
       "div",
       { className: "xz-config-page" },
-      // ---------------------------------------------------------------- 服务商（页面主体）
+      // ---------------------------------------------------------------- 服务商（概览卡）
       h(
         "div",
         { className: "xz-card" },
         h("h3", null, t("configProvidersTitle")),
-        // 三个环节纵向堆叠：标题（复用 step3/4/5）+ 当前主用摘要 + 现有 ProviderSection。
-        h(
-          "section",
-          { className: "xz-provider-stage" },
-          h(
-            "div",
-            { className: "xz-provider-stage-head" },
-            h("h4", { className: "xz-provider-stage-title" }, t("step3")),
-            h("span", { className: "xz-provider-stage-summary", title: stageSummary("asr") }, stageSummary("asr"))
-          ),
-          h(ProviderSection, providerSectionProps("asr"))
-        ),
-        h(
-          "section",
-          { className: "xz-provider-stage" },
-          h(
-            "div",
-            { className: "xz-provider-stage-head" },
-            h("h4", { className: "xz-provider-stage-title" }, t("step4")),
-            h("span", { className: "xz-provider-stage-summary", title: stageSummary("llm") }, stageSummary("llm"))
-          ),
-          h(ProviderSection, providerSectionProps("llm"))
-        ),
-        h(
-          "section",
-          { className: "xz-provider-stage" },
-          h(
-            "div",
-            { className: "xz-provider-stage-head" },
-            h("h4", { className: "xz-provider-stage-title" }, t("step5")),
-            h("span", { className: "xz-provider-stage-summary", title: stageSummary("tts") }, stageSummary("tts"))
-          ),
-          h(ProviderSection, providerSectionProps("tts")),
-          // 音色（= TTS 模型）不在全局选：只在智能体配置里按智能体覆盖。
-          h("p", { className: "xz-hint", style: { margin: "8px 0 0" } }, t("ttsVoicePerDevice"))
-        )
+        h("div", { className: "xz-stage-cards" }, STAGES.map(stageCard)),
+        providersDirty ? h("p", { className: "xz-hint", style: { margin: "10px 0 0" } }, t("stageHealthDirty")) : null
       ),
       // ---------------------------------------------------------------- 语音默认参数
       h(
@@ -3253,14 +3525,16 @@ var DshXiaozhi = (() => {
           t("forceUpdate")
         )
       ),
-      // ---------------------------------------------------------------- 底部：提示 + 唯一保存入口
+      // ---------------------------------------------------------------- 底部：sticky 保存条
       h(
         "div",
         { className: "xz-config-footer" },
         h("span", { className: "xz-hint" }, t("configSaveHint")),
-        h("button", { className: "xz-btn primary", disabled: saving, onClick: save }, saving ? "\u2026" : t("saveConfig"))
+        h("button", { className: "xz-btn primary", disabled: saving, onClick: () => save() }, saving ? "\u2026" : t("saveConfig"))
       ),
       // 服务商编辑弹窗（主用/备用共用）：确定只改本地状态，统一走页面底部「保存配置」。
+      // 放在 stageModal 之后渲染：两者都是 z-index 40 的 fixed 遮罩，后挂的在上面。
+      stageModal,
       editor ? h(ProviderDialog, {
         stage: editor.stage,
         mode: editor.mode,
@@ -3482,6 +3756,16 @@ var DshXiaozhi = (() => {
         alive = false;
       };
     }, "dsh-xiaozhi: voice catalog");
+    ctx.effect(() => {
+      let alive = true;
+      fetch("dsh-xiaozhi-7c3a/providers").then((response) => response.ok ? response.json() : null).then((data) => {
+        if (alive && data) setProviders(data);
+      }).catch(() => {
+      });
+      return () => {
+        alive = false;
+      };
+    }, "dsh-xiaozhi: provider descriptors");
     setT(ctx.locale.bind(NS));
     ctx.slots.inject(
       "main",

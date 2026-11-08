@@ -1,0 +1,262 @@
+/**
+ * 服务商描述符（Provider Descriptor）—— 控制台"快速接入"的唯一元数据来源。
+ *
+ * 目标：**加一个厂商 = 加一份描述符 + 一个适配器**，前端不需要为它写任何 `stage ===` /
+ * `provider ===` 分支。控制台通过 `GET /providers` 拿这份数据；同一份数据也打包进
+ * client.js 作为首屏兜底（服务端还没升级时页面不会空）。
+ *
+ * 描述符只描述**配置形态**（要填什么、怎么显示、摘要看哪些字段、要不要测试），
+ * **不描述调用逻辑**——怎么调厂商永远在 `src/voice/adapters/*` 里。
+ *
+ * 结构：
+ *   {
+ *     id, name, group: 'cloud' | 'local',
+ *     stages: {
+ *       llm|tts|asr: {
+ *         name?: 覆盖 stage 内的显示名（讯飞 TTS/ASR 名字不同）,
+ *         group?: 覆盖分组,
+ *         keyless?: true（免密钥）,
+ *         note?: i18n key（整段提示，如 Edge 免密钥）,
+ *         fields: [{ key, type, label, placeholder?, placeholderKey?, note?, required?, showWhen?, modelKind? }],
+ *         summary: [key...]（卡片摘要按顺序取第一个非空）,
+ *         secretFields: [key...]（掩码/留空保留/密钥状态只看这些）,
+ *         probe: { kind: 'chat' | 'tts' | 'none' },
+ *         baseUrlHint?, modelHint?
+ *       }
+ *     }
+ *   }
+ *
+ * 字段 type 由前端 `SchemaForm` 的渲染器注册表消费；未知 type 降级为 text（向后兼容）。
+ */
+export const PROVIDER_SCHEMA_VERSION = 1
+
+export const STAGES = ['llm', 'tts', 'asr']
+
+/**
+ * 每一段的存储/编辑元数据。
+ *
+ * - `storageFields`：一条备用条目在 settings.json 里允许出现的字段（保存时整条提交）；
+ * - `editFields`：主用编辑弹窗会写回的扁平字段（换厂商时用于清掉上一家的残留值）。
+ *
+ * 这些是**段级**契约（同一段所有厂商共用一套存储形状），与厂商无关。
+ */
+export const STAGE_META = {
+  llm: {
+    labelKey: 'step4',
+    storageFields: ['model', 'baseUrl', 'appId', 'apiKey'],
+    editFields: ['model', 'baseUrl', 'appId', 'apiKey'],
+  },
+  tts: {
+    labelKey: 'step5',
+    storageFields: ['voice', 'rate', 'speed', 'model', 'resourceId', 'url', 'appId', 'apiKey', 'apiSecret'],
+    editFields: ['appId', 'apiKey', 'apiSecret'],
+  },
+  asr: {
+    labelKey: 'step3',
+    storageFields: ['url', 'language', 'accent', 'resourceId', 'appId', 'apiKey', 'apiSecret'],
+    editFields: ['url', 'language', 'accent', 'resourceId', 'appId', 'apiKey', 'apiSecret'],
+  },
+}
+
+const secret = (key, label = key) => ({ key, type: 'secret', label, required: true })
+
+/** LLM 段：模型 / Base URL / Key，所有 OpenAI 兼容厂商共用。 */
+function llmStage(baseUrlHint, modelHint = '') {
+  return {
+    baseUrlHint,
+    modelHint,
+    fields: [
+      // 模型清单从厂商 /v1/models 拉；placeholder 用 i18n key，避免写死具体模型 id。
+      { key: 'model', type: 'model', modelKind: 'llm', label: 'model', placeholderKey: 'modelFromApi' },
+      { key: 'baseUrl', type: 'url', label: 'baseUrl', placeholder: baseUrlHint },
+      secret('apiKey'),
+    ],
+    summary: ['model', 'baseUrl'],
+    secretFields: ['apiKey'],
+    probe: { kind: 'chat' },
+  }
+}
+
+export const PROVIDERS = [
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    group: 'cloud',
+    stages: { llm: llmStage('https://api.deepseek.com/v1', 'deepseek-chat') },
+  },
+  {
+    // 小米 MiMo：OpenAI Chat Completions 兼容，但鉴权是 `api-key` 头而不是 Bearer。
+    // 模型 id 不写死：控制台通过后端 POST /models 实时拉 GET /v1/models。
+    id: 'mimo',
+    name: '小米 MiMo',
+    group: 'cloud',
+    stages: { llm: llmStage('https://api.xiaomimimo.com/v1') },
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    group: 'cloud',
+    stages: { llm: llmStage('https://api.openai.com/v1', 'gpt-4o-mini') },
+  },
+  {
+    id: 'volc',
+    name: '火山引擎豆包',
+    group: 'cloud',
+    stages: {
+      llm: llmStage('https://ark.cn-beijing.volces.com/api/v3', 'doubao-1.5-pro-32k'),
+      tts: {
+        fields: [secret('apiKey')],
+        summary: [],
+        secretFields: ['apiKey'],
+        probe: { kind: 'tts' },
+      },
+      asr: {
+        fields: [
+          secret('apiKey'),
+          {
+            key: 'resourceId',
+            type: 'model',
+            modelKind: 'asrResource',
+            label: 'resourceId',
+            placeholder: 'volc.seedasr.sauc.duration',
+          },
+          {
+            key: 'url',
+            type: 'url',
+            label: 'asrUrl',
+            placeholder: 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async',
+          },
+        ],
+        summary: ['url', 'resourceId'],
+        secretFields: ['apiKey'],
+        probe: { kind: 'none' },
+      },
+    },
+  },
+  {
+    id: 'spark',
+    name: '讯飞星火',
+    group: 'cloud',
+    stages: { llm: llmStage('https://spark-api-open.xf-yun.com/v1', 'generalv3.5') },
+  },
+  {
+    id: 'xunfei',
+    name: '讯飞',
+    group: 'cloud',
+    stages: {
+      tts: {
+        name: '讯飞语音合成',
+        fields: [
+          { key: 'appId', type: 'text', label: 'appId', placeholder: '5f1b…' },
+          secret('apiKey'),
+          secret('apiSecret'),
+        ],
+        summary: [],
+        secretFields: ['apiKey', 'apiSecret'],
+        probe: { kind: 'tts' },
+      },
+      asr: {
+        name: '讯飞语音听写',
+        fields: [
+          { key: 'appId', type: 'text', label: 'appId', placeholder: '5f1b…' },
+          secret('apiKey'),
+          secret('apiSecret'),
+          { key: 'language', type: 'text', label: 'asrLanguage', placeholder: 'zh_cn' },
+        ],
+        summary: ['language'],
+        secretFields: ['apiKey', 'apiSecret'],
+        probe: { kind: 'none' },
+      },
+    },
+  },
+  {
+    id: 'edge',
+    name: '微软 Edge',
+    group: 'local',
+    stages: {
+      tts: {
+        // Edge 免密钥：没有要填的凭据（MP3→PCM 由服务端 ffmpeg 处理）。
+        keyless: true,
+        note: 'ttsEdgeKeyless',
+        fields: [],
+        summary: [],
+        secretFields: [],
+        probe: { kind: 'tts' },
+      },
+    },
+  },
+  {
+    id: 'local',
+    name: '本地 SenseVoice',
+    group: 'local',
+    stages: {
+      asr: {
+        // 本地 SenseVoice：使用 Harness 内置识别服务，不需要地址与密钥。
+        keyless: true,
+        note: 'localAsrNote',
+        fields: [{ key: 'language', type: 'text', label: 'asrLanguage', placeholder: 'zh_cn' }],
+        summary: ['language'],
+        secretFields: [],
+        probe: { kind: 'none' },
+      },
+    },
+  },
+  {
+    // funasr 需要本机自部署 FunASR 服务，控制台**不展示**（hidden），但存储白名单保留：
+    // 手写过 funasr 配置的用户保存时不会被清掉。适配器仍在服务端。
+    id: 'funasr',
+    name: 'FunASR（本地）',
+    group: 'local',
+    hidden: true,
+    stages: {
+      asr: {
+        keyless: true,
+        fields: [],
+        summary: [],
+        secretFields: [],
+        probe: { kind: 'none' },
+      },
+    },
+  },
+]
+
+/** 按 id 找一家厂商（未知返回 null）。 */
+export function providerById(id) {
+  const key = String(id ?? '')
+  return PROVIDERS.find((provider) => provider.id === key) || null
+}
+
+/** 某一段可选厂商的 id（顺序即下拉顺序；`hidden` 的不给控制台选）。 */
+export function providersForStage(stage) {
+  return PROVIDERS.filter((provider) => provider.stages?.[stage] && provider.hidden !== true).map((provider) => provider.id)
+}
+
+/** 某一段**全部**厂商（含 hidden）：给存储白名单用，保证手写配置不被清掉。 */
+export function allProvidersForStage(stage) {
+  return PROVIDERS.filter((provider) => provider.stages?.[stage]).map((provider) => provider.id)
+}
+
+/** 某家厂商在某一段的描述（不支持该段返回 null）。 */
+export function stageDescriptor(id, stage) {
+  return providerById(id)?.stages?.[stage] || null
+}
+
+/** 某家厂商在某一段的显示名（允许 stage 级覆盖，如讯飞 TTS/ASR 名字不同）。 */
+export function stageProviderLabel(stage, id) {
+  const provider = providerById(id)
+  return stageDescriptor(id, stage)?.name || provider?.name || String(id ?? '')
+}
+
+/** 通用厂商显示名（不区分 stage）。 */
+export function providerLabel(id) {
+  return providerById(id)?.name || String(id ?? '')
+}
+
+/** `GET /providers` 的响应体。 */
+export function providersPayload() {
+  return {
+    schemaVersion: PROVIDER_SCHEMA_VERSION,
+    providers: PROVIDERS,
+    stages: STAGE_META,
+  }
+}

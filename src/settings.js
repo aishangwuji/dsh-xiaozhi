@@ -22,6 +22,7 @@ import { randomUUID } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { normalizeOutputLanguage } from './voice/language.js'
+import { allProvidersForStage } from './providers.js'
 
 const STATE_VERSION = 3
 // 备用服务商条数**不设上限**（2026-11-08 去掉原来的 5 条上限）：顺序即优先级，用户想加
@@ -50,12 +51,12 @@ function mask(value) {
  * 读取时按表出掩码，两处不会各写一套。`mock` 与 LLM 的 `host` 都故意不在白名单里：
  * 备用必须是真实服务商，且不能在设备链路里消耗 Harness 自己的额度。
  */
-const BACKUP_SPEC = {
+export const BACKUP_SPEC = {
   llm: {
     label: 'LLM',
-    // 与 adapters/index.js 的 OPENAI_COMPATIBLE 白名单保持一致：这里多一家而适配器
-    // 不认，保存能过但运行时整条备用被跳过；反过来则是控制台选不到。
-    providers: ['deepseek', 'openai', 'volc', 'spark', 'mimo'],
+    // 与 `src/providers.js` 的描述符同源（含 hidden 的 funasr）：加厂商只改描述符，
+    // 这里自动跟上，不会出现「控制台能选、保存被拒」。
+    providers: allProvidersForStage('llm'),
     fields: [
       ['model', 80],
       ['baseUrl', 300],
@@ -65,7 +66,7 @@ const BACKUP_SPEC = {
   },
   tts: {
     label: 'TTS',
-    providers: ['edge', 'xunfei', 'volc'],
+    providers: allProvidersForStage('tts'),
     fields: [
       ['voice', 64],
       ['rate', 12],
@@ -79,7 +80,7 @@ const BACKUP_SPEC = {
   },
   asr: {
     label: 'ASR',
-    providers: ['local', 'funasr', 'xunfei', 'volc'],
+    providers: allProvidersForStage('asr'),
     fields: [
       ['url', 200],
       ['language', 16],
