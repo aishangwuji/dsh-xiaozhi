@@ -475,6 +475,7 @@ import { HistoryDialog } from './HistoryDialog.js'
         manageAgent
           ? h(AgentDevicesDialog, {
               agent: manageAgent,
+              agents,
               devices,
               busyId,
               onBind: (device) => bindDevice(manageAgent, device),

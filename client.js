@@ -519,13 +519,15 @@ var DshXiaozhi = (() => {
     agentDeleteConfirm: "\u518D\u6B21\u70B9\u51FB\u5220\u9664",
     agentDeleteHint: "\u5220\u9664\u667A\u80FD\u4F53\u4F1A\u540C\u65F6\u5220\u9664\u5B83\u7ED1\u5B9A\u7684\u8BBE\u5907\u4E0E\u5386\u53F2",
     agentBindTitle: "\u7BA1\u7406\u8BBE\u5907",
-    agentBindHint: "\u4E00\u53F0\u667A\u80FD\u4F53\u53EF\u4EE5\u7ED1\u5B9A\u591A\u53F0\u8BBE\u5907\uFF1B\u7ED1\u5B9A\u7684\u8BBE\u5907\u5171\u7528\u8FD9\u91CC\u7684\u4EBA\u8BBE\u3001\u97F3\u8272\u3001\u8BB0\u5FC6\u4E0E\u5DE5\u5177\u5F00\u5173\u3002",
-    agentBoundTitle: "\u5DF2\u7ED1\u5B9A",
-    agentUnboundTitle: "\u672A\u7ED1\u5B9A\u8BBE\u5907",
-    agentBind: "\u7ED1\u5B9A",
+    agentBindHint: "\u4E00\u53F0\u667A\u80FD\u4F53\u53EF\u4EE5\u7ED1\u5B9A\u591A\u53F0\u8BBE\u5907\uFF08\u4E0D\u540C\u533A\u57DF\u7684\u9EA6\u514B\u98CE/\u626C\u58F0\u5668\uFF09\uFF1B\u4E00\u53F0\u8BBE\u5907\u540C\u4E00\u65F6\u523B\u53EA\u5C5E\u4E8E\u4E00\u4E2A\u667A\u80FD\u4F53\uFF0C\u4ECE\u522B\u7684\u667A\u80FD\u4F53\u79FB\u5165\u4F1A\u6539\u53D8\u5F52\u5C5E\u3002",
+    agentOtherTitle: "\u5176\u4ED6\u8BBE\u5907\uFF08\u53EF\u79FB\u5165\u672C\u667A\u80FD\u4F53\uFF09",
+    agentCurrentOwner: "\u5F53\u524D\uFF1A",
+    agentMoveHere: "\u79FB\u5165\u672C\u667A\u80FD\u4F53",
+    agentUnbound: "\u672A\u7ED1\u5B9A",
+    agentBoundTitle: "\u5DF2\u7ED1\u5B9A\u5230\u672C\u667A\u80FD\u4F53",
+    agentNoUnbound: "\u6CA1\u6709\u5176\u4ED6\u8BBE\u5907",
     agentUnbind: "\u89E3\u7ED1",
     agentRemoveDevice: "\u5220\u9664\u8BBE\u5907",
-    agentNoUnbound: "\u6CA1\u6709\u672A\u7ED1\u5B9A\u7684\u8BBE\u5907",
     agentOffline: "\u8FD9\u4E2A\u667A\u80FD\u4F53\u6CA1\u6709\u5728\u7EBF\u8BBE\u5907",
     agentNamePlaceholder: "\u667A\u80FD\u4F53\u540D\u79F0",
     agentDefaultName: "\u667A\u80FD\u4F53 {n}",
@@ -782,13 +784,15 @@ var DshXiaozhi = (() => {
     agentDeleteConfirm: "Click again to delete",
     agentDeleteHint: "Deleting an agent also deletes its bound devices and history",
     agentBindTitle: "Manage devices",
-    agentBindHint: "One agent can bind several devices; they share this persona, voice, memory and tools.",
-    agentBoundTitle: "Bound",
-    agentUnboundTitle: "Unbound devices",
-    agentBind: "Bind",
+    agentBindHint: "One agent can bind several devices (mics/speakers in different areas). A device belongs to exactly one agent at a time; moving it here changes ownership.",
+    agentOtherTitle: "Other devices (can move here)",
+    agentCurrentOwner: "Owner:",
+    agentMoveHere: "Move here",
+    agentUnbound: "Unbound",
+    agentBoundTitle: "Bound to this agent",
+    agentNoUnbound: "No other devices",
     agentUnbind: "Unbind",
     agentRemoveDevice: "Delete device",
-    agentNoUnbound: "No unbound devices",
     agentOffline: "No device of this agent is online",
     agentNamePlaceholder: "Agent name",
     agentDefaultName: "Agent {n}",
@@ -1989,10 +1993,11 @@ var DshXiaozhi = (() => {
   }
 
   // src/client/agents/AgentDevicesDialog.js
-  function AgentDevicesDialog({ agent, devices, busyId, onBind, onUnbind, onDeviceAction, onClose }) {
+  function AgentDevicesDialog({ agent, agents = [], devices, busyId, onBind, onUnbind, onDeviceAction, onClose }) {
     const bound = agent.devices || [];
     const boundIds = new Set(bound.map((device) => device.deviceId));
     const unbound = devices.filter((device) => !boundIds.has(device.deviceId));
+    const agentName = (id) => agents.find((item) => item.id === id)?.name || t("unnamed");
     return h(
       "div",
       { className: "xz-modal-mask", onClick: onClose },
@@ -2075,7 +2080,7 @@ var DshXiaozhi = (() => {
               )
             )
           ),
-          h("div", { className: "xz-device-section-title", style: { marginTop: 16 } }, t("agentUnboundTitle")),
+          h("div", { className: "xz-device-section-title", style: { marginTop: 16 } }, t("agentOtherTitle")),
           unbound.length === 0 ? h("div", { className: "xz-hint" }, t("agentNoUnbound")) : unbound.map(
             (device) => h(
               "div",
@@ -2085,7 +2090,11 @@ var DshXiaozhi = (() => {
                 { className: "xz-device-row-main" },
                 h("span", { className: "xz-devcard-value" }, device.nickName || t("unnamed")),
                 h("span", { className: "xz-device-row-mac" }, device.deviceId),
-                h("span", { className: `xz-dot ${device.online ? "on" : ""}` })
+                h(
+                  "span",
+                  { className: "xz-chip" },
+                  device.agentId ? `${t("agentCurrentOwner")} ${agentName(device.agentId)}` : t("agentUnbound")
+                )
               ),
               h(
                 "div",
@@ -2094,7 +2103,7 @@ var DshXiaozhi = (() => {
                   type: "button",
                   className: "xz-btn primary",
                   onClick: () => onBind(device)
-                }, t("agentBind"))
+                }, t("agentMoveHere"))
               )
             )
           )
@@ -2866,6 +2875,7 @@ var DshXiaozhi = (() => {
       }) : null,
       manageAgent ? h(AgentDevicesDialog, {
         agent: manageAgent,
+        agents,
         devices,
         busyId,
         onBind: (device) => bindDevice(manageAgent, device),

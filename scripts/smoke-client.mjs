@@ -172,6 +172,7 @@ render(
   'AgentDevicesDialog',
   React.createElement(AgentDevicesDialog, {
     agent: state.agents[0],
+    agents: state.agents,
     devices: state.devices,
     busyId: '',
     onBind: noop,

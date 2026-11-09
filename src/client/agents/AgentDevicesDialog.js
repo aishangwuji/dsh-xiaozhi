@@ -6,10 +6,11 @@ import { t } from '../core.js'
      *
      * 页面单位是智能体，设备的物理操作收在这里，卡片上只留最常用的配置/历史/播报/删除。
      */
-    function AgentDevicesDialog({ agent, devices, busyId, onBind, onUnbind, onDeviceAction, onClose }) {
+    function AgentDevicesDialog({ agent, agents = [], devices, busyId, onBind, onUnbind, onDeviceAction, onClose }) {
       const bound = agent.devices || [];
       const boundIds = new Set(bound.map((device) => device.deviceId));
       const unbound = devices.filter((device) => !boundIds.has(device.deviceId));
+      const agentName = (id) => agents.find((item) => item.id === id)?.name || t('unnamed');
       return h('div', { className: 'xz-modal-mask', onClick: onClose },
         h('div', {
           className: 'xz-modal xz-devices-modal',
@@ -78,7 +79,7 @@ import { t } from '../core.js'
                     )
                   )
                 ),
-            h('div', { className: 'xz-device-section-title', style: { marginTop: 16 } }, t('agentUnboundTitle')),
+            h('div', { className: 'xz-device-section-title', style: { marginTop: 16 } }, t('agentOtherTitle')),
             unbound.length === 0
               ? h('div', { className: 'xz-hint' }, t('agentNoUnbound'))
               : unbound.map((device) =>
@@ -86,14 +87,18 @@ import { t } from '../core.js'
                     h('div', { className: 'xz-device-row-main' },
                       h('span', { className: 'xz-devcard-value' }, device.nickName || t('unnamed')),
                       h('span', { className: 'xz-device-row-mac' }, device.deviceId),
-                      h('span', { className: `xz-dot ${device.online ? 'on' : ''}` })
+                      h('span', { className: 'xz-chip' },
+                        device.agentId
+                          ? `${t('agentCurrentOwner')} ${agentName(device.agentId)}`
+                          : t('agentUnbound')
+                      )
                     ),
                     h('div', { className: 'xz-device-row-actions' },
                       h('button', {
                         type: 'button',
                         className: 'xz-btn primary',
                         onClick: () => onBind(device)
-                      }, t('agentBind'))
+                      }, t('agentMoveHere'))
                     )
                   )
                 )
