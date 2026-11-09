@@ -339,6 +339,8 @@
 .xz-device-row:last-child{border-bottom:none}
 .xz-device-row-main{display:flex;align-items:center;gap:8px;min-width:0}
 .xz-device-row-main .xz-input{max-width:180px}
+/* 卡片内联改名：和标题同高，别用表单输入框的 36px 高度把卡片撑变形。 */
+.xz-devcard-head .xz-devcard-rename{height:28px;padding:0 9px;font-size:13px;line-height:1.2;border-radius:9px;max-width:220px;box-sizing:border-box}
 .xz-device-row-mac{font-family:ui-monospace,monospace;font-size:11px;color:var(--xz-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xz-device-row-actions{display:flex;gap:6px;flex-wrap:wrap}
 .xz-device-row-actions .xz-btn{padding:4px 9px;font-size:11.5px;border-radius:9px}

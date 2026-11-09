@@ -1291,6 +1291,8 @@ var DshXiaozhi = (() => {
 .xz-device-row:last-child{border-bottom:none}
 .xz-device-row-main{display:flex;align-items:center;gap:8px;min-width:0}
 .xz-device-row-main .xz-input{max-width:180px}
+/* \u5361\u7247\u5185\u8054\u6539\u540D\uFF1A\u548C\u6807\u9898\u540C\u9AD8\uFF0C\u522B\u7528\u8868\u5355\u8F93\u5165\u6846\u7684 36px \u9AD8\u5EA6\u628A\u5361\u7247\u6491\u53D8\u5F62\u3002 */
+.xz-devcard-head .xz-devcard-rename{height:28px;padding:0 9px;font-size:13px;line-height:1.2;border-radius:9px;max-width:220px;box-sizing:border-box}
 .xz-device-row-mac{font-family:ui-monospace,monospace;font-size:11px;color:var(--xz-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xz-device-row-actions{display:flex;gap:6px;flex-wrap:wrap}
 .xz-device-row-actions .xz-btn{padding:4px 9px;font-size:11.5px;border-radius:9px}
@@ -2698,7 +2700,7 @@ var DshXiaozhi = (() => {
                   "div",
                   { className: "xz-row", style: { flex: 1 } },
                   h("input", {
-                    className: "xz-input",
+                    className: "xz-input xz-devcard-rename",
                     autoFocus: true,
                     value: editName,
                     maxLength: 40,

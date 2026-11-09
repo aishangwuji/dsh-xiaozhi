@@ -326,7 +326,7 @@ import { HistoryDialog } from './HistoryDialog.js'
                       editing === agent.id
                         ? h('div', { className: 'xz-row', style: { flex: 1 } },
                             h('input', {
-                              className: 'xz-input',
+                              className: 'xz-input xz-devcard-rename',
                               autoFocus: true,
                               value: editName,
                               maxLength: 40,
