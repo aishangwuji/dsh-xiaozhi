@@ -89,7 +89,7 @@
 .xz-details[open]>summary::after{transform:rotate(180deg)}
 .xz-capability{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--xz-line);border-radius:10px;font-size:12.5px;background:var(--xz-surface-strong)}
 .xz-capability-body{display:flex;flex-direction:column;gap:2px;min-width:0}
-.xz-capability-name{font-size:12.5px;font-weight:600}
+.xz-capability-name{font-size:12.5px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.xz-capability .xz-switch{margin-left:auto;flex:none}
 .xz-capability-desc{font-size:11px;color:var(--xz-text-3);line-height:1.35}
 .xz-capability-dot{width:8px;height:8px;border-radius:50%;background:rgba(0,0,0,.18);flex:none}
 .xz-capability.is-on .xz-capability-dot{background:#30d158}
