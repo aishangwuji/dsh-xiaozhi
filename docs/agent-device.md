@@ -59,10 +59,11 @@
 `devices.json` 只新增一个字段：`agentId`（空串 = 未绑定）。
 
 **名字模型**：智能体与设备各自命名，**不共用**（对齐参考服务端 `ai_agent.agent_name` /
-`ai_device.alias`）。自动建/迁移的智能体默认叫「智能体 1 / 2 …」（`nextAgentName()`），
-设备保留自己的 `nickName`；控制台里改智能体名只写 `agents.json`，改设备别名只写
-`devices.json`。旧迁移曾把设备昵称抄成智能体名字——`adoptLegacyDevices` 启动时对
-「单设备 + 名字 == 设备昵称 + 从未编辑（`updatedAt === createdAt`）」的智能体做一次改名
+`ai_device.alias`）。智能体名要求**唯一**（trim 后精确比较，改名排除自己），重名由
+`AgentStore` 抛 `duplicate-name`（HTTP 400），控制台提示「智能体名称已存在」。自动建/迁移的智能体
+默认叫「智能体 1 / 2 …」（`nextAgentName()`），设备保留自己的 `nickName`；控制台里改智能体名只写
+`agents.json`，改设备别名只写 `devices.json`。旧迁移曾把设备昵称抄成智能体名字——`adoptLegacyDevices`
+启动时对「单设备 + 名字 == 设备昵称 + 从未编辑（`updatedAt === createdAt`）」的智能体做一次改名
 （返回 `renamed`，幂等），用户改过名/配置的不动。
 
 **启动迁移**（`adoptLegacyDevices`，幂等）：
@@ -138,7 +139,7 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"      # 全量 232 项必须全绿（2026-11-08）
+node --test "test/*.test.mjs"      # 全量 233 项必须全绿（2026-11-08）
 npm run build && npm run smoke      # 控制台构建 + 冒烟（src/client/** → client.js）
 node --check client.js
 ```

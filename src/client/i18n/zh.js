@@ -99,6 +99,7 @@
       agentOffline: '这个智能体没有在线设备',
       agentNamePlaceholder: '智能体名称',
       agentDefaultName: '智能体 {n}',
+      agentNameDuplicate: '智能体名称已存在，请换一个',
       loading: '加载中…',
       name: '名称',
       mac: '设备 ID',

@@ -401,7 +401,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 智能体「角色」页选「跟随音色」会删除该智能体的 `language` 覆盖、撤掉语种指令；如果只在 `cordis.patch.yml` 里写过默认语种，需要智能体上显式选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，232 项）：
+实测（`node --test "test/*.test.mjs"`，233 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -457,11 +457,11 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 232 项
+node --test "test/*.test.mjs"   # 233 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 
-覆盖：标识归一化/私网判定/存储（待审核、封禁跨重启、损坏文件隔离）；智能体覆盖合并与越界回落（含「hostProvider 不再强切 host」）；全局设置（人设/静音收口持久化、空值回落插件配置、`applyRuntimeVoiceSettings` 的 hostProvider/backups 叠加回归）；**三段备用服务商持久化/掩码/逐条留空保留/非法整次失败**；**TTS 默认音色**（全局只存凭据、`voice`/`model`/`resourceId` 可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留，2026-11-08）；HTTP 端到端（待审核/批准、`activation: null`、封禁 403、互斥 4001、CSRF、`/test/provider` 参数与回包）；网关（`/health` 免鉴权、`/commands` 401/200、`/exec` 白名单/参数注入 400/超时 124/截断/限流 429/爆破锁定）；语音（分句器边界、VAD、Ogg 往返、真 Opus 整轮、打断、20 轮）；**failover**（LLM 未出字前切换/出字后不切、TTS 整句重试、ASR 回放且不推 partial、abort 不切换、候选构建失败跳过、粘性与 5 分钟回落）；**小米 MiMo**（`api-key` 认证头、`thinking` 开关、SSE 文本/工具调用、模型清单走 /v1/models（无内置兜底））；**联网工具**（Search 带正文/截断预算、web_fetch 正文与 403/404 语义、动态 Key、无 Key 回退）；**对话历史**（会话聚合/标题/旧格式迁移/音频 WAV 读写与路径安全/保留期与容量清理/clear 粒度/4 条 HTTP 路由）；**智能体/设备绑定**（旧设备迁移与记忆复制、多设备绑定/移动/解绑、配置共享、级联删除、历史合并，`test/agents.test.mjs` 6 项）。
+覆盖：标识归一化/私网判定/存储（待审核、封禁跨重启、损坏文件隔离）；智能体覆盖合并与越界回落（含「hostProvider 不再强切 host」）；全局设置（人设/静音收口持久化、空值回落插件配置、`applyRuntimeVoiceSettings` 的 hostProvider/backups 叠加回归）；**三段备用服务商持久化/掩码/逐条留空保留/非法整次失败**；**TTS 默认音色**（全局只存凭据、`voice`/`model`/`resourceId` 可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留，2026-11-08）；HTTP 端到端（待审核/批准、`activation: null`、封禁 403、互斥 4001、CSRF、`/test/provider` 参数与回包）；网关（`/health` 免鉴权、`/commands` 401/200、`/exec` 白名单/参数注入 400/超时 124/截断/限流 429/爆破锁定）；语音（分句器边界、VAD、Ogg 往返、真 Opus 整轮、打断、20 轮）；**failover**（LLM 未出字前切换/出字后不切、TTS 整句重试、ASR 回放且不推 partial、abort 不切换、候选构建失败跳过、粘性与 5 分钟回落）；**小米 MiMo**（`api-key` 认证头、`thinking` 开关、SSE 文本/工具调用、模型清单走 /v1/models（无内置兜底））；**联网工具**（Search 带正文/截断预算、web_fetch 正文与 403/404 语义、动态 Key、无 Key 回退）；**对话历史**（会话聚合/标题/旧格式迁移/音频 WAV 读写与路径安全/保留期与容量清理/clear 粒度/4 条 HTTP 路由）；**智能体/设备绑定**（旧设备迁移与记忆复制、多设备绑定/移动/解绑、配置共享、级联删除、历史合并、智能体重名拦截，`test/agents.test.mjs` 7 项）。
 
 ## 已知限制
 

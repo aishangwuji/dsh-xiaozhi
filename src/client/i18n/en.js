@@ -100,6 +100,7 @@
       agentOffline: 'No device of this agent is online',
       agentNamePlaceholder: 'Agent name',
       agentDefaultName: 'Agent {n}',
+      agentNameDuplicate: 'That agent name is already in use',
       loading: 'Loading…',
       name: 'Name',
       mac: 'Device ID',

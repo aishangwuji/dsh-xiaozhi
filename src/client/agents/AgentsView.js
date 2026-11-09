@@ -33,6 +33,13 @@ import { HistoryDialog } from './HistoryDialog.js'
       const agents = state.agents || [];
       const devices = state.devices || [];
       const pending = state.pending || [];
+      const errorText = (error) => error?.code === 'duplicate-name' ? t('agentNameDuplicate') : error.message;
+      const nextDefaultName = () => {
+        const used = new Set(agents.map((agent) => agent.name).filter(Boolean));
+        let n = 1;
+        while (used.has(t('agentDefaultName').replace('{n}', String(n)))) n += 1;
+        return t('agentDefaultName').replace('{n}', String(n));
+      };
       const configAgent = configuring ? agents.find((item) => item.id === configuring) || null : null;
       const manageAgent = managing ? agents.find((item) => item.id === managing) || null : null;
 
@@ -41,12 +48,12 @@ import { HistoryDialog } from './HistoryDialog.js'
         try {
           const data = await callApi('/agents', {
             method: 'POST',
-            body: { name: t('agentDefaultName').replace('{n}', String(agents.length + 1)) }
+            body: { name: nextDefaultName() }
           });
           await onChanged();
           if (data?.agent?.id) await openConfig(data.agent.id);
         } catch (error) {
-          notify(`${t('actionFailed')}${error.message}`, 'bad');
+          notify(`${t('actionFailed')}${errorText(error)}`, 'bad');
         } finally {
           setBusyId('');
         }
@@ -148,7 +155,7 @@ import { HistoryDialog } from './HistoryDialog.js'
           setEditing('');
           await onChanged();
         } catch (error) {
-          notify(`${t('actionFailed')}${error.message}`, 'bad');
+          notify(`${t('actionFailed')}${errorText(error)}`, 'bad');
         } finally {
           renameBusy.current = false;
         }

@@ -35,6 +35,18 @@ function clipName(value) {
   return String(value ?? '').trim().slice(0, MAX_NAME)
 }
 
+/** 智能体名是操作者用来认人的，默认要求唯一（空名不参与比较，避免迁移数据无法启动）。 */
+function assertNameAvailable(agents, name, excludeId = '') {
+  const candidate = clipName(name)
+  if (!candidate) return
+  for (const agent of agents.values()) {
+    if (agent.id === excludeId) continue
+    if (clipName(agent.name) === candidate) {
+      throw new AgentStoreError('duplicate-name', `智能体名称「${candidate}」已存在，请换一个`)
+    }
+  }
+}
+
 function createAgent({ name = '', now }) {
   return {
     id: randomUUID(),
@@ -132,6 +144,7 @@ export class AgentStore {
 
   async create({ name = '', overrides = {}, toolDisabled = [], memoryEnabled = true } = {}) {
     const now = this.clock()
+    assertNameAvailable(this.agents, name)
     const agent = createAgent({ name, now })
     if (overrides && typeof overrides === 'object' && !Array.isArray(overrides)) agent.overrides = { ...overrides }
     agent.toolDisabled = Array.isArray(toolDisabled)
@@ -147,7 +160,10 @@ export class AgentStore {
   async update({ agentId, name, overrides } = {}) {
     const agent = this.agents.get(String(agentId ?? ''))
     if (!agent) throw new AgentStoreError('not-found', '智能体不存在')
-    if (typeof name === 'string') agent.name = clipName(name)
+    if (typeof name === 'string') {
+      assertNameAvailable(this.agents, name, agent.id)
+      agent.name = clipName(name)
+    }
     if (overrides && typeof overrides === 'object' && !Array.isArray(overrides)) {
       const next = { ...(agent.overrides ?? {}) }
       for (const [key, value] of Object.entries(overrides)) {

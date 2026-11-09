@@ -393,6 +393,7 @@ var DshXiaozhi = (() => {
     if (!response.ok) {
       const error = new Error(parsed?.error?.message ?? `HTTP ${response.status}`);
       error.status = response.status;
+      error.code = parsed?.error?.code ?? "";
       throw error;
     }
     return parsed;
@@ -528,6 +529,7 @@ var DshXiaozhi = (() => {
     agentOffline: "\u8FD9\u4E2A\u667A\u80FD\u4F53\u6CA1\u6709\u5728\u7EBF\u8BBE\u5907",
     agentNamePlaceholder: "\u667A\u80FD\u4F53\u540D\u79F0",
     agentDefaultName: "\u667A\u80FD\u4F53 {n}",
+    agentNameDuplicate: "\u667A\u80FD\u4F53\u540D\u79F0\u5DF2\u5B58\u5728\uFF0C\u8BF7\u6362\u4E00\u4E2A",
     loading: "\u52A0\u8F7D\u4E2D\u2026",
     name: "\u540D\u79F0",
     mac: "\u8BBE\u5907 ID",
@@ -790,6 +792,7 @@ var DshXiaozhi = (() => {
     agentOffline: "No device of this agent is online",
     agentNamePlaceholder: "Agent name",
     agentDefaultName: "Agent {n}",
+    agentNameDuplicate: "That agent name is already in use",
     loading: "Loading\u2026",
     name: "Name",
     mac: "Device ID",
@@ -2409,6 +2412,13 @@ var DshXiaozhi = (() => {
     const agents = state.agents || [];
     const devices = state.devices || [];
     const pending = state.pending || [];
+    const errorText = (error) => error?.code === "duplicate-name" ? t("agentNameDuplicate") : error.message;
+    const nextDefaultName = () => {
+      const used = new Set(agents.map((agent) => agent.name).filter(Boolean));
+      let n = 1;
+      while (used.has(t("agentDefaultName").replace("{n}", String(n)))) n += 1;
+      return t("agentDefaultName").replace("{n}", String(n));
+    };
     const configAgent = configuring ? agents.find((item) => item.id === configuring) || null : null;
     const manageAgent = managing ? agents.find((item) => item.id === managing) || null : null;
     const createAgent = async () => {
@@ -2416,12 +2426,12 @@ var DshXiaozhi = (() => {
       try {
         const data = await callApi("/agents", {
           method: "POST",
-          body: { name: t("agentDefaultName").replace("{n}", String(agents.length + 1)) }
+          body: { name: nextDefaultName() }
         });
         await onChanged();
         if (data?.agent?.id) await openConfig(data.agent.id);
       } catch (error) {
-        notify(`${t("actionFailed")}${error.message}`, "bad");
+        notify(`${t("actionFailed")}${errorText(error)}`, "bad");
       } finally {
         setBusyId("");
       }
@@ -2512,7 +2522,7 @@ var DshXiaozhi = (() => {
         setEditing("");
         await onChanged();
       } catch (error) {
-        notify(`${t("actionFailed")}${error.message}`, "bad");
+        notify(`${t("actionFailed")}${errorText(error)}`, "bad");
       } finally {
         renameBusy.current = false;
       }

@@ -201,6 +201,42 @@ test('one agent binds several devices, and binding moves a device instead of cop
   }
 })
 
+test('agent names must be unique', async () => {
+  const harness = await start()
+  try {
+    const first = await harness.call('/agents', { method: 'POST', body: { name: '重名测试' } })
+    assert.equal(first.status, 200)
+    const firstId = first.json.agent.id
+
+    const duplicate = await harness.call('/agents', { method: 'POST', body: { name: '  重名测试  ' } })
+    assert.equal(duplicate.status, 400)
+    assert.equal(duplicate.json.error.code, 'duplicate-name')
+    assert.equal(harness.agents.size, 1)
+
+    const second = await harness.call('/agents', { method: 'POST', body: { name: '另一个' } })
+    assert.equal(second.status, 200)
+    const secondId = second.json.agent.id
+
+    const renameDuplicate = await harness.call('/agents/update', {
+      method: 'POST',
+      body: { agentId: secondId, name: '重名测试' },
+    })
+    assert.equal(renameDuplicate.status, 400)
+    assert.equal(renameDuplicate.json.error.code, 'duplicate-name')
+    assert.equal(harness.agents.get(secondId).name, '另一个')
+
+    // 改成自己当前的名字不算重复；同名比较会 trim。
+    const self = await harness.call('/agents/update', {
+      method: 'POST',
+      body: { agentId: firstId, name: ' 重名测试 ' },
+    })
+    assert.equal(self.status, 200)
+    assert.equal(harness.agents.get(firstId).name, '重名测试')
+  } finally {
+    await harness.dispose()
+  }
+})
+
 test('agent config is shared by its devices and can be renamed', async () => {
   const harness = await start()
   try {

@@ -196,6 +196,7 @@ import { PROVIDERS as BUNDLED_PROVIDERS, STAGE_META as BUNDLED_STAGE_META } from
       if (!response.ok) {
         const error = new Error(parsed?.error?.message ?? `HTTP ${response.status}`);
         error.status = response.status;
+        error.code = parsed?.error?.code ?? '';
         throw error;
       }
       return parsed;
