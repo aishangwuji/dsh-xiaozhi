@@ -119,6 +119,7 @@ function render(label, element) {
 render('Console', React.createElement(Console, { state, refresh: noop, notify }))
 const agentsHtml = render('AgentsView', React.createElement(AgentsView, { state, notify, onChanged: noop }))
 assert.match(agentsHtml, /pendingTitle/, 'pending devices panel should render')
+assert.match(agentsHtml, /xz-pending-card/, 'pending card should opt out of backdrop-filter clipping')
 assert.match(agentsHtml, /02:00:00:00:00:AA/, 'pending device id should render')
 assert.match(agentsHtml, /pendingApprove/, 'pending approve action should render')
 render('ConfigWizard(loading)', React.createElement(ConfigWizard, { state, notify }))

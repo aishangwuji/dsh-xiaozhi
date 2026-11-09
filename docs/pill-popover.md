@@ -58,7 +58,7 @@
 | 属性 | 参考值 / 说明 |
 |---|---|
 | 定位 | **`position: fixed` + 内联 `left/top/width/maxHeight`**（打开时按触发器 `getBoundingClientRect()` 计算）：面板**不参与页面布局**，打开前后 `document.scrollHeight/scrollWidth` 不变，避免整页滚动条出现/消失导致的内容位移。距触发器 6px，默认左对齐；下方空间不足自动向上翻转；左右按视口 8px 边距 clamp |
-| 包含块 | fixed 的包含块会被祖先的 `transform/filter/backdrop-filter/perspective/contain:paint` 改变（本控制台 `.xz-card`、`.xz-modal-mask` 都有 `backdrop-filter`）。实现里有 `fixedContainingBlock()` 找最近的这类祖先，把坐标换算成它的局部坐标；**可用空间仍按视口计算**，否则会「该翻转不翻转、菜单落到视口外」 |
+| 包含块 | fixed 的包含块会被祖先的 `transform/filter/backdrop-filter/perspective/contain:paint` 改变（本控制台 `.xz-card`、`.xz-modal-mask` 都有 `backdrop-filter`）。实现里有 `fixedContainingBlock()` 找最近的这类祖先，把坐标换算成它的局部坐标；**可用空间仍按视口计算**，否则会「该翻转不翻转、菜单落到视口外」。注意：`backdrop-filter` 还会把面板**裁剪在该祖先的 border box 内**，所以卡片内下拉的容器不能再带毛玻璃（待审核卡 `.xz-pending-card` 已显式 `backdrop-filter:none`，2026-11-09 实测否则只露出一行选项） |
 | 最小宽度 | 240px（窄视口按 `82vw` 与 8px 边距收缩） |
 | 最大宽度 | `min(420px, 82vw)` |
 | 最大高度 | 340px，内部滚动 |

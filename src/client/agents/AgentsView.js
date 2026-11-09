@@ -261,7 +261,7 @@ import { HistoryDialog } from './HistoryDialog.js'
 
       const pendingCard = pending.length === 0
         ? null
-        : h('div', { className: 'xz-card', style: { marginBottom: 14 } },
+        : h('div', { className: 'xz-card xz-pending-card', style: { marginBottom: 14 } },
             h('div', { className: 'xz-row', style: { justifyContent: 'space-between', marginBottom: 6 } },
               h('h3', { style: { margin: 0 } }, `${t('pendingTitle')}（${pending.length}）`)
             ),

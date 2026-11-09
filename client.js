@@ -976,6 +976,9 @@ var DshXiaozhi = (() => {
 .xz-spacer{flex:1}
 .xz-content{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;padding-bottom:26px}
 .xz-card{background:var(--xz-surface);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.88);border-radius:var(--xz-radius-lg);box-shadow:var(--xz-shadow-sm);padding:18px 20px;margin-bottom:14px}
+/* \u5F85\u5BA1\u6838\u5361\u7247\u91CC\u6709 PillSelect\uFF1Abackdrop-filter \u4F1A\u5EFA\u7ACB fixed \u5305\u542B\u5757\u5E76\u628A\u83DC\u5355\u88C1\u5728\u5361\u7247\u5E95\u8FB9\uFF0C
+   \u6240\u4EE5\u8FD9\u5F20\u5361\u7247\u4E0D\u7528\u6BDB\u73BB\u7483\uFF0C\u83DC\u5355\u6309\u89C6\u53E3\u5B9A\u4F4D\uFF0C\u624D\u80FD\u5B8C\u6574\u5217\u51FA\u6240\u6709\u667A\u80FD\u4F53\u3002 */
+.xz-pending-card{backdrop-filter:none;background:var(--xz-surface-strong)}
 .xz-card h3{margin:0 0 4px;font-size:14px;font-weight:650}
 .xz-card p.xz-hint{margin:0 0 14px;font-size:12px;color:var(--xz-text-2);line-height:1.5}
 .xz-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
@@ -2612,7 +2615,7 @@ var DshXiaozhi = (() => {
     };
     const pendingCard = pending.length === 0 ? null : h(
       "div",
-      { className: "xz-card", style: { marginBottom: 14 } },
+      { className: "xz-card xz-pending-card", style: { marginBottom: 14 } },
       h(
         "div",
         { className: "xz-row", style: { justifyContent: "space-between", marginBottom: 6 } },

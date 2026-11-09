@@ -24,6 +24,9 @@
 .xz-spacer{flex:1}
 .xz-content{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;padding-bottom:26px}
 .xz-card{background:var(--xz-surface);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.88);border-radius:var(--xz-radius-lg);box-shadow:var(--xz-shadow-sm);padding:18px 20px;margin-bottom:14px}
+/* 待审核卡片里有 PillSelect：backdrop-filter 会建立 fixed 包含块并把菜单裁在卡片底边，
+   所以这张卡片不用毛玻璃，菜单按视口定位，才能完整列出所有智能体。 */
+.xz-pending-card{backdrop-filter:none;background:var(--xz-surface-strong)}
 .xz-card h3{margin:0 0 4px;font-size:14px;font-weight:650}
 .xz-card p.xz-hint{margin:0 0 14px;font-size:12px;color:var(--xz-text-2);line-height:1.5}
 .xz-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
