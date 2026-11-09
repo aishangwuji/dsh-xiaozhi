@@ -25,13 +25,13 @@
 | 面 | 地址 | 谁在用 | 路由 |
 |---|---|---|---|
 | 设备面 | `0.0.0.0:8989`（插件自己 `net.createServer`，配置项 `host` / `port`，也接受 `iot_gateway.*` 包裹） | 手表固件 | `GET/POST /xiaozhi/ota/`、`POST /xiaozhi/ota/activate`（占位）、`Upgrade /xiaozhi/v1/`（语音 WS）、`GET /healthz`、网关 `/health` `/commands` `/exec` |
-| 操作台面 | **宿主 Harness 的 webServer**，前缀 `/dsh-xiaozhi-7c3a`（`control.prefix`） | 控制台页面（浏览器） | 主要路由：`GET /state`、`/agents*`、`/devices*`、`/memory*`、`/tools*`、`/history*`、`/settings`、`/models`、`/voices`、`/providers`、`/llm/providers`、`/asr/local`、`/test/*`、`/probe/ota`、`/crashes*`、`/events`（完整清单见 `src/control.js`） |
+| 操作台面 | **宿主 Harness 的 webServer**，前缀 `/dsh-xiaozhi-7c3a`（`control.prefix`） | 控制台页面（浏览器） | 主要路由：`GET /state`、`/pending*`、`/agents*`、`/devices*`、`/memory*`、`/tools*`、`/history*`、`/settings`、`/models`、`/voices`、`/providers`、`/llm/providers`、`/asr/local`、`/test/*`、`/probe/ota`、`/crashes*`、`/events`（完整清单见 `src/control.js`） |
 
 - **控制 API 不占 8989**：靠 `ctx.webServer.register({ kind: 'prefix', path: control.prefix })` 挂在 Harness 自己的 Web 服务上，所以端口跟着 GUI 走（DSH 每次重启都会变），设备入口始终是 8989。
 - 写接口（POST）必须带 `x-dsh-xiaozhi: 1` 头（CSRF），缺了回 403；读接口不校验——控制台由只监听回环的 Harness Web 服务提供，能打开面板就等于本机管理员。
 - 配置优先级：插件自带 `cordis.patch.yml` 的默认值 → profile 的 `cordis.patch.yml`（当前**没有** dsh-xiaozhi 覆盖行）→ 控制台保存的 `settings.json`（运行时叠在上面，保存即生效）。
 - 数据目录 `~/.dsh-xiaozhi/`（`dataRoot` 可配）：
-  - 现役：`devices.json`（硬件名册）、`agents.json`（配置单位，0600、版本 1）、`settings.json`（0600、版本 3）、`memory/<agentId>.json`、`history/<deviceId>.jsonl` + `history/audio/<deviceId>/*.wav`、`voice.log`（JSONL trace）、`crash.log`。
+  - 现役：`devices.json`（已批准设备名册）、`pending.json`（待审核设备队列）、`agents.json`（配置单位，0600、版本 1）、`settings.json`（0600、版本 3）、`memory/<agentId>.json`、`history/<deviceId>.jsonl` + `history/audio/<deviceId>/*.wav`、`voice.log`（JSONL trace）、`crash.log`。
   - **遗留、代码已不读写**：`profiles.json`、`tools.json`（旧「行为档案」页与旧全局工具开关留下的），可手工删，删了不影响任何链路。
 
 **端侧**：`D:\Demo\esp-xiaozhi\xiaozhi-esp32`，板子是 waveshare ESP32-S3-Touch-AMOLED-2.06，target `esp32s3`，分区表 `partitions/v2/32m.csv`（32MB flash，NVS 在 `0x3B000`，840K）。
@@ -71,14 +71,14 @@
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"          # 全量 231 项，必须全绿
+node --test "test/*.test.mjs"          # 全量 232 项，必须全绿
 npm run build                          # src/client/** → client.js（esbuild，React 保持 external）
 npm run smoke                          # 真实 React SSR 渲染主要页面 + slot 注册校验
 npm run check:ui                       # jsdom 交互检查：概览卡 → 弹窗 → 添加 → ⋯ → 模型回显 → 自动保存
 node --check client.js                 # 构建产物语法检查
 ```
 
-当前 231 项，覆盖分句、VAD、Ogg/Opus 往返、mock 整轮、打断、20 轮、语种、音色族、**TTS 默认音色**（全局只存凭据可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留）、设备级覆盖合并（含「设备 hostProvider 不再强切 host」）、全局设置（人设/静音收口、`applyRuntimeSettings` 的 hostProvider/backups 叠加回归）、备用服务商（持久化/掩码/留空保留/整次失败/**条数不设上限**/`/test/provider`）、**服务商描述符**（描述符与 `BACKUP_SPEC` 白名单一致、字段可存储、stage 级名字覆盖、`hidden` 只存不展示、`GET /providers` 路由，`test/providers.test.mjs` 6 项）、**ASR 在线测试**（TTS→ASR 编排：分块喂 PCM、TTS mock/无音频/ASR error 的报错，`test/asr-probe.test.mjs` 5 项）、**火山官方音色列表**（HMAC 签名按官方 GET/POST 向量验证、ListSpeakers 分页/缓存/错误、无 AK/SK 回退内置清单，`test/volc-sign.test.mjs` 4 项 + `test/volc-speakers.test.mjs` 4 项）、**设备侧 MCP/IoT**（MCP initialize/tools/list/tools/call 与工具名清洗、IoT descriptors/states/commands，`test/device-mcp.test.mjs` 5 项 + `test/device-iot.test.mjs` 2 项）、**外部 MCP（stdio）**（子进程 JSON-RPC initialize/tools/list/tools/call，`test/mcp-stdio.test.mjs` 1 项）、**外部 MCP（SSE / Streamable HTTP）**（本地 HTTP server 走通 initialize/tools/list/tools/call，`test/mcp-http.test.mjs` 1 项）、**MCP 接入点**（WebSocket JSON-RPC initialize/tools/list/tools/call，`test/mcp-endpoint.test.mjs` 1 项）、**入站 `/mcp`**（token 鉴权 + 服务端驱动 initialize/tools/list/tools/call，`test/mcp-inbound.test.mjs` 2 项 + `test/http.test.mjs` 1 项）、**服务端插件工具**（newsnow 热榜 / QWeather 天气 / Intl 农历 / exit 退出 / HASS / RAGFlow / change_role / call_device / play_music，`test/tools-extra.test.mjs` 9 项；音乐解码 `test/music.test.mjs` 1 项）、三段 failover（LLM 未出字前切换、TTS 整句重试、ASR 回放不推 partial、abort 不切换、粘性回落）、mDNS 报文与地址过滤、小米 MiMo（api-key 认证头 / thinking / SSE / 工具调用 / 模型清单走 /v1/models 无内置兜底）、联网工具（Search 带正文与截断预算 / web_fetch 正文与 403·404 语义 / 动态 Key / 无 Key 回退）、对话历史（会话聚合与标题 / 旧格式 10 分钟迁移 / WAV 读写与路径安全 / 30 天保留与容量清理 / clear 粒度 / 4 条 HTTP 路由）、**智能体/设备绑定**（旧设备迁移与记忆复制 / 多设备绑定与移动 / 解绑 / 配置共享 / 级联删除 / 历史合并，`test/agents.test.mjs` 6 项）。
+当前 232 项，覆盖分句、VAD、Ogg/Opus 往返、mock 整轮、打断、20 轮、语种、音色族、**TTS 默认音色**（全局只存凭据可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留）、设备级覆盖合并（含「设备 hostProvider 不再强切 host」）、全局设置（人设/静音收口、`applyRuntimeSettings` 的 hostProvider/backups 叠加回归）、备用服务商（持久化/掩码/留空保留/整次失败/**条数不设上限**/`/test/provider`）、**服务商描述符**（描述符与 `BACKUP_SPEC` 白名单一致、字段可存储、stage 级名字覆盖、`hidden` 只存不展示、`GET /providers` 路由，`test/providers.test.mjs` 6 项）、**ASR 在线测试**（TTS→ASR 编排：分块喂 PCM、TTS mock/无音频/ASR error 的报错，`test/asr-probe.test.mjs` 5 项）、**火山官方音色列表**（HMAC 签名按官方 GET/POST 向量验证、ListSpeakers 分页/缓存/错误、无 AK/SK 回退内置清单，`test/volc-sign.test.mjs` 4 项 + `test/volc-speakers.test.mjs` 4 项）、**设备侧 MCP/IoT**（MCP initialize/tools/list/tools/call 与工具名清洗、IoT descriptors/states/commands，`test/device-mcp.test.mjs` 5 项 + `test/device-iot.test.mjs` 2 项）、**外部 MCP（stdio）**（子进程 JSON-RPC initialize/tools/list/tools/call，`test/mcp-stdio.test.mjs` 1 项）、**外部 MCP（SSE / Streamable HTTP）**（本地 HTTP server 走通 initialize/tools/list/tools/call，`test/mcp-http.test.mjs` 1 项）、**MCP 接入点**（WebSocket JSON-RPC initialize/tools/list/tools/call，`test/mcp-endpoint.test.mjs` 1 项）、**入站 `/mcp`**（token 鉴权 + 服务端驱动 initialize/tools/list/tools/call，`test/mcp-inbound.test.mjs` 2 项 + `test/http.test.mjs` 1 项）、**服务端插件工具**（newsnow 热榜 / QWeather 天气 / Intl 农历 / exit 退出 / HASS / RAGFlow / change_role / call_device / play_music，`test/tools-extra.test.mjs` 9 项；音乐解码 `test/music.test.mjs` 1 项）、**待审核设备**（`PendingStore` 持久化/尝试次数/重新加载、`autoProvision:false` 时 OTA/WS 返回 `device-pending`、控制台批准并绑定指定智能体、拒绝移除、批准后 OTA 放行，`test/pending.test.mjs` 1 项 + `test/http.test.mjs` 1 项）、三段 failover（LLM 未出字前切换、TTS 整句重试、ASR 回放不推 partial、abort 不切换、粘性回落）、mDNS 报文与地址过滤、小米 MiMo（api-key 认证头 / thinking / SSE / 工具调用 / 模型清单走 /v1/models 无内置兜底）、联网工具（Search 带正文与截断预算 / web_fetch 正文与 403·404 语义 / 动态 Key / 无 Key 回退）、对话历史（会话聚合与标题 / 旧格式 10 分钟迁移 / WAV 读写与路径安全 / 30 天保留与容量清理 / clear 粒度 / 4 条 HTTP 路由）、**智能体/设备绑定**（旧设备迁移与记忆复制 / 多设备绑定与移动 / 解绑 / 配置共享 / 级联删除 / 历史合并，`test/agents.test.mjs` 6 项）。
 
 **不接手表也能做的三种探针**：
 
@@ -149,6 +149,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 | 控制台「扩展能力」里出现英文工具名 | 卡片显示 `web_fetch`，旁边几个都是中文 | `src/client/core.js` 的 `toolLabel()` 是白名单映射，新工具没登记就原样显示工具名。2026-11-08 补了 `web_fetch → 网页抓取`；新增工具时 § 十一 第 1 条那几处要一起改 |
 | 智能体页点「+ 新建」后整页白屏 | 控制台没弹错误，页面直接空白；`crash.log` 无新记录（React 19 卸载根树不抛 window error） | `src/client/agents/AgentConfigDialog.js` 用了 `toolLabel` 却没从 `core.js` 导入。配置弹窗一打开就提前构造「扩展能力」页签，`toolLabel(tool.name)` 抛 ReferenceError → React 卸载整棵树。已修：补 import；`npm run smoke` 的 `AgentConfigDialog` 改成非空 `tools`（空数组会把 `map` 里的调用短路掉，正是这次漏检的原因） |
 | 服务商编辑弹窗里「模型」下拉显示「未选择」，已保存的模型看起来丢了 | 编辑一条备用 LLM，模型触发器是「未选择」；直接保存后值其实还在（`draft.model` 没变） | `ModelField` 只在厂商 `/models` 返回的 `options` 里找当前值。厂商清单没包含该 id（模型下线 / 手填自定义 id / 接口只返回一部分）时，`PillSelect` 回退到 `selectPlaceholder`（未选择）。2026-11-08 修：`ModelField` 把当前值补进选项（同 `AgentConfigDialog` 音色的做法）；`PillSelect` 新增 `placeholder`，空值显示描述符 `modelHint`（DeepSeek = `deepseek-chat`）而不是「未选择」；`npm run check:ui` 用「清单故意不含 `gpt-4o-mini`」回归 |
+| 新设备一直连不上，OTA 返回 `403 device-pending` | 控制台「智能体」页顶部出现待审核卡片；`pending.json` 有该 MAC | 默认 `autoProvision: false`，陌生设备要先在控制台选智能体并批准；批准后设备下一次 OTA/WS 才放行。不是固件故障，也不需要激活码 |
 
 ## 八、当前的边界和未定项
 
@@ -172,6 +173,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   （契约仍是「只测已保存的配置」，只是把两步合成一次点击）；已自动保存时直接测。
 - 弹窗尺寸（2026-11-08 修）：控制台 4 个弹窗**一律固定外框**、只有内部区域滚动，不要再退回「max-height + 内容撑开」（父层 `align-items:center`，高度一变标题与页签就上下跳）：智能体配置 `.xz-config-modal` 720×600（页签条固定，只有 `.xz-pane` 滚动）、历史对话 `.xz-history-modal` 920×720、服务商编辑 `.xz-modal-lg` 560×460（表单区滚动）、播报测试 `.xz-inject-modal` 520×320。高度统一写 `height:min(Xpx,86~88vh)` 兜底小视口；切页签 / 换厂商 / 消息增减都不得改变外框尺寸。
 - **扩展能力卡片（2026-11-09）**：`.xz-capability-name` 占满剩余宽度并单行省略，`.xz-capability .xz-switch` 固定 `margin-left:auto`，所以标签长短不会把开关顶到不同位置；`CapabilitiesView` 复用同一套 class，规则对它同样生效。
+- **待审核设备（2026-11-09）**：`autoProvision: false`（默认）时，陌生 OTA/WS 请求不再直接建档，而是 `src/pending.js` 的 `PendingStore` 写入 `~/.dsh-xiaozhi/pending.json`，返回 `403 device-pending`。控制台「智能体」页顶部显示「待审核设备」，每行可选一个智能体后「批准」（`POST /pending/approve`，`agentId` 为空则自动新建），或「拒绝」（`POST /pending/reject`）。批准后 `DeviceStore.ensureDevice` 建档并 `setAgentId`，设备下一次 OTA/WS 即通过；`GET /state` 带 `pending` 数组，`GET /pending` 单独可查。`autoProvision: true` 恢复旧的零接触自动登记。批准后设备下一次请求才放行；若手表停在错误页，重启/重新唤醒一次。
 - **TTS 归属（2026-11-08）**：全局设置 → TTS 合成只配「厂商 + 凭据」（volc = API Key；xunfei = APPID/APIKey/APISecret；edge 免密钥），不配音色 / 模型 / Resource ID / API URL——全局保存时这三项显式清空。音色（= TTS 模型族）只在「智能体 → 配置 → 角色」按智能体选，首项「默认音色」= 不覆盖，留空 = 厂商默认（`src/voice/voices.js` 的 `DEFAULT_TTS_VOICES`：火山 `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan`）；`resolveTtsVoice` 负责空音色→厂商默认、跨厂商残留→回落本厂商默认、自定义 ID 原样保留。智能体级音色只覆盖主用，备用 TTS 条目只存凭据、运行时用各自厂商默认音色。**输出语种同样只在智能体「角色」页**（全局设置里的那一项已删除，2026-11-08），同一智能体的设备共用；`cordis.patch.yml` 的 `voice.tts.language` 仅作服务端兜底。
 - **设备侧 MCP / IoT（2026-11-08 首阶段）**：`src/voice/device-mcp.js` 在 hello 的
   `features.mcp===true` 后发 `{type:'mcp',payload:{jsonrpc,id,method}}`（initialize id=1、
@@ -319,8 +321,9 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   `overrides` / `toolDisabled` / `memoryEnabled` 搬过去，并把设备键的记忆文件复制到智能体键。
   旧字段留在 devices.json 里不删（回滚安全），运行时只在没有绑定关系时才回落到它们
   （`index.js` 的 `agentOf(device)`）。
-- 新设备：`DeviceStore.ensureDevice` 建完记录回调 `store.onCreated`，index.js 在那里建智能体，
-  保持「零接触入网」——手表第一次连上来就有卡片。
+- 新设备：`autoProvision: false`（默认）时先进入 `PendingStore`（`pending.json`），控制台「智能体」页顶部
+  选择智能体并批准后才 `ensureDevice` 建档；`autoProvision: true` 时仍由 `store.onCreated` 自动建智能体
+  （零接触入网）。批准时选了已有智能体就传 `provisionAgent: false`，避免先多建一个再改绑。
 - API：`GET/POST /agents`、`/agents/update|bind|unbind|remove`；
   `/memory*` 与 `/tools*` 接受 `agentId`（兼容旧 `deviceId`，按绑定关系反查）；
   `/history/agent-conversations` 合并绑定设备的会话。`/devices/config` 保留为兼容入口。
@@ -339,7 +342,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 - 控制台：三个平级视图 **概览 / 智能体 / 全局设置**。卡片 = 智能体（名字/在线/绑定设备列表/音色/设备数/最近在线 +
   配置/设备(N)/历史/播报/删除）；「设备(N)」弹窗里绑定/解绑、改设备别名、OTA/封禁/断开/删除设备；
   「播报」发给该智能体所有在线设备（一台都不在线时提示「这个智能体没有在线设备」）。
-- 验证：`node --test "test/*.test.mjs"`（231 项，含 `test/agents.test.mjs` 6 项）。
+- 验证：`node --test "test/*.test.mjs"`（232 项，含 `test/agents.test.mjs` 6 项）。
 
 ## 十一、改代码时最容易漏的几处
 
@@ -353,7 +356,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
    TTS/ASR 加适配器文件与 `buildTtsAdapter`/`buildAsrAdapter` 的一个分支。**前端 0 改动**，
    旧 client.js 刷新后会从 `GET /providers` 拿到新厂商。模型 id 从厂商 `/v1/models` 拉，不要写死。
    完整步骤见 `docs/provider-descriptors.md`。
-4. **改数据模型**：`agents.json` / `devices.json` / `settings.json` 都要能"手改坏也能启动"——
+4. **改数据模型**：`agents.json` / `devices.json` / `pending.json` / `settings.json` 都要能"手改坏也能启动"——
    `normalizeAgent` / `normalizeDevice` / settings 的规范化函数要容错，坏文件隔离而不是拒绝启动。
 5. **改"谁来存"**：记忆按智能体、历史按设备、工具开关按智能体、OTA/封禁按设备。任何时候都不要再把
    配置写回 `devices.json`（旧字段只读，只做回滚兜底）。
@@ -366,7 +369,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
    `devices.json` 的 `agentId` 全为空 → 说明迁移还没跑（推测：正在跑的 DSH 仍是智能体改造前的实例，
    未直接验证进程内代码版本）；重启后 `adoptLegacyDevices` 会给每台旧设备各建一个智能体并复制记忆
    （幂等，重复重启不会重复建）。
-8. **改完的验收底线**：`node --test "test/*.test.mjs"` 231 项全绿 + `npm run build` 成功 + `npm run smoke` 通过 + `npm run check:ui` 通过 + `node --check client.js` 通过 +
+8. **改完的验收底线**：`node --test "test/*.test.mjs"` 232 项全绿 + `npm run build` 成功 + `npm run smoke` 通过 + `npm run check:ui` 通过 + `node --check client.js` 通过 +
    需要时 `curl http://127.0.0.1:8989/healthz` 看设备面是否还活着。
 
 ## 十二、文档地图

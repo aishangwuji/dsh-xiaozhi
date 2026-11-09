@@ -3,7 +3,7 @@
 把 ESP32 小智设备（手写固件 v2.5.3 分支）接进 DeepSeek Harness：
 
 1. **管理端**：设备自动入网后，在这里做配置——全局默认（**服务商**、凭据、LLM 模型、静音收口、回复参数）+ 每个智能体的覆盖（人设/音色/语种/模型，一台智能体可绑定多台设备）；**TTS 的音色与输出语种都按智能体选，全局只存厂商与凭据**（2026-11-08）；
-2. **局域网自入网**：手表在配网页面填本机 OTA 地址，上电即自动登记并连上，没有激活码、没有绑定台；
+2. **局域网自入网（待审核）**：手表在配网页面填本机 OTA 地址，上电后先进入控制台的「待审核设备」；管理员选择智能体并批准后才建档、连上。没有激活码、没有绑定台；
 3. **设备侧网关**：手表用固件内置的 `self.server.exec` / `self.server.commands` 调本机的 `/exec`、`/commands`，Bearer token 鉴权、命令白名单执行；
 4. **实时语音管道**：VAD → ASR → LLM 流式 → 分句 → TTS → Opus 定速下发，带代际打断。
 
@@ -47,12 +47,14 @@
 
 ```
 手表上电 → POST /xiaozhi/ota/（带 Device-Id / Client-Id）
-        → 本插件首次见到就建档，返回 { websocket.url, activation: null }
+        → 首次见到：进入待审核（403 device-pending），控制台选择智能体并批准
+        → 批准后再请求：建档，返回 { websocket.url, activation: null }
         → 手表连 ws://…/xiaozhi/v1/，hello，开始语音
         → 需要动服务器时说一句，固件调 POST /exec（Bearer token）
 ```
 
 `activation` 恒为 `null`：激活码 + 挑战应答是云控制台的产品流程，家用局域网里没有那套账号，硬套只会让手表卡在"等待绑定"。
+`autoProvision: true` 可恢复“首次见到直接建档”的旧行为；默认 `false`，走待审核。批准后设备下一次 OTA/WS 请求才放行；如果手表停在错误页，重启或重新唤醒一次即可。
 
 ## 端点
 
@@ -60,9 +62,9 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST/GET | `/xiaozhi/ota/` | 自引导：建档 + 下发 WS 地址；缺 `Device-Id`/`Client-Id` → 400；被封禁 → 403 |
+| POST/GET | `/xiaozhi/ota/` | 自引导：已知设备下发 WS 地址；未知设备（`autoProvision:false`）→ 403 `device-pending` 并进待审核；缺 `Device-Id`/`Client-Id` → 400；被封禁 → 403 |
 | POST | `/xiaozhi/ota/activate` | 兼容占位：恒返回 200（从别的服务端切过来的表可能还留着旧挑战） |
-| GET | `/xiaozhi/v1/` | WS 升级；`Device-Id` 缺失 400；封禁 403；同设备新连接以 4001 踢掉旧连接 |
+| GET | `/xiaozhi/v1/` | WS 升级；`Device-Id` 缺失 400；未知设备 → 403 `device-pending`；封禁 403；同设备新连接以 4001 踢掉旧连接 |
 | GET | `/health` | 网关存活（无鉴权，供手表排错） |
 | GET | `/commands` | 命令清单（Bearer） |
 | POST | `/exec` | `{"cmd":"disk"}` / `{"cmd":"echo","args":{"word":"alpha"}}`（Bearer） |
@@ -72,7 +74,11 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/state` | 概览 + 设备列表 + 智能体列表 + 全局默认摘要 |
+| GET | `/state` | 概览 + 设备列表 + 智能体列表 + 待审核设备 + 全局默认摘要 |
+| GET | `/pending` | 待审核设备列表（`deviceId`/`lastIp`/`firstSeenAt`/`attempts`） |
+| POST | `/pending/approve` | `{deviceId, agentId?}`：批准；`agentId` 为空时自动新建智能体 |
+| POST | `/pending/reject` | `{deviceId}`：拒绝并移出待审核队列 |
+| GET | `/devices` | 已批准设备列表 |
 | GET | `/agents` | 智能体列表（每条带绑定设备、在线、最近在线） |
 | POST | `/agents` | `{name}` 新建智能体 |
 | POST | `/agents/update` | `{agentId, name?, systemPrompt?, voice?, language?, model?, silenceMs?}`：智能体级配置（空串 = 删掉该覆盖） |
@@ -103,7 +109,7 @@
 | 视图 | 内容 |
 |---|---|
 | 概览 | 设备/在线/语音/网关四张指标卡；OTA、WebSocket、网关三个地址一键复制；**OTA 连通性测试**（服务端回环探针，结果以 JSON 展示）；最近事件 |
-| 智能体 | 卡片 = 智能体（配置单位），一台智能体可以绑定多台设备（对齐参考服务端 `ai_agent` / `ai_device`，契约 `docs/agent-device.md`）。卡片：名称（点名字就地改名，回车或失焦确认、Esc 退出）、在线呼吸灯（任一绑定设备在线）、播报、绑定设备列表（`序号. 名称 ●`），音色 / 设备数 / 最近在线，底部 **配置** / **设备(N)** / **历史** / **删除**。**配置**弹窗三个页签（角色 / 模型与记忆 / 扩展能力）改的是智能体 `overrides`，同一智能体的设备共用；其中「模型」是 **LLM 模型名**（空 = 全局默认，厂商/Key/端点仍用全局设置，下拉来自全局 LLM 的 `/models`）；**设备(N)** 弹窗里绑定/解绑、改设备别名、OTA 开关、封禁、断开、删除设备；**历史**合并该智能体所有设备的会话（列表项带设备名）；**播报**发给所有在线设备；**删除**是二次确认（第一次点击变「再次点击删除」），确认后级联删除绑定设备与历史。新设备第一次连上来会自动建一个属于它的智能体（零接触），之后可绑定到别的智能体 |
+| 智能体 | 卡片 = 智能体（配置单位），一台智能体可以绑定多台设备（对齐参考服务端 `ai_agent` / `ai_device`，契约 `docs/agent-device.md`）。卡片：名称（点名字就地改名，回车或失焦确认、Esc 退出）、在线呼吸灯（任一绑定设备在线）、播报、绑定设备列表（`序号. 名称 ●`），音色 / 设备数 / 最近在线，底部 **配置** / **设备(N)** / **历史** / **删除**。**配置**弹窗三个页签（角色 / 模型与记忆 / 扩展能力）改的是智能体 `overrides`，同一智能体的设备共用；其中「模型」是 **LLM 模型名**（空 = 全局默认，厂商/Key/端点仍用全局设置，下拉来自全局 LLM 的 `/models`）；**设备(N)** 弹窗里绑定/解绑、改设备别名、OTA 开关、封禁、断开、删除设备；**历史**合并该智能体所有设备的会话（列表项带设备名）；**播报**发给所有在线设备；**删除**是二次确认（第一次点击变「再次点击删除」），确认后级联删除绑定设备与历史。新设备默认先进「待审核设备」，管理员选智能体并批准后才建档；`autoProvision: true` 才恢复自动建智能体 |
 | 全局设置 | **三个环节概览卡 + 二级弹窗，无侧边栏**：① **服务商**（页面主体：ASR 识别 / LLM 模型 / TTS 合成 三张概览卡，每张 = 主用厂商 + 摘要 + 密钥/备用数/降级链 + 状态点，点「管理」进弹窗；弹窗里主用卡一整行、备用纵向列表、底部「+ 添加备用服务商」；失败按顺序自动切换）；**TTS 块只配「厂商 + 凭据」，没有音色/模型/Resource ID**（音色在「智能体 → 配置 → 角色」按智能体选，2026-11-08）**LLM 备用条目不要求选模型**：有厂商默认（DeepSeek/OpenAI/火山/星火）自动填默认并隐藏模型字段，MiMo 无默认仍要选（模型清单走 `/v1/models`）；主用模型仍是全局默认，智能体「模型」可覆盖 ② **语音默认参数**（静音收口 / 回复长度上限 / 回复速度）③ **接入与网关**（默认折叠：LAN/WAN WS、OTA Token、固件版本/URL、强制升级、网关 Token）④ **没有保存按钮**：改动防抖 700ms 自动落盘，底部只显示「保存中… / 已自动保存 / 失败重试」，设备下次连接生效；未落盘时测试按钮变「保存并测试」。**人设不在这里**——按智能体在「智能体 → 配置 → 角色」里设置。所有下拉都是**胶囊式浮层**（`docs/pill-popover.md`）：`position:fixed`、不参与页面布局，展开时不会撑出滚动条或让页面内容位移，下方空间不足自动向上翻转 |
 
 ### 权限模型：本机即管理员
@@ -291,6 +297,8 @@ initialize/tools/list/tools/call，客户端回 result；工具按 `agentId` 聚
 
 ```
 ~/.dsh-xiaozhi/agents.json                              # 智能体（配置单位）+ 绑定关系在 devices.json
+~/.dsh-xiaozhi/devices.json                             # 已批准设备名册（0600，版本 2）
+~/.dsh-xiaozhi/pending.json                             # 待审核设备队列（0600，版本 1）
 ~/.dsh-xiaozhi/memory/<agentId>.json                    # 记忆按智能体（同一智能体的设备共用）
 ~/.dsh-xiaozhi/history/<deviceId>.jsonl                 # 每行一条消息：{at,session,role,content,audioId}
 ~/.dsh-xiaozhi/history/audio/<deviceId>/<audioId>.wav   # PCM16 单声道：用户 16k、助手 24k
@@ -393,7 +401,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 智能体「角色」页选「跟随音色」会删除该智能体的 `language` 覆盖、撤掉语种指令；如果只在 `cordis.patch.yml` 里写过默认语种，需要智能体上显式选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，231 项）：
+实测（`node --test "test/*.test.mjs"`，232 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -449,15 +457,15 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 231 项
+node --test "test/*.test.mjs"   # 232 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 
-覆盖：标识归一化/私网判定/存储（自入网、封禁跨重启、损坏文件隔离）；智能体覆盖合并与越界回落（含「hostProvider 不再强切 host」）；全局设置（人设/静音收口持久化、空值回落插件配置、`applyRuntimeVoiceSettings` 的 hostProvider/backups 叠加回归）；**三段备用服务商持久化/掩码/逐条留空保留/非法整次失败**；**TTS 默认音色**（全局只存凭据、`voice`/`model`/`resourceId` 可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留，2026-11-08）；HTTP 端到端（冷启动建档、`activation: null`、封禁 403、WS 自入网、互斥 4001、CSRF、`/test/provider` 参数与回包）；网关（`/health` 免鉴权、`/commands` 401/200、`/exec` 白名单/参数注入 400/超时 124/截断/限流 429/爆破锁定）；语音（分句器边界、VAD、Ogg 往返、真 Opus 整轮、打断、20 轮）；**failover**（LLM 未出字前切换/出字后不切、TTS 整句重试、ASR 回放且不推 partial、abort 不切换、候选构建失败跳过、粘性与 5 分钟回落）；**小米 MiMo**（`api-key` 认证头、`thinking` 开关、SSE 文本/工具调用、模型清单走 /v1/models（无内置兜底））；**联网工具**（Search 带正文/截断预算、web_fetch 正文与 403/404 语义、动态 Key、无 Key 回退）；**对话历史**（会话聚合/标题/旧格式迁移/音频 WAV 读写与路径安全/保留期与容量清理/clear 粒度/4 条 HTTP 路由）；**智能体/设备绑定**（旧设备迁移与记忆复制、多设备绑定/移动/解绑、配置共享、级联删除、历史合并，`test/agents.test.mjs` 6 项）。
+覆盖：标识归一化/私网判定/存储（待审核、封禁跨重启、损坏文件隔离）；智能体覆盖合并与越界回落（含「hostProvider 不再强切 host」）；全局设置（人设/静音收口持久化、空值回落插件配置、`applyRuntimeVoiceSettings` 的 hostProvider/backups 叠加回归）；**三段备用服务商持久化/掩码/逐条留空保留/非法整次失败**；**TTS 默认音色**（全局只存凭据、`voice`/`model`/`resourceId` 可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留，2026-11-08）；HTTP 端到端（待审核/批准、`activation: null`、封禁 403、互斥 4001、CSRF、`/test/provider` 参数与回包）；网关（`/health` 免鉴权、`/commands` 401/200、`/exec` 白名单/参数注入 400/超时 124/截断/限流 429/爆破锁定）；语音（分句器边界、VAD、Ogg 往返、真 Opus 整轮、打断、20 轮）；**failover**（LLM 未出字前切换/出字后不切、TTS 整句重试、ASR 回放且不推 partial、abort 不切换、候选构建失败跳过、粘性与 5 分钟回落）；**小米 MiMo**（`api-key` 认证头、`thinking` 开关、SSE 文本/工具调用、模型清单走 /v1/models（无内置兜底））；**联网工具**（Search 带正文/截断预算、web_fetch 正文与 403/404 语义、动态 Key、无 Key 回退）；**对话历史**（会话聚合/标题/旧格式迁移/音频 WAV 读写与路径安全/保留期与容量清理/clear 粒度/4 条 HTTP 路由）；**智能体/设备绑定**（旧设备迁移与记忆复制、多设备绑定/移动/解绑、配置共享、级联删除、历史合并，`test/agents.test.mjs` 6 项）。
 
 ## 已知限制
 
-- **局域网信任**：任何能访问 8989 的设备都会自动登记。这是"自己家网线"的假设；要收紧就 `autoProvision: false` 或封禁具体设备。
+- **局域网信任（默认改为待审核）**：`autoProvision: false`（默认）时，陌生设备只进 `pending.json`，控制台批准后才建档；`autoProvision: true` 则恢复“任何能访问 8989 的设备都自动登记”的旧行为。公网暴露前仍应加 WS 鉴权/防火墙。
 - 手表侧的 OTA 地址与网关地址要手工填一次（配网页面）；插件会广播 `_xiaozhi._tcp`（mDNS），路由器隔离多播时才会回落到手工地址/云端。
 - TTS 首包延迟受供应商限制（见上）。
 - ASR 依赖外部 FunASR 服务；无该服务时只能用 `mock`。

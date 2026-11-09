@@ -89,6 +89,9 @@ const state = {
   devices: [
     { deviceId: '02:00:00:00:00:FF', nickName: '测试设备1', online: true, agentId: 'a1', otaEnabled: true },
   ],
+  pending: [
+    { deviceId: '02:00:00:00:00:AA', lastIp: '192.168.1.11', firstSeenAt: Date.now() - 60_000, attempts: 3 },
+  ],
   agents: [
     {
       id: 'a1',
@@ -110,10 +113,14 @@ const noop = () => {}
 function render(label, element) {
   const html = renderToStaticMarkup(element)
   console.log(`${label}: ${html.length} bytes`)
+  return html
 }
 
 render('Console', React.createElement(Console, { state, refresh: noop, notify }))
-render('AgentsView', React.createElement(AgentsView, { state, notify, onChanged: noop }))
+const agentsHtml = render('AgentsView', React.createElement(AgentsView, { state, notify, onChanged: noop }))
+assert.match(agentsHtml, /pendingTitle/, 'pending devices panel should render')
+assert.match(agentsHtml, /02:00:00:00:00:AA/, 'pending device id should render')
+assert.match(agentsHtml, /pendingApprove/, 'pending approve action should render')
 render('ConfigWizard(loading)', React.createElement(ConfigWizard, { state, notify }))
 render(
   'ProviderSection',

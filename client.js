@@ -505,6 +505,16 @@ var DshXiaozhi = (() => {
     agentDevices: "\u8BBE\u5907",
     agentDeviceCount: "{n} \u53F0\u8BBE\u5907",
     agentNoDevices: "\u8FD8\u6CA1\u6709\u7ED1\u5B9A\u8BBE\u5907",
+    pendingTitle: "\u5F85\u5BA1\u6838\u8BBE\u5907",
+    pendingHint: "\u65B0\u8BBE\u5907\u8FDE\u63A5\u540E\u5148\u505C\u5728\u8FD9\u91CC\uFF1B\u6279\u51C6\u540E\u4F1A\u521B\u5EFA/\u7ED1\u5B9A\u667A\u80FD\u4F53\u5E76\u5141\u8BB8\u8FDE\u63A5\u3002",
+    pendingFirstSeen: "\u9996\u6B21\u8BF7\u6C42",
+    pendingAttempts: "\u8BF7\u6C42\u6B21\u6570",
+    pendingAgent: "\u5206\u914D\u7ED9\u667A\u80FD\u4F53",
+    pendingAutoAgent: "\u81EA\u52A8\u521B\u5EFA\u667A\u80FD\u4F53",
+    pendingApprove: "\u6279\u51C6",
+    pendingReject: "\u62D2\u7EDD",
+    pendingApproved: "\u8BBE\u5907\u5DF2\u6279\u51C6",
+    pendingRejected: "\u5DF2\u62D2\u7EDD\u8BE5\u8BBE\u5907",
     agentDeleteConfirm: "\u518D\u6B21\u70B9\u51FB\u5220\u9664",
     agentDeleteHint: "\u5220\u9664\u667A\u80FD\u4F53\u4F1A\u540C\u65F6\u5220\u9664\u5B83\u7ED1\u5B9A\u7684\u8BBE\u5907\u4E0E\u5386\u53F2",
     agentBindTitle: "\u7BA1\u7406\u8BBE\u5907",
@@ -757,6 +767,16 @@ var DshXiaozhi = (() => {
     agentDevices: "Devices",
     agentDeviceCount: "{n} devices",
     agentNoDevices: "No devices bound",
+    pendingTitle: "Pending devices",
+    pendingHint: "New devices wait here. Approve one to create/bind an agent and allow it to connect.",
+    pendingFirstSeen: "First seen",
+    pendingAttempts: "Attempts",
+    pendingAgent: "Assign to agent",
+    pendingAutoAgent: "Create a new agent",
+    pendingApprove: "Approve",
+    pendingReject: "Reject",
+    pendingApproved: "Device approved",
+    pendingRejected: "Device rejected",
     agentDeleteConfirm: "Click again to delete",
     agentDeleteHint: "Deleting an agent also deletes its bound devices and history",
     agentBindTitle: "Manage devices",
@@ -2379,8 +2399,11 @@ var DshXiaozhi = (() => {
     const [editing, setEditing] = useState2("");
     const [editName, setEditName] = useState2("");
     const [historyAgent, setHistoryAgent] = useState2(null);
+    const [pendingAgent, setPendingAgent] = useState2({});
+    const [pendingBusy, setPendingBusy] = useState2("");
     const agents = state.agents || [];
     const devices = state.devices || [];
+    const pending = state.pending || [];
     const configAgent = configuring ? agents.find((item) => item.id === configuring) || null : null;
     const manageAgent = managing ? agents.find((item) => item.id === managing) || null : null;
     const createAgent = async () => {
@@ -2556,9 +2579,93 @@ var DshXiaozhi = (() => {
         notify(`${t("actionFailed")}${error.message}`, "bad");
       }
     };
+    const approvePending = async (device) => {
+      const agentId = pendingAgent[device.deviceId] ?? agents[0]?.id ?? "";
+      setPendingBusy(device.deviceId);
+      try {
+        await callApi("/pending/approve", {
+          method: "POST",
+          body: { deviceId: device.deviceId, ...agentId ? { agentId } : {} }
+        });
+        await onChanged();
+        notify(t("pendingApproved"), "ok");
+      } catch (error) {
+        notify(`${t("actionFailed")}${error.message}`, "bad");
+      } finally {
+        setPendingBusy("");
+      }
+    };
+    const rejectPending = async (device) => {
+      setPendingBusy(device.deviceId);
+      try {
+        await callApi("/pending/reject", {
+          method: "POST",
+          body: { deviceId: device.deviceId }
+        });
+        await onChanged();
+        notify(t("pendingRejected"), "ok");
+      } catch (error) {
+        notify(`${t("actionFailed")}${error.message}`, "bad");
+      } finally {
+        setPendingBusy("");
+      }
+    };
+    const pendingCard = pending.length === 0 ? null : h(
+      "div",
+      { className: "xz-card", style: { marginBottom: 14 } },
+      h(
+        "div",
+        { className: "xz-row", style: { justifyContent: "space-between", marginBottom: 6 } },
+        h("h3", { style: { margin: 0 } }, `${t("pendingTitle")}\uFF08${pending.length}\uFF09`)
+      ),
+      h("p", { className: "xz-hint", style: { marginTop: 0 } }, t("pendingHint")),
+      pending.map((device) => {
+        const agentOptions = agents.length === 0 ? [{ value: "", label: t("pendingAutoAgent") }] : agents.map((agent) => ({ value: agent.id, label: agent.name || t("unnamed") }));
+        const chosen = pendingAgent[device.deviceId] ?? agents[0]?.id ?? "";
+        return h(
+          "div",
+          { key: device.deviceId, className: "xz-device-row" },
+          h(
+            "div",
+            { className: "xz-device-row-main" },
+            h("span", { className: "xz-devcard-value" }, device.deviceId),
+            h("span", { className: "xz-device-row-mac" }, device.lastIp || ""),
+            h(
+              "span",
+              { className: "xz-devcard-state" },
+              `${t("pendingFirstSeen")} ${formatAgo(device.firstSeenAt)} \xB7 ${t("pendingAttempts")} ${device.attempts}`
+            )
+          ),
+          h(
+            "div",
+            { className: "xz-device-row-actions" },
+            h(PillSelect, {
+              value: chosen,
+              options: agentOptions,
+              onChange: (value) => setPendingAgent((current) => ({ ...current, [device.deviceId]: value })),
+              ariaLabel: t("pendingAgent"),
+              width: 160
+            }),
+            h("button", {
+              type: "button",
+              className: "xz-btn primary",
+              disabled: pendingBusy === device.deviceId,
+              onClick: () => approvePending(device)
+            }, t("pendingApprove")),
+            h("button", {
+              type: "button",
+              className: "xz-btn",
+              disabled: pendingBusy === device.deviceId,
+              onClick: () => rejectPending(device)
+            }, t("pendingReject"))
+          )
+        );
+      })
+    );
     return h(
       "div",
       null,
+      pendingCard,
       h(
         "div",
         { className: "xz-card" },

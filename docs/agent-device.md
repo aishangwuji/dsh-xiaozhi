@@ -74,9 +74,14 @@
 
 设备上的旧字段**保留不删**：回滚旧版本时还能按设备配置跑。
 
-**新设备**（零接触入网）：`DeviceStore.ensureDevice` 创建记录后回调 `store.onCreated`，
-index.js 在那里建一个属于它的智能体并绑定——手表第一次连上来就有卡片，和升级前一致。
-之后可以在控制台把它绑定到别的智能体（绑定是移动，原智能体可能变成 0 台设备，可手动删）。
+**新设备（默认待审核）**：`autoProvision: false`（默认）时，`DeviceStore.ensureDevice` 不直接建档，
+而是由 `PendingStore`（`src/pending.js`）写入 `pending.json`，OTA/WS 返回 `403 device-pending`。
+控制台「智能体」页顶部出现「待审核设备」，管理员为它选择一个已有智能体（或“自动创建”）后批准；
+批准走 `store.ensureDevice({autoProvision:true, provisionAgent:false})` + `store.setAgentId()`，
+避免先自动建一个再改绑。设备下一次 OTA/WS 请求即通过。
+`autoProvision: true` 时恢复旧的零接触行为：`ensureDevice` 创建记录后回调 `store.onCreated`，
+index.js 建一个属于它的智能体并绑定——手表第一次连上来就有卡片。之后可以在控制台把它绑定到别的智能体
+（绑定是移动，原智能体可能变成 0 台设备，可手动删）。
 
 **运行时兜底**：`agentOf(device)` 在 `agentId` 为空或智能体不存在时，用设备上的旧字段
 拼一个临时智能体视图。所以迁移没跑完、或手改坏了 devices.json，语音链路仍按旧配置工作。
@@ -93,6 +98,9 @@ index.js 在那里建一个属于它的智能体并绑定——手表第一次�
 | POST | `/agents/remove` | `{agentId}` **级联删除**绑定设备（含历史与记忆），与参考 `deleteAgent` 一致 |
 | GET | `/history/agent-conversations` | `?agentId=&limit=` 合并绑定设备的会话，按 `endedAt` 倒序 |
 | GET/POST | `/memory*`、`/tools*` | 接受 `agentId`；兼容旧 `deviceId`（按绑定关系反查） |
+| GET | `/pending` | 待审核设备列表 |
+| POST | `/pending/approve` | `{deviceId, agentId?}`：批准；`agentId` 为空则自动新建智能体 |
+| POST | `/pending/reject` | `{deviceId}`：拒绝并移出待审核队列 |
 
 兼容入口：`POST /devices/config` 按设备反查智能体后写同一份配置（旧页面/脚本不会 404）；
 `/devices/ota|block|disconnect|remove|rename` 不变。
@@ -118,6 +126,8 @@ index.js 在那里建一个属于它的智能体并绑定——手表第一次�
   音色 / 设备数 / 最近在线，动作：`配置` / `设备(N)` / `历史` / `播报` / `删除`。
 - 「配置」弹窗：角色（人设 / 音色 / 输出语种）、模型与记忆（模型名 / 记忆开关 / 记忆列表）、
   扩展能力（工具开关）——全部写智能体。
+- 顶部「待审核设备」：`autoProvision:false` 时陌生设备先列在这里；每行显示 MAC/IP/首次请求/尝试次数，
+  用 PillSelect 选择智能体后「批准」，或「拒绝」。批准后设备下一次连接即通过。
 - 「设备(N)」弹窗：已绑定设备（改名 / OTA / 断开 / 封禁 / 解绑 / 删除设备）+
   未绑定设备（绑定）。绑定/解绑立刻生效（设备下次连接用新智能体的配置）。
 - 「历史」弹窗：合并该智能体所有设备的会话，列表项带设备名；清空 = 逐台清。
@@ -128,7 +138,7 @@ index.js 在那里建一个属于它的智能体并绑定——手表第一次�
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"      # 全量 231 项必须全绿（2026-11-08）
+node --test "test/*.test.mjs"      # 全量 232 项必须全绿（2026-11-08）
 npm run build && npm run smoke      # 控制台构建 + 冒烟（src/client/** → client.js）
 node --check client.js
 ```

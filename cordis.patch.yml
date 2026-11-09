@@ -4,9 +4,10 @@
       config:
         host: '0.0.0.0'
         port: 8989
-        # 设备在配网页面（192.168.4.1 → 高级设置）填「自定义 OTA 地址」指向本机，
-        # 首次轮询即登记；没有激活码、没有绑定台。
-        autoProvision: true
+        # 设备在配网页面（192.168.4.1 → 高级设置）填「自定义 OTA 地址」指向本机。
+        # false = 陌生设备先进控制台「待审核设备」，管理员选择智能体并批准后才建档；
+        # true = 恢复旧的零接触自动登记（任何能访问 8989 的设备都直接入网）。
+        autoProvision: false
         maxDevices: 1000
         timezoneOffset: 480
         # 出站 MCP 接入点（官方 mcp_endpoint）：ws://.../mcp/...；留空 = 不连接。

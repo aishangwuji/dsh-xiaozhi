@@ -34,6 +34,7 @@ import { startMdns } from './src/mdns.js'
 import { mergeDeviceConfig } from './src/device-config.js'
 import { SettingsStore } from './src/settings.js'
 import { DeviceStore } from './src/store.js'
+import { PendingStore } from './src/pending.js'
 import { buildLlmAdapter, buildTtsAdapter, buildAsrAdapter, createVoiceAdapters } from './src/voice/adapters/index.js'
 import { probeAsr } from './src/voice/asr-probe.js'
 import { hostProviderIssue } from './src/voice/host-provider.js'
@@ -227,9 +228,8 @@ export function resolveConfig(config = {}) {
       text(field(root, ['mcpToken', 'mcp_token'], '')) ||
       text(field(voiceRaw, ['mcpToken', 'mcp_token'], '')),
     onboarding: {
-      // First contact registers the device. Disabling this turns the ingress into
-      // an allow-list that only accepts devices already in the roster.
-      autoProvision: field(gateway, ['autoProvision', 'auto_provision'], true) !== false,
+      // false = 陌生设备先进控制台待审核队列；true = 首次接触直接建档。
+      autoProvision: field(gateway, ['autoProvision', 'auto_provision'], false) === true,
       maxDevices: positiveInteger(field(gateway, ['maxDevices', 'max_devices'], 1000), 1000, {
         min: 1,
         max: 100_000,
@@ -477,6 +477,11 @@ export function apply(ctx, config = {}) {
     maxDevices: resolved.onboarding.maxDevices,
     logger,
   })
+  // 待审核设备：autoProvision=false 时陌生设备先落这里，控制台批准后才进 devices.json。
+  const pending = new PendingStore({
+    file: join(resolved.dataRoot, 'pending.json'),
+    logger,
+  })
   // 智能体（配置单位）与设备（物理单位）分开存：一台智能体可以绑定多台设备，
   // 人设/模型/音色/语种/记忆/工具开关都在智能体上（对齐参考服务端 ai_agent / ai_device）。
   const agents = new AgentStore({ file: join(resolved.dataRoot, 'agents.json'), logger })
@@ -511,7 +516,7 @@ export function apply(ctx, config = {}) {
 
   // 旧设备名册升级成「智能体 + 绑定」：每台设备各建一个智能体，配置原样搬过去，
   // 记忆文件复制到智能体键下。幂等，失败只记录不阻断启动。
-  const storesReady = Promise.all([store.load(), agents.load()])
+  const storesReady = Promise.all([store.load(), agents.load(), pending.load()])
     .then(() => adoptLegacyDevices({ devices: store, agents, memory, logger }))
     .catch((error) => logger.error?.(`dsh-xiaozhi: agent bootstrap failed: ${error.message}`))
   const hub = new ConnectionHub({
@@ -788,6 +793,7 @@ export function apply(ctx, config = {}) {
     hub,
     logger,
     inboundMcp,
+    pending,
   })
   const control = createControlHandler({
     store,
@@ -796,6 +802,7 @@ export function apply(ctx, config = {}) {
     config: resolved,
     voice,
     crashGuard,
+    pending,
     speechToText,
     llm: hostLlm,
     tools: toolRegistry,
@@ -949,8 +956,8 @@ export function apply(ctx, config = {}) {
       }
       if (!resolved.onboarding.autoProvision) {
         logger.warn?.(
-          'dsh-xiaozhi: autoProvision is false — only devices already in devices.json can connect; ' +
-            'a new watch will be refused until it is added by hand.',
+          'dsh-xiaozhi: autoProvision is false — unknown devices will wait in the console ' +
+            'pending list until an operator approves one.',
         )
       }
     })

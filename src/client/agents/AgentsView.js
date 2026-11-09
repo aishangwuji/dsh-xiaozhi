@@ -1,6 +1,7 @@
 import { h, useState, useRef } from '../react.js'
 import { t, callApi, formatAgo, voiceLabel } from '../core.js'
 import { Icon } from '../ui/Icon.js'
+import { PillSelect } from '../ui/PillSelect.js'
 import { AgentConfigDialog } from './AgentConfigDialog.js'
 import { AgentDevicesDialog } from './AgentDevicesDialog.js'
 import { HistoryDialog } from './HistoryDialog.js'
@@ -27,8 +28,11 @@ import { HistoryDialog } from './HistoryDialog.js'
       const [editing, setEditing] = useState('');
       const [editName, setEditName] = useState('');
       const [historyAgent, setHistoryAgent] = useState(null);
+      const [pendingAgent, setPendingAgent] = useState({});
+      const [pendingBusy, setPendingBusy] = useState('');
       const agents = state.agents || [];
       const devices = state.devices || [];
+      const pending = state.pending || [];
       const configAgent = configuring ? agents.find((item) => item.id === configuring) || null : null;
       const manageAgent = managing ? agents.find((item) => item.id === managing) || null : null;
 
@@ -222,7 +226,86 @@ import { HistoryDialog } from './HistoryDialog.js'
         }
       };
 
+      const approvePending = async (device) => {
+        const agentId = pendingAgent[device.deviceId] ?? agents[0]?.id ?? '';
+        setPendingBusy(device.deviceId);
+        try {
+          await callApi('/pending/approve', {
+            method: 'POST',
+            body: { deviceId: device.deviceId, ...(agentId ? { agentId } : {}) }
+          });
+          await onChanged();
+          notify(t('pendingApproved'), 'ok');
+        } catch (error) {
+          notify(`${t('actionFailed')}${error.message}`, 'bad');
+        } finally {
+          setPendingBusy('');
+        }
+      };
+
+      const rejectPending = async (device) => {
+        setPendingBusy(device.deviceId);
+        try {
+          await callApi('/pending/reject', {
+            method: 'POST',
+            body: { deviceId: device.deviceId }
+          });
+          await onChanged();
+          notify(t('pendingRejected'), 'ok');
+        } catch (error) {
+          notify(`${t('actionFailed')}${error.message}`, 'bad');
+        } finally {
+          setPendingBusy('');
+        }
+      };
+
+      const pendingCard = pending.length === 0
+        ? null
+        : h('div', { className: 'xz-card', style: { marginBottom: 14 } },
+            h('div', { className: 'xz-row', style: { justifyContent: 'space-between', marginBottom: 6 } },
+              h('h3', { style: { margin: 0 } }, `${t('pendingTitle')}（${pending.length}）`)
+            ),
+            h('p', { className: 'xz-hint', style: { marginTop: 0 } }, t('pendingHint')),
+            pending.map((device) => {
+              const agentOptions = agents.length === 0
+                ? [{ value: '', label: t('pendingAutoAgent') }]
+                : agents.map((agent) => ({ value: agent.id, label: agent.name || t('unnamed') }));
+              const chosen = pendingAgent[device.deviceId] ?? agents[0]?.id ?? '';
+              return h('div', { key: device.deviceId, className: 'xz-device-row' },
+                h('div', { className: 'xz-device-row-main' },
+                  h('span', { className: 'xz-devcard-value' }, device.deviceId),
+                  h('span', { className: 'xz-device-row-mac' }, device.lastIp || ''),
+                  h('span', { className: 'xz-devcard-state' },
+                    `${t('pendingFirstSeen')} ${formatAgo(device.firstSeenAt)} · ${t('pendingAttempts')} ${device.attempts}`
+                  )
+                ),
+                h('div', { className: 'xz-device-row-actions' },
+                  h(PillSelect, {
+                    value: chosen,
+                    options: agentOptions,
+                    onChange: (value) => setPendingAgent((current) => ({ ...current, [device.deviceId]: value })),
+                    ariaLabel: t('pendingAgent'),
+                    width: 160
+                  }),
+                  h('button', {
+                    type: 'button',
+                    className: 'xz-btn primary',
+                    disabled: pendingBusy === device.deviceId,
+                    onClick: () => approvePending(device)
+                  }, t('pendingApprove')),
+                  h('button', {
+                    type: 'button',
+                    className: 'xz-btn',
+                    disabled: pendingBusy === device.deviceId,
+                    onClick: () => rejectPending(device)
+                  }, t('pendingReject'))
+                )
+              );
+            })
+          );
+
       return h('div', null,
+        pendingCard,
         h('div', { className: 'xz-card' },
           h('div', { className: 'xz-row', style: { justifyContent: 'space-between', marginBottom: 10 } },
             h('h3', { style: { margin: 0 } }, t('devicesTitle')),

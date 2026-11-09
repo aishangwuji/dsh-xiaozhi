@@ -88,6 +88,7 @@ export function createControlHandler({
   tools,
   memory,
   history,
+  pending,
   ready: bootstrapReady,
   logger,
   clock = () => Date.now(),
@@ -105,6 +106,18 @@ export function createControlHandler({
       return false
     }
     return true
+  }
+
+  function publicPending(record) {
+    return {
+      deviceId: record.deviceId,
+      clientId: record.clientId,
+      lastIp: record.lastIp,
+      firmwareVersion: record.firmwareVersion,
+      firstSeenAt: record.firstSeenAt,
+      lastSeenAt: record.lastSeenAt,
+      attempts: record.attempts,
+    }
   }
 
   function publicDevice(device) {
@@ -237,7 +250,10 @@ export function createControlHandler({
       const port = config.port
       sendJson(res, 200, {
         version: 3,
-        onboarding: { autoProvision: config.onboarding.autoProvision, mode: 'lan' },
+        onboarding: {
+          autoProvision: config.onboarding.autoProvision,
+          mode: config.onboarding.autoProvision ? 'auto' : 'approval',
+        },
         addresses,
         endpoints: {
           lanWsUrl: config.endpoints.lanWsUrl,
@@ -253,6 +269,7 @@ export function createControlHandler({
         gateway: gateway ? gateway.describe() : { enabled: false, commands: 0 },
         voice: { enabled: Boolean(voice?.enabled) },
         devices: store.list().map(publicDevice),
+        pending: (pending?.list?.() ?? []).map(publicPending),
         // 控制台的「智能体」页直接用这份快照（卡片 = 智能体，设备是成员）。
         agents: (agents?.list() ?? []).map(publicAgent),
         connections: hub.size,
@@ -263,6 +280,61 @@ export function createControlHandler({
     if (method === 'GET' && path === '/devices') {
       sendJson(res, 200, { devices: store.list().map(publicDevice) })
       return
+    }
+
+    if (!pending) {
+      if (path === '/pending' || path.startsWith('/pending/')) {
+        sendJson(res, 500, { error: { code: 'pending-store-missing', message: '待审核存储未装配' } })
+        return
+      }
+    } else {
+      if (method === 'GET' && path === '/pending') {
+        sendJson(res, 200, { pending: pending.list().map(publicPending) })
+        return
+      }
+
+      if (method === 'POST' && path === '/pending/approve') {
+        if (!requireTrustedMutation(req, res)) return
+        const body = await readJson(req)
+        const deviceId = deviceIdOf(body)
+        const record = pending.get(deviceId)
+        if (!record) {
+          sendJson(res, 404, { error: { code: 'pending-not-found', message: '待审核设备不存在' } })
+          return
+        }
+        const agentId = typeof body.agentId === 'string' ? body.agentId.trim() : ''
+        if (agentId && !agents?.get(agentId)) {
+          sendJson(res, 400, { error: { code: 'agent-not-found', message: '智能体不存在' } })
+          return
+        }
+        // 选了智能体就不要先自动建一个再改绑：provisionAgent=false。
+        const ensured = await store.ensureDevice({
+          deviceId,
+          clientId: record.clientId,
+          ip: record.lastIp,
+          firmwareVersion: record.firmwareVersion,
+          autoProvision: true,
+          provisionAgent: !agentId,
+        })
+        if (agentId) await store.setAgentId({ deviceId, agentId })
+        await pending.remove(deviceId)
+        logger.info?.(`dsh-xiaozhi: approved pending device ${deviceId}${agentId ? ` -> ${agentId}` : ' (new agent)'}`)
+        sendJson(res, 200, {
+          device: publicDevice(store.get(deviceId) ?? ensured.device),
+          agentId: agentId || store.get(deviceId)?.agentId || '',
+          pending: pending.list().map(publicPending),
+        })
+        return
+      }
+
+      if (method === 'POST' && path === '/pending/reject') {
+        if (!requireTrustedMutation(req, res)) return
+        const body = await readJson(req)
+        const deviceId = deviceIdOf(body)
+        const removed = await pending.remove(deviceId)
+        sendJson(res, 200, { deviceId, rejected: removed, pending: pending.list().map(publicPending) })
+        return
+      }
     }
 
     // --------------------------------------------------------------- 智能体（agent）

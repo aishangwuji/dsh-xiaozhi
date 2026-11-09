@@ -9,7 +9,7 @@ covered_paths:
 last_verified_commit: dc179b320f204192746276da2312aaa40692a56e
 verified_at: 2026-11-08
 status: current
-note: 2026-11-06 删除「行为档案/播放器」页：ProfileStore、/profiles/* 与 device.profileId 一并移除，人设与静音收口迁进 settings（全局设置）。2026-11-06 新增「主用 + 备用服务商」：settings v3 的 voice.{llm,tts,asr}.backups、adapters/failover.js、控制台卡片 + 弹窗表单、POST /test/provider；契约 docs/backup-providers.md、选择器规范 docs/pill-popover.md。2026-11-07：LLM 主路径改回插件直连并新增小米 MiMo（模型清单走 /v1/models）、联网工具回传正文并新增 web_fetch、对话历史（会话/消息/音频）、配置 UI 重构（全局设置单页分区：服务商为主 + 语音默认参数 + 接入与网关；人设只在设备级；设备配置与历史都是弹窗；PillSelect 改 fixed 浮层不撑布局）。2026-11-08：TTS 归属分离——全局设置只配「厂商 + 凭据」（保存时显式清空 voice/model/resourceId），音色（= TTS 模型族）改由设备 overrides.voice 选择（留空 = 厂商默认），src/voice/voices.js 新增 DEFAULT_TTS_VOICES / defaultTtsVoice / resolveTtsVoice（空→默认、跨厂商回落、自定义保留），TTS 备用条目用各自厂商默认音色；test/tts-defaults.test.mjs 新增，全量 231 项。2026-11-08 去掉备用服务商 5 条上限：settings.js 的 normalizeBackups/loadBackups 不再校验/截断条数，client.js 的「添加」按钮永不禁用、标题只显示「备用 N 个」，test/settings.test.mjs 新增「12 条可存可读」，全量 231 项。2026-11-08 智能体/设备拆分：agents.json + devices.agentId、旧设备启动迁移（配置与记忆搬家）、控制台「设备」改名「智能体」（卡片/绑定弹窗/级联删除）、记忆改按智能体、历史合并展示，全量 231 项。2026-11-08 删除全局「输出语种」：`voice.tts.language` 不再由 settings 提供，只在智能体 `overrides.language`（全局 UI 与 settings 字段一并移除），避免与智能体页重复。2026-11-08 设备侧 MCP/IoT：`src/voice/device-mcp.js`（hello features.mcp → initialize/tools/list/tools/call）与 `src/voice/device-iot.js`（descriptors/states/commands）接入 `VoiceSession`，动态工具与内置工具合并；外部 MCP server（stdio/SSE/streamable-http）、MCP 接入点、入站 `/mcp` 均已接（`src/mcp/*`；入站配置 `mcpToken`）。
+note: 2026-11-06 删除「行为档案/播放器」页：ProfileStore、/profiles/* 与 device.profileId 一并移除，人设与静音收口迁进 settings（全局设置）。2026-11-06 新增「主用 + 备用服务商」：settings v3 的 voice.{llm,tts,asr}.backups、adapters/failover.js、控制台卡片 + 弹窗表单、POST /test/provider；契约 docs/backup-providers.md、选择器规范 docs/pill-popover.md。2026-11-07：LLM 主路径改回插件直连并新增小米 MiMo（模型清单走 /v1/models）、联网工具回传正文并新增 web_fetch、对话历史（会话/消息/音频）、配置 UI 重构（全局设置单页分区：服务商为主 + 语音默认参数 + 接入与网关；人设只在设备级；设备配置与历史都是弹窗；PillSelect 改 fixed 浮层不撑布局）。2026-11-08：TTS 归属分离——全局设置只配「厂商 + 凭据」（保存时显式清空 voice/model/resourceId），音色（= TTS 模型族）改由设备 overrides.voice 选择（留空 = 厂商默认），src/voice/voices.js 新增 DEFAULT_TTS_VOICES / defaultTtsVoice / resolveTtsVoice（空→默认、跨厂商回落、自定义保留），TTS 备用条目用各自厂商默认音色；test/tts-defaults.test.mjs 新增，全量 232 项。2026-11-08 去掉备用服务商 5 条上限：settings.js 的 normalizeBackups/loadBackups 不再校验/截断条数，client.js 的「添加」按钮永不禁用、标题只显示「备用 N 个」，test/settings.test.mjs 新增「12 条可存可读」，全量 232 项。2026-11-08 智能体/设备拆分：agents.json + devices.agentId、旧设备启动迁移（配置与记忆搬家）、控制台「设备」改名「智能体」（卡片/绑定弹窗/级联删除）、记忆改按智能体、历史合并展示，全量 232 项。2026-11-08 删除全局「输出语种」：`voice.tts.language` 不再由 settings 提供，只在智能体 `overrides.language`（全局 UI 与 settings 字段一并移除），避免与智能体页重复。2026-11-08 设备侧 MCP/IoT：`src/voice/device-mcp.js`（hello features.mcp → initialize/tools/list/tools/call）与 `src/voice/device-iot.js`（descriptors/states/commands）接入 `VoiceSession`，动态工具与内置工具合并；外部 MCP server（stdio/SSE/streamable-http）、MCP 接入点、入站 `/mcp` 均已接（`src/mcp/*`；入站配置 `mcpToken`）。2026-11-09 入网默认改为待审核：`autoProvision: false` 时陌生 OTA/WS 进 `PendingStore`（`pending.json`，`403 device-pending`），控制台「智能体」页选智能体批准后建档；`autoProvision: true` 恢复零接触登记。
 ---
 
 # dsh-xiaozhi 认知地图
@@ -29,10 +29,19 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 | 控制台 UI | `src/client/**`（构建产物 `client.js`） | 概览 / 智能体 / 全局设置三个平级视图，内部路由；`npm run build` 用 esbuild 打包 |
 | 服务商描述符 | `src/providers.js` | 控制台元数据唯一来源：`GET /providers` 下发；`settings.js` 的备用白名单由它派生；加厂商只改这里 + 适配器 |
 | 运行时设置 | `src/settings.js` | `settings.json`（0600）：端点、固件、网关、语音 provider、**静音收口与语音默认参数**；全局人设字段仍在（API 保留），控制台不再编辑、改为按智能体配置；TTS 段只存「厂商 + 凭据」，音色归智能体级（2026-11-08）；无任何登录凭据 |
+| 待审核存储 | `src/pending.js` | `pending.json`（0600，版本 1）：陌生设备身份/最近 IP/固件/尝试次数；批准后转 `devices.json`，拒绝即移除 |
 | 地址发现 | `src/network.js` | 枚举本机 IPv4 私网地址，虚拟网卡（WSL/Hyper-V/VMware）排最后；`/state` 用它算 OTA/WS/网关的真实 URL |
 | 浏览器面板 | `src/client/console/*.js` | `main` key `xiaozhi` + `sidebar.panellist` id `xiaozhi`：概览 / 智能体（卡片 + 配置弹窗 + 设备绑定弹窗 + 历史对话）/ 全局设置（服务商三张概览卡 + 二级弹窗，表单由 `src/providers.js` 描述符驱动；语音默认参数；接入与网关；TTS 只配厂商 + 凭据，音色在智能体「角色」页选，2026-11-08）/ 能力 |
 
 ## 核心数据模型
+
+`PendingStore`（`src/pending.js`），单文件 `~/.dsh-xiaozhi/pending.json`（0600，版本 1）：**待审核队列**，不参与智能体/历史/工具装配。
+
+| 字段 | 含义 | 不变量 |
+|---|---|---|
+| `deviceId` | 主键，OTA/WS 里的 `Device-Id` 归一化值 | 同一设备重复请求只累加 `attempts` |
+| `clientId` / `lastIp` / `firmwareVersion` | 最近一次请求的上下文 | 批准时回填给 `DeviceStore.ensureDevice` |
+| `firstSeenAt` / `lastSeenAt` / `attempts` | 审计 | 批准或拒绝后从队列移除 |
 
 `DeviceStore`（`src/store.js`），单文件 `~/.dsh-xiaozhi/devices.json`：
 
@@ -57,7 +66,8 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 
 启动迁移（`adoptLegacyDevices`，幂等）：每台没有 `agentId` 的设备各建一个智能体，把旧
 `overrides` / `toolDisabled` / `memoryEnabled` 搬过去，并把 `memory/<deviceId>.json` 复制到
-`memory/<agentId>.json`。新设备由 `store.onCreated` 自动建智能体（零接触入网）。
+`memory/<agentId>.json`。`autoProvision: true` 时新设备由 `store.onCreated` 自动建智能体；
+默认 `false` 时先入 `PendingStore`，控制台批准后再建档（可指定已有智能体，`provisionAgent=false` 避免多建一个）。
 删智能体级联删绑定设备、历史与记忆（对齐参考 `deleteAgent`）。契约 `docs/agent-device.md`。
 
 `SettingsStore`（`src/settings.js`），单文件 `~/.dsh-xiaozhi/settings.json`（0600，版本 3）：叠在 Loader 配置之上，保存后立即生效。`voice` 块里除三段 provider 外，还有**全局人设**（`systemPrompt`）与**静音收口**（`silenceMs`）——两者用 `null` 表示「控制台没设过」，此时沿用 Loader 配置；清空即回到 `null`。原「行为档案」页的其余字段（LLM/音色/ASR）本来就在这个向导里，没有第二份。2026-11-08 起 TTS 全局条目只存「厂商 + 凭据」：`voice` / `model` / `resourceId` 控制台保存时显式清空（服务端仍接受手工配置），音色由智能体 `overrides.voice` 决定，空值在运行时经 `resolveTtsVoice` 落到厂商默认。三段各带 `backups: Entry[]`（主用 + 备用，**条数不设上限**、同厂商可重复、顺序即优先级），条目密钥只以掩码出快照，写入按 `id` + 同 provider 才「留空=保留」；非法条目让整次保存失败（`update()` 先在副本上改、全过才替换）。
@@ -65,9 +75,15 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 ## 状态机
 
 ```
-(不存在) --OTA/WS 首次出现--> 已登记 --block--> 已封禁 --unblock--> 已登记
+(不存在) --OTA/WS 首次出现--> 待审核 --approve(agentId)--> 已登记 --block--> 已封禁 --unblock--> 已登记
+      |                         |--reject--> (移出队列，下次请求重新申请)
+      |--autoProvision=true--> 已登记
                                  |--remove--> (不存在，下次上电重新登记)
 ```
+
+`PendingStore` 只保存设备身份与最近请求，不建会话、不建智能体；批准时 `ensureDevice` + `setAgentId`
+（未指定 `agentId` 则走 `onCreated` 自动建一个）。设备在待审核期间收到 `403 device-pending`，批准后
+下一次 OTA/WS 才通过；控制台「智能体」页顶部展示待审核列表。
 
 长连接：同 `deviceId` 新连接把旧连接以 4001 关闭；map 先交换再驱逐，`unregister` 按实例身份比对。
 
@@ -79,7 +95,7 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 2. **密钥只进不出**：`GET /settings` 返回 `••••` 掩码 + `hasToken/hasApiKey`；写接口"留空=不改"，`clearToken/clearApiKey` 才清空。表单回填掩码而不会把掩码写回。
 3. **运行时覆盖，不重启**：settings 叠加在 Loader 配置之上，保存后重建 gateway、改写 endpoints/firmware、更新 voice 默认 provider；`gatewayRef` 让 ingress 每次请求取当前实例。
 4. **管理端而非单纯网关**：家里会有多台设备，所以配置的单位是"这台设备"（`overrides` 叠在全局默认之上），全局默认只有「全局设置」一份；旧的「行为档案」层已删除，不再有"改档案影响一批设备"这种间接路径。
-5. **去掉激活码/HMAC**：那是云控制台的产品流程。固件的配网页本来就能填 OTA 地址，局域网里"指过来即登记"才是正确入网；`activation` 恒为 `null`，`/activate` 只留 200 兼容占位。
+5. **不做激活码，默认待审核**：激活码/HMAC 是云控制台的多租户产品流程；局域网单管理员没有账号可绑，所以 `activation` 恒为 `null`，`/activate` 只留 200 兼容占位。但“指过来即登记”不再是默认：`autoProvision: false`（默认）时陌生设备进 `pending.json`，控制台选择智能体并批准后才建档（`POST /pending/approve`）；`autoProvision: true` 才恢复零接触自动登记。待审核解决的是“谁可以入网”，不是官方六位绑定码的“设备归哪个账号”。
 6. **设备网关按固件契约实现**：`/health`、`/commands`、`/exec` + `Bearer`，与 `main/server_gateway.cc` 的 `self.server.exec`/`self.server.commands` 对齐；`/exec` 回 200 + `[exit N]`，因为手表把正文念给模型。
 3. **网关默认关闭**：`gateway.token` 为空时 `/exec` 直接 404；白名单 argv、参数逐项白名单、限流、失败锁定、超时与截断都在 `src/gateway.js` 内强制。
 4. **两个监听面**：设备入口必须 LAN 可达且无浏览器凭据；操作台是 loopback，改名/封禁这类动作不暴露到 LAN。
@@ -98,6 +114,8 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 
 15. **服务商描述符：元数据与前端解耦（2026-11-08）**：`src/providers.js` 是唯一元数据来源（`id/name/group/stages`，每段声明 `fields/summary/secretFields/probe` 等），`GET /providers` 下发；client.js 打包一份首屏兜底，启动后 `setProviders()` 覆盖。`settings.js` 的备用白名单由 `allProvidersForStage()` 派生（含 `hidden` 的 funasr）。前端 `core.js` 的 provider 辅助与 `ProviderDialog`/`SchemaForm` 全部读描述符，没有 `stage ===`/`provider ===` 分支；加厂商 = 描述符 + 适配器/preset，**前端 0 改动**。契约 `docs/provider-descriptors.md`。
 
+16. **待审核设备（2026-11-09）**：陌生设备不再直接写 `devices.json`，而是进 `PendingStore`（`pending.json`）；控制台「智能体」页顶部展示，管理员为每台设备选择已有智能体或“自动创建”，`POST /pending/approve` 后 `ensureDevice` + `setAgentId`，拒绝走 `POST /pending/reject`。`autoProvision: false` 是默认值；`true` 恢复旧的自动登记。这样既不需要官方六位绑定码，也不会让同网段任意设备自动占用智能体。
+
 ## 语音管道（src/voice/）
 
 | 模块 | 不变量 |
@@ -113,7 +131,7 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 
 历史/记忆（`src/history.js` / `src/memory.js`）：`HistoryStore` 管「说过什么」的只读流水（会话/消息/WAV 音频，30 天音频保留）；`MemoryStore` 管「要记住的信息」（facts + 最近 8 轮，注入 prompt）。两者都按 deviceId 隔离，`VoiceSession` 在每轮收尾时分别写入，互不阻塞语音。
 
-实测（`node --test "test/*.test.mjs"`，231 项全绿）：真 Opus 整轮 277ms；mock 供应商首帧 40–100ms；打断 <100ms 且无幽灵帧；20 轮无泄漏；真实 Edge 首包 1.3–1.5s（整句合成后才吐包），是端到端预算的主要项。
+实测（`node --test "test/*.test.mjs"`，232 项全绿）：真 Opus 整轮 277ms；mock 供应商首帧 40–100ms；打断 <100ms 且无幽灵帧；20 轮无泄漏；真实 Edge 首包 1.3–1.5s（整句合成后才吐包），是端到端预算的主要项。
 
 ## 验证
 

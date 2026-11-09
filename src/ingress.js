@@ -76,7 +76,7 @@ function sanitizeAudioParams(raw) {
   }
 }
 
-export function createIngress({ config, store, hub, logger, inboundMcp, clock = () => Date.now() }) {
+export function createIngress({ config, store, hub, logger, inboundMcp, pending, clock = () => Date.now() }) {
   const startedAt = clock()
   const ready = store.load()
   const sessions = new Map()
@@ -114,6 +114,27 @@ export function createIngress({ config, store, hub, logger, inboundMcp, clock = 
     const ip = clientIp(req)
     let ensured
     try {
+      const known = store.get(identity.deviceId)
+      if (!known && !config.onboarding.autoProvision) {
+        const queued = await pending?.upsert({
+          deviceId: identity.deviceId,
+          clientId: identity.clientId,
+          ip,
+          firmwareVersion: readFirmwareVersion(req),
+        })
+        if (!queued) {
+          logger.warn?.(`dsh-xiaozhi: pending queue unavailable/full for ${identity.deviceId}`)
+          sendJson(res, 503, {
+            error: { code: 'pending-unavailable', message: '设备等待审核，但待审核队列不可用' },
+          })
+          return
+        }
+        logger.info?.(`dsh-xiaozhi: device ${identity.deviceId} is pending approval (${ip || 'unknown'})`)
+        sendJson(res, 403, {
+          error: { code: 'device-pending', message: '设备等待管理员在控制台批准' },
+        })
+        return
+      }
       ensured = await store.ensureDevice({
         firmwareVersion: readFirmwareVersion(req),
         deviceId: identity.deviceId,
@@ -230,8 +251,23 @@ export function createIngress({ config, store, hub, logger, inboundMcp, clock = 
       let device = store.get(identity.deviceId)
       if (!device) {
         if (!config.onboarding.autoProvision) {
-          logger.warn?.(`dsh-xiaozhi: rejected unknown device ${identity.deviceId} (${ip})`)
-          rejectUpgrade(socket, 403, { error: { code: 'device-unknown', message: '设备未登记' } })
+          const queued = await pending?.upsert({
+            deviceId: identity.deviceId,
+            clientId: identity.clientId,
+            ip,
+            firmwareVersion: readFirmwareVersion(req),
+          })
+          logger.warn?.(`dsh-xiaozhi: rejected pending device ${identity.deviceId} (${ip})`)
+          rejectUpgrade(
+            socket,
+            queued ? 403 : 503,
+            {
+              error: {
+                code: queued ? 'device-pending' : 'pending-unavailable',
+                message: queued ? '设备等待管理员在控制台批准' : '待审核队列不可用',
+              },
+            },
+          )
           return
         }
         const ensured = await store.ensureDevice({

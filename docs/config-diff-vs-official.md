@@ -42,7 +42,7 @@
 | 10 | 心跳与空闲 | WS 库 `ping_interval=None`；`enable_websocket_ping:false` 时忽略 ping（`core/websocket_server.py:76-82`；`core/handle/textHandler/pingMessageHandler.py:26-30`）；无语音 120s 触发结束语、180s 强制关（`config.yaml:61`；`connection.py:184-186,1720-1745`） | 每 30s 主动发 WS ping；90s 无入站即断（`index.js:257,261`；`src/ingress.js:276-286`） | ❌ | 长时间沉默被踢；无告别话术 |
 | 11 | WS 鉴权 | `server.auth.enabled` 默认 false；开启后校验 `Authorization: Bearer`（`config.yaml:31-37`；`core/websocket_server.py:210-231`） | 仅校验 `Device-Id` 头 + `autoProvision`/封禁名单；`endpoints.token` 只随 OTA 下发，**WS 建连不校验**（`src/ingress.js:148-149,179-206`） | ❌ | 同网段任意设备可直连（LAN 场景风险，公网暴露前必须补） |
 | 12 | 时区单位 | `server.timezone_offset: +8`（小时），下发时 ×60 = 480（`config.yaml:29`；`core/api/ota_handler.py:226`） | 配置即 480（分钟），直接下发（`index.js:212-214`；`src/ingress.js:150`） | ⚠️ | 线上值等价，**配置单位不同**，改配置易错 |
-| 13 | 激活码 / 绑定 | 走 manager-api 绑定流程（`connection.py:800-830`；`receiveAudioHandle.py:148-183`） | 不激活：首轮 OTA/WS 即登记（`src/ingress.js:115-138,185-206`；`activate` 恒返回 ok，`:166-168`） | ⚠️ | 零接触接入 vs 运营侧账号体系 |
+| 13 | 激活码 / 绑定 | 走 manager-api 绑定流程（`connection.py:800-830`；`receiveAudioHandle.py:148-183`） | 不激活：陌生设备先入待审核（`403 device-pending`），控制台选智能体批准后才建档；`activate` 恒返回 ok（`src/ingress.js`、`src/pending.js`、`src/control.js`） | ⚠️ | 待审核 vs 运营侧账号绑定 |
 
 ### 2.2 音频参数
 

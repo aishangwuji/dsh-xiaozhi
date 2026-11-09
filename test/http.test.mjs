@@ -13,6 +13,7 @@ import { createIngress } from '../src/ingress.js'
 import { InboundMcpRegistry } from '../src/mcp/inbound.js'
 import { SettingsStore } from '../src/settings.js'
 import { DeviceStore } from '../src/store.js'
+import { PendingStore } from '../src/pending.js'
 import { openWebSocket } from './ws-client.mjs'
 
 const MAC = '02:4A:7D:E3:89:BF'
@@ -74,6 +75,8 @@ async function startHarness(overrides = {}, { inboundMcp } = {}) {
   const config = baseConfig(dir, overrides)
   const store = new DeviceStore({ file: join(dir, 'devices.json'), logger: silent })
   await store.load()
+  const pending = new PendingStore({ file: join(dir, 'pending.json'), logger: silent })
+  await pending.load()
   // 智能体名册 + 旧设备迁移：与 index.js 的启动顺序一致（设备先登记、再补建智能体）。
   const agents = new AgentStore({ file: join(dir, 'agents.json'), logger: silent })
   await agents.load()
@@ -85,7 +88,7 @@ async function startHarness(overrides = {}, { inboundMcp } = {}) {
   await adoptLegacyDevices({ devices: store, agents, logger: silent })
   const hub = new ConnectionHub({ logger: silent })
   const gatewayRef = { current: createGateway({ config: config.gateway, logger: silent }) }
-  const ingress = createIngress({ config: { ...config, gatewayRef }, store, hub, logger: silent, inboundMcp })
+  const ingress = createIngress({ config: { ...config, gatewayRef }, store, hub, logger: silent, inboundMcp, pending })
   await ingress.listen()
   const port = ingress.server.address().port
   const base = `http://127.0.0.1:${port}`
@@ -99,6 +102,7 @@ async function startHarness(overrides = {}, { inboundMcp } = {}) {
     hub,
     config,
     gatewayRef,
+    pending,
     defaults: { systemPrompt: '默认人设', silenceMs: 400 },
     settings,
     logger: silent,
@@ -112,6 +116,7 @@ async function startHarness(overrides = {}, { inboundMcp } = {}) {
     config,
     store,
     agents,
+    pending,
     hub,
     gatewayRef,
     settings,
@@ -236,16 +241,71 @@ test('the WebSocket opens without any activation, and refuses a blocked device',
   }
 })
 
-test('autoProvision=false turns the ingress into a closed roster', async () => {
+test('autoProvision=false queues unknown devices for approval', async () => {
   const harness = await startHarness({ onboarding: { autoProvision: false, maxDevices: 100 } })
   try {
     const otaResponse = await ota(harness)
-    assert.equal(otaResponse.status, 503)
-    assert.equal((await otaResponse.json()).error.code, 'device-unknown')
+    assert.equal(otaResponse.status, 403)
+    assert.equal((await otaResponse.json()).error.code, 'device-pending')
+    assert.equal(harness.pending.list().length, 1)
+    assert.equal(harness.pending.get(MAC).attempts, 1)
+    const state = await (await fetch(`${harness.controlBase}${CONTROL}/state`)).json()
+    assert.equal(state.pending.length, 1)
+    assert.equal(state.onboarding.mode, 'approval')
 
     const attempt = await connect(harness)
     assert.equal(attempt.status, 403)
-    assert.equal(attempt.body.error.code, 'device-unknown')
+    assert.equal(attempt.body.error.code, 'device-pending')
+    assert.equal(harness.pending.get(MAC).attempts, 2)
+
+    const agent = await harness.agents.create({ name: '审核后智能体' })
+    const noCsrf = await fetch(`${harness.controlBase}${CONTROL}/pending/approve`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId: MAC, agentId: agent.id }),
+    })
+    assert.equal(noCsrf.status, 403)
+    assert.equal(harness.pending.get(MAC).attempts, 2)
+
+    const approved = await fetch(`${harness.controlBase}${CONTROL}/pending/approve`, {
+      method: 'POST',
+      headers: controlHeaders(),
+      body: JSON.stringify({ deviceId: MAC, agentId: agent.id }),
+    })
+    assert.equal(approved.status, 200)
+    const approvedBody = await approved.json()
+    assert.equal(approvedBody.device.deviceId, MAC)
+    assert.equal(approvedBody.device.agentId, agent.id)
+    assert.equal(harness.pending.list().length, 0)
+
+    const retry = await ota(harness)
+    assert.equal(retry.status, 200)
+    assert.equal(harness.store.get(MAC).agentId, agent.id)
+
+    const pendingList = await (await fetch(`${harness.controlBase}${CONTROL}/pending`)).json()
+    assert.equal(pendingList.pending.length, 0)
+
+    const rejectedMac = '02:4A:7D:E3:89:C0'
+    assert.equal((await ota(harness, { headers: { 'Device-Id': rejectedMac } })).status, 403)
+    const rejected = await fetch(`${harness.controlBase}${CONTROL}/pending/reject`, {
+      method: 'POST',
+      headers: controlHeaders(),
+      body: JSON.stringify({ deviceId: rejectedMac }),
+    })
+    assert.equal(rejected.status, 200)
+    assert.equal(harness.pending.get(rejectedMac), null)
+
+    const autoMac = '02:4A:7D:E3:89:C1'
+    assert.equal((await ota(harness, { headers: { 'Device-Id': autoMac } })).status, 403)
+    const autoApproved = await fetch(`${harness.controlBase}${CONTROL}/pending/approve`, {
+      method: 'POST',
+      headers: controlHeaders(),
+      body: JSON.stringify({ deviceId: autoMac }),
+    })
+    assert.equal(autoApproved.status, 200)
+    const autoBody = await autoApproved.json()
+    assert.ok(autoBody.agentId)
+    assert.equal(harness.store.get(autoMac).agentId, autoBody.agentId)
   } finally {
     await harness.dispose()
   }

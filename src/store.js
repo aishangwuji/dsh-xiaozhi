@@ -173,7 +173,7 @@ export class DeviceStore {
    * refresh the address. Returns what changed so the caller can log a real
    * transition instead of a touch.
    */
-  async ensureDevice({ deviceId, clientId = '', ip = '', firmwareVersion = '', autoProvision = true }) {
+  async ensureDevice({ deviceId, clientId = '', ip = '', firmwareVersion = '', autoProvision = true, provisionAgent = true }) {
     const now = this.clock()
     let device = this.devices.get(deviceId)
     let created = false
@@ -187,10 +187,13 @@ export class DeviceStore {
       this.devices.set(deviceId, device)
       created = true
       // 零接触入网：新设备立刻有属于自己的智能体（之后可以再绑定到别的智能体上）。
-      try {
-        await this.onCreated?.(device)
-      } catch (error) {
-        this.logger.warn?.(`dsh-xiaozhi: auto-provision agent for ${deviceId} failed: ${error.message}`)
+      // 控制台批准时已经选好智能体，会传 provisionAgent=false，避免先多建一个再改绑。
+      if (provisionAgent) {
+        try {
+          await this.onCreated?.(device)
+        } catch (error) {
+          this.logger.warn?.(`dsh-xiaozhi: auto-provision agent for ${deviceId} failed: ${error.message}`)
+        }
       }
     } else {
       if (clientId) device.clientId = clientId
