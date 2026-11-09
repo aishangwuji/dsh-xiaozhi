@@ -171,7 +171,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   所有下拉是 `PillSelect` 胶囊浮层（`position:fixed`、不撑布局、可向上翻转），规范 `docs/pill-popover.md`。
   **自动保存 + 测试**：未落盘时测试按钮变「保存并测试」，先 `POST /settings` 再按服务端顺序测
   （契约仍是「只测已保存的配置」，只是把两步合成一次点击）；已自动保存时直接测。
-- 弹窗尺寸（2026-11-08 修）：控制台 4 个弹窗**一律固定外框**、只有内部区域滚动，不要再退回「max-height + 内容撑开」（父层 `align-items:center`，高度一变标题与页签就上下跳）：智能体配置 `.xz-config-modal` 720×600（页签条固定，只有 `.xz-pane` 滚动）、历史对话 `.xz-history-modal` 920×720、服务商编辑 `.xz-modal-lg` 560×460（表单区滚动）、播报测试 `.xz-inject-modal` 520×320。高度统一写 `height:min(Xpx,86~88vh)` 兜底小视口；切页签 / 换厂商 / 消息增减都不得改变外框尺寸。
+- 弹窗尺寸（2026-11-08 修）：控制台 4 个弹窗**一律固定外框**、只有内部区域滚动，不要再退回「max-height + 内容撑开」（父层 `align-items:center`，高度一变标题与页签就上下跳）：智能体配置 `.xz-config-modal` 720×600（页签条固定，只有 `.xz-pane` 滚动）、历史对话 `.xz-history-modal` 920×720、服务商编辑 `.xz-modal-lg` 560×460（表单区滚动）、播报测试 `.xz-inject-modal` 520×320。高度统一写 `height:min(Xpx,86~88vh)` 兜底小视口；切页签 / 换厂商 / 消息增减都不得改变外框尺寸。**例外**：设备管理 `.xz-devices-modal` 用 `max-height:min(560px,86vh)` + 内容自适应高度（2026-11-09 修，设备少时不留大片空白），只有 `.xz-modal-body` 滚动。
 - **智能体卡片内联改名（2026-11-09）**：输入框用 `.xz-devcard-rename`（28px 高、最多 220px 宽），不再沿用表单 `.xz-input` 的 36px 高度，避免点名字改名时卡片被撑高、整页布局跳动。
 - **智能体重名拦截（2026-11-09）**：`AgentStore.create/update` 用 `assertNameAvailable` 做 trim 后的精确比较，重名抛 `duplicate-name`（HTTP 400）；改名时排除自己。控制台 `callApi` 带 `error.code`，`AgentsView` 把 `duplicate-name` 映射成 `agentNameDuplicate` 提示；新建默认名也改为找未占用的「智能体 N」，避免自动创建撞名。
 - **扩展能力卡片（2026-11-09）**：`.xz-capability-name` 占满剩余宽度并单行省略，`.xz-capability .xz-switch` 固定 `margin-left:auto`，所以标签长短不会把开关顶到不同位置；`CapabilitiesView` 复用同一套 class，规则对它同样生效。
@@ -339,7 +339,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 - **智能体「模型」字段**：`overrides.model` 只是 **LLM 模型名**覆盖（如 `deepseek-chat`），
   provider / Key / 端点仍由全局设置决定；下拉选项来自全局 LLM 已保存配置的 `/models`，拉不到则手填，
   空 = 全局默认（`settings.voice.llm.model`）。不是 TTS 音色，也不是「智能体类型」。
-- **设备矩阵 / 绑定语义（2026-11-09）**：正确模型是 **N 台设备 : 1 个智能体**——设备是智能体的麦克风/扬声器，多台设备绑到同一智能体就是不同区域的矩阵；一台设备同一时刻只属于一个智能体（`devices.agentId` 单值，移动绑定）。「设备(N)」弹窗把非本智能体设备标成「其他设备（可移入本智能体）」并显示 `当前：<智能体>`，按钮是「移入本智能体」，避免把「未绑定到本智能体」误读成「只能一对一」。不要改成设备↔智能体多对多，除非另做会话路由。
+- **设备矩阵 / 绑定语义（2026-11-09）**：正确模型是 **N 台设备 : 1 个智能体**——设备是智能体的麦克风/扬声器，多台设备绑到同一智能体就是不同区域的矩阵；一台设备同一时刻只属于一个智能体（`devices.agentId` 单值，移动绑定）。「设备(N)」弹窗把非本智能体设备标成「其他设备（可移入本智能体）」并显示 `当前：<智能体>`，按钮是「移入本智能体」，避免把「未绑定到本智能体」误读成「只能一对一」。**布局（2026-11-09 修）**：头部 `.xz-devices-head` 用 `flex:1;min-width:0` 的标题块 + 右上 `.xz-modal-close`（不再用会换行的 `.xz-row`）；弹窗高度随内容、`max-height:min(560px,86vh)`；其他设备行用 `.xz-device-row-inline` 单行展示，按钮靠右；页脚关闭按钮已去掉（右上角关闭即可）。不要改成设备↔智能体多对多，除非另做会话路由。
 - **删智能体是级联删除**：绑定设备、它们的历史与记忆一起删（对齐参考 `deleteAgent`），
   控制台做成二次确认（第一次点击变「再次点击删除」）。
 - 控制台：三个平级视图 **概览 / 智能体 / 全局设置**。卡片 = 智能体（名字/在线/绑定设备列表/音色/设备数/最近在线 +

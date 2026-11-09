@@ -1286,18 +1286,23 @@ var DshXiaozhi = (() => {
 .xz-config-modal-body>.xz-pane>.xz-field:last-child{flex:1 1 auto;min-height:0;margin-bottom:0}
 .xz-config-modal-body>.xz-pane>.xz-field:last-child .xz-textarea{flex:1 1 auto;min-height:120px;resize:none}
 .xz-config-modal-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid var(--xz-line);flex:none}
-/* \u667A\u80FD\u4F53\u7684\u300C\u7BA1\u7406\u8BBE\u5907\u300D\u5F39\u7A97\uFF1A\u56FA\u5B9A\u5916\u6846\uFF0C\u5217\u8868\u5185\u90E8\u6EDA\u52A8\uFF082026-11-08\uFF09\u3002 */
-.xz-devices-modal{width:min(680px,94vw);height:min(560px,86vh);max-height:86vh;display:flex;flex-direction:column;overflow:hidden;padding:0}
-.xz-devices-modal .xz-modal-head{padding:18px 20px 12px;border-bottom:1px solid var(--xz-line);flex:none}
-.xz-devices-modal .xz-modal-head h3{margin:0 0 4px;font-size:15px}
-.xz-devices-modal .xz-modal-head p{margin:0;font-size:11.5px;color:var(--xz-text-3)}
-.xz-devices-modal .xz-modal-body{flex:1 1 auto;min-height:0;overflow:auto;padding:14px 20px;scrollbar-gutter:stable}
-.xz-devices-modal .xz-modal-foot{padding:12px 20px;border-top:1px solid var(--xz-line);flex:none;display:flex;justify-content:flex-end;gap:8px}
+/* \u667A\u80FD\u4F53\u7684\u300C\u7BA1\u7406\u8BBE\u5907\u300D\u5F39\u7A97\uFF1A\u9AD8\u5EA6\u968F\u5185\u5BB9\uFF08\u6700\u591A 560px\uFF09\uFF0C\u5217\u8868\u5185\u90E8\u6EDA\u52A8\uFF082026-11-09\uFF09\u3002 */
+.xz-devices-modal{width:min(680px,94vw);max-height:min(560px,86vh);display:flex;flex-direction:column;overflow:hidden;padding:0}
+.xz-devices-head{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 12px;border-bottom:1px solid var(--xz-line);flex:none}
+.xz-devices-head-text{flex:1;min-width:0}
+.xz-devices-head h3{margin:0 0 4px;font-size:15px}
+.xz-devices-head p{margin:0;font-size:11.5px;line-height:1.5;color:var(--xz-text-3)}
+.xz-modal-close{flex:none;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--xz-line);border-radius:50%;background:var(--xz-surface-muted);color:var(--xz-text-2);font:inherit;font-size:16px;line-height:1;cursor:pointer}
+.xz-modal-close:hover{background:var(--xz-surface-strong);color:var(--xz-text)}
+.xz-devices-modal .xz-modal-body{flex:1 1 auto;min-height:0;overflow:auto;padding:14px 20px 18px;scrollbar-gutter:stable}
 .xz-device-section-title{font-size:11.5px;color:var(--xz-text-3);margin:6px 0 2px}
 .xz-device-row{display:flex;flex-direction:column;gap:8px;padding:10px 0;border-bottom:1px solid var(--xz-line)}
 .xz-device-row:last-child{border-bottom:none}
 .xz-device-row-main{display:flex;align-items:center;gap:8px;min-width:0}
 .xz-device-row-main .xz-input{max-width:180px}
+.xz-device-row-inline{flex-direction:row;align-items:center;justify-content:space-between;gap:12px}
+.xz-device-row-inline .xz-device-row-main{flex:1;min-width:0;flex-wrap:wrap}
+.xz-device-row-inline .xz-btn{flex:none;padding:5px 10px;font-size:11.5px;border-radius:9px}
 /* \u5361\u7247\u5185\u8054\u6539\u540D\uFF1A\u548C\u6807\u9898\u540C\u9AD8\uFF0C\u522B\u7528\u8868\u5355\u8F93\u5165\u6846\u7684 36px \u9AD8\u5EA6\u628A\u5361\u7247\u6491\u53D8\u5F62\u3002 */
 .xz-devcard-head .xz-devcard-rename{height:28px;padding:0 9px;font-size:13px;line-height:1.2;border-radius:9px;max-width:220px;box-sizing:border-box}
 .xz-device-row-mac{font-family:ui-monospace,monospace;font-size:11px;color:var(--xz-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2011,18 +2016,19 @@ var DshXiaozhi = (() => {
         },
         h(
           "div",
-          { className: "xz-modal-head" },
+          { className: "xz-devices-head" },
           h(
             "div",
-            { className: "xz-row", style: { justifyContent: "space-between", alignItems: "flex-start" } },
-            h(
-              "div",
-              null,
-              h("h3", null, `${t("agentBindTitle")} \xB7 ${agent.name || t("unnamed")}`),
-              h("p", null, t("agentBindHint"))
-            ),
-            h("button", { type: "button", className: "xz-btn", "aria-label": t("close"), onClick: onClose }, "\xD7")
-          )
+            { className: "xz-devices-head-text" },
+            h("h3", null, `${t("agentBindTitle")} \xB7 ${agent.name || t("unnamed")}`),
+            h("p", null, t("agentBindHint"))
+          ),
+          h("button", {
+            type: "button",
+            className: "xz-modal-close",
+            "aria-label": t("close"),
+            onClick: onClose
+          }, "\xD7")
         ),
         h(
           "div",
@@ -2080,11 +2086,11 @@ var DshXiaozhi = (() => {
               )
             )
           ),
-          h("div", { className: "xz-device-section-title", style: { marginTop: 16 } }, t("agentOtherTitle")),
+          h("div", { className: "xz-device-section-title", style: { marginTop: 16 } }, `${t("agentOtherTitle")}\uFF08${unbound.length}\uFF09`),
           unbound.length === 0 ? h("div", { className: "xz-hint" }, t("agentNoUnbound")) : unbound.map(
             (device) => h(
               "div",
-              { key: device.deviceId, className: "xz-device-row" },
+              { key: device.deviceId, className: "xz-device-row xz-device-row-inline" },
               h(
                 "div",
                 { className: "xz-device-row-main" },
@@ -2107,11 +2113,6 @@ var DshXiaozhi = (() => {
               )
             )
           )
-        ),
-        h(
-          "div",
-          { className: "xz-modal-foot" },
-          h("button", { type: "button", className: "xz-btn", onClick: onClose }, t("close"))
         )
       )
     );

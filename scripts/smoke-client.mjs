@@ -168,12 +168,15 @@ render(
     onClose: noop,
   })
 )
-render(
+const devicesHtml = render(
   'AgentDevicesDialog',
   React.createElement(AgentDevicesDialog, {
     agent: state.agents[0],
     agents: state.agents,
-    devices: state.devices,
+    devices: [
+      ...state.devices,
+      { deviceId: '02:00:00:00:00:EE', nickName: '测试设备2', online: false, agentId: 'a2', otaEnabled: true },
+    ],
     busyId: '',
     onBind: noop,
     onUnbind: noop,
@@ -181,6 +184,10 @@ render(
     onClose: noop,
   })
 )
+assert.match(devicesHtml, /xz-devices-head/, 'device dialog header should render')
+assert.match(devicesHtml, /xz-modal-close/, 'close button should sit in the header')
+assert.match(devicesHtml, /xz-device-row-inline/, 'other devices should use one compact row')
+assert.match(devicesHtml, /agentOtherTitle/, 'other devices section should render')
 render('HistoryDialog', React.createElement(HistoryDialog, { agent: state.agents[0], onClose: noop }))
 render(
   'ProviderDialog',

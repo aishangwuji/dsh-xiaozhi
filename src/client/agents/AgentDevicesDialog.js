@@ -18,14 +18,17 @@ import { t } from '../core.js'
           'aria-modal': 'true',
           onClick: (event) => event.stopPropagation()
         },
-          h('div', { className: 'xz-modal-head' },
-            h('div', { className: 'xz-row', style: { justifyContent: 'space-between', alignItems: 'flex-start' } },
-              h('div', null,
-                h('h3', null, `${t('agentBindTitle')} · ${agent.name || t('unnamed')}`),
-                h('p', null, t('agentBindHint'))
-              ),
-              h('button', { type: 'button', className: 'xz-btn', 'aria-label': t('close'), onClick: onClose }, '×')
-            )
+          h('div', { className: 'xz-devices-head' },
+            h('div', { className: 'xz-devices-head-text' },
+              h('h3', null, `${t('agentBindTitle')} · ${agent.name || t('unnamed')}`),
+              h('p', null, t('agentBindHint'))
+            ),
+            h('button', {
+              type: 'button',
+              className: 'xz-modal-close',
+              'aria-label': t('close'),
+              onClick: onClose
+            }, '×')
           ),
           h('div', { className: 'xz-modal-body' },
             h('div', { className: 'xz-device-section-title' }, `${t('agentBoundTitle')}（${bound.length}）`),
@@ -79,11 +82,11 @@ import { t } from '../core.js'
                     )
                   )
                 ),
-            h('div', { className: 'xz-device-section-title', style: { marginTop: 16 } }, t('agentOtherTitle')),
+            h('div', { className: 'xz-device-section-title', style: { marginTop: 16 } }, `${t('agentOtherTitle')}（${unbound.length}）`),
             unbound.length === 0
               ? h('div', { className: 'xz-hint' }, t('agentNoUnbound'))
               : unbound.map((device) =>
-                  h('div', { key: device.deviceId, className: 'xz-device-row' },
+                  h('div', { key: device.deviceId, className: 'xz-device-row xz-device-row-inline' },
                     h('div', { className: 'xz-device-row-main' },
                       h('span', { className: 'xz-devcard-value' }, device.nickName || t('unnamed')),
                       h('span', { className: 'xz-device-row-mac' }, device.deviceId),
@@ -102,9 +105,6 @@ import { t } from '../core.js'
                     )
                   )
                 )
-          ),
-          h('div', { className: 'xz-modal-foot' },
-            h('button', { type: 'button', className: 'xz-btn', onClick: onClose }, t('close'))
           )
         )
       );

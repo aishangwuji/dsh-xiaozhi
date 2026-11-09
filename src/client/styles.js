@@ -327,18 +327,23 @@
 .xz-config-modal-body>.xz-pane>.xz-field:last-child{flex:1 1 auto;min-height:0;margin-bottom:0}
 .xz-config-modal-body>.xz-pane>.xz-field:last-child .xz-textarea{flex:1 1 auto;min-height:120px;resize:none}
 .xz-config-modal-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid var(--xz-line);flex:none}
-/* 智能体的「管理设备」弹窗：固定外框，列表内部滚动（2026-11-08）。 */
-.xz-devices-modal{width:min(680px,94vw);height:min(560px,86vh);max-height:86vh;display:flex;flex-direction:column;overflow:hidden;padding:0}
-.xz-devices-modal .xz-modal-head{padding:18px 20px 12px;border-bottom:1px solid var(--xz-line);flex:none}
-.xz-devices-modal .xz-modal-head h3{margin:0 0 4px;font-size:15px}
-.xz-devices-modal .xz-modal-head p{margin:0;font-size:11.5px;color:var(--xz-text-3)}
-.xz-devices-modal .xz-modal-body{flex:1 1 auto;min-height:0;overflow:auto;padding:14px 20px;scrollbar-gutter:stable}
-.xz-devices-modal .xz-modal-foot{padding:12px 20px;border-top:1px solid var(--xz-line);flex:none;display:flex;justify-content:flex-end;gap:8px}
+/* 智能体的「管理设备」弹窗：高度随内容（最多 560px），列表内部滚动（2026-11-09）。 */
+.xz-devices-modal{width:min(680px,94vw);max-height:min(560px,86vh);display:flex;flex-direction:column;overflow:hidden;padding:0}
+.xz-devices-head{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 12px;border-bottom:1px solid var(--xz-line);flex:none}
+.xz-devices-head-text{flex:1;min-width:0}
+.xz-devices-head h3{margin:0 0 4px;font-size:15px}
+.xz-devices-head p{margin:0;font-size:11.5px;line-height:1.5;color:var(--xz-text-3)}
+.xz-modal-close{flex:none;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--xz-line);border-radius:50%;background:var(--xz-surface-muted);color:var(--xz-text-2);font:inherit;font-size:16px;line-height:1;cursor:pointer}
+.xz-modal-close:hover{background:var(--xz-surface-strong);color:var(--xz-text)}
+.xz-devices-modal .xz-modal-body{flex:1 1 auto;min-height:0;overflow:auto;padding:14px 20px 18px;scrollbar-gutter:stable}
 .xz-device-section-title{font-size:11.5px;color:var(--xz-text-3);margin:6px 0 2px}
 .xz-device-row{display:flex;flex-direction:column;gap:8px;padding:10px 0;border-bottom:1px solid var(--xz-line)}
 .xz-device-row:last-child{border-bottom:none}
 .xz-device-row-main{display:flex;align-items:center;gap:8px;min-width:0}
 .xz-device-row-main .xz-input{max-width:180px}
+.xz-device-row-inline{flex-direction:row;align-items:center;justify-content:space-between;gap:12px}
+.xz-device-row-inline .xz-device-row-main{flex:1;min-width:0;flex-wrap:wrap}
+.xz-device-row-inline .xz-btn{flex:none;padding:5px 10px;font-size:11.5px;border-radius:9px}
 /* 卡片内联改名：和标题同高，别用表单输入框的 36px 高度把卡片撑变形。 */
 .xz-devcard-head .xz-devcard-rename{height:28px;padding:0 9px;font-size:13px;line-height:1.2;border-radius:9px;max-width:220px;box-sizing:border-box}
 .xz-device-row-mac{font-family:ui-monospace,monospace;font-size:11px;color:var(--xz-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
