@@ -87,8 +87,8 @@ test('first contact registers the device and persists it', async () => {
     await store.load()
     const { device, created } = await store.ensureDevice({ deviceId: MAC, clientId: 'c1', ip: '192.168.1.50' })
     assert.equal(created, true)
-    assert.equal(device.blocked, false)
     assert.equal(device.deviceId, MAC)
+    assert.equal('blocked' in device, false)
 
     const onDisk = JSON.parse(await readFile(file, 'utf8'))
     assert.equal(onDisk.devices.length, 1)
@@ -113,22 +113,18 @@ test('autoProvision=false refuses an unknown device', async () => {
   })
 })
 
-test('blocking survives a reload and renaming is trimmed', async () => {
+test('renaming survives a reload and is trimmed', async () => {
   await withStore(async ({ file }) => {
     const store = new DeviceStore({ file })
     await store.load()
     await store.ensureDevice({ deviceId: MAC })
     await store.rename({ deviceId: MAC, nickName: '  书房手表  ' })
-    await store.setBlocked({ deviceId: MAC, blocked: true })
 
     const reopened = new DeviceStore({ file })
     await reopened.load()
     const device = reopened.get(MAC)
     assert.equal(device.nickName, '书房手表')
-    assert.equal(device.blocked, true)
-
-    await reopened.setBlocked({ deviceId: MAC, blocked: false })
-    assert.equal(reopened.get(MAC).blocked, false)
+    assert.equal('blocked' in device, false)
   })
 })
 

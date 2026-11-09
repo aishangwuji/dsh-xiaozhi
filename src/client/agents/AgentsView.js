@@ -194,8 +194,6 @@ import { HistoryDialog } from './HistoryDialog.js'
             await callApi('/devices/rename', { method: 'POST', body: { deviceId: device.deviceId, nickName: value } });
           } else if (action === 'ota') {
             await callApi('/devices/ota', { method: 'POST', body: { deviceId: device.deviceId, enabled: value === true } });
-          } else if (action === 'block') {
-            await callApi('/devices/block', { method: 'POST', body: { deviceId: device.deviceId, blocked: !device.blocked } });
           } else if (action === 'disconnect') {
             await callApi('/devices/disconnect', { method: 'POST', body: { deviceId: device.deviceId } });
           } else if (action === 'remove') {

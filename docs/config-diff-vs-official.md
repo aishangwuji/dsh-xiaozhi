@@ -40,7 +40,7 @@
 | 8 | hello 超时 | 未见显式 hello 超时（连接即后台初始化并回 welcome，`connection.py:242-250,790-796`）→ ❓未确认 | `helloTimeoutMs` 默认 10s，未发 hello 即断（`index.js:253`；`src/ingress.js:269-274`） | ❓ | 异常设备的连接生命周期 |
 | 9 | hello 应答内容 | 回 `config.xiaozhi`（type/version/transport/audio_params）+ `session_id`（`config.yaml:88-97`；`connection.py:242-243`；`helloHandle.py:48-67`） | 回 `type/transport/session_id/audio_params`（**无 version 字段**）（`src/ingress.js:337-342`） | ⚠️ | 固件对 version 字段的容忍度（当前固件未报错） |
 | 10 | 心跳与空闲 | WS 库 `ping_interval=None`；`enable_websocket_ping:false` 时忽略 ping（`core/websocket_server.py:76-82`；`core/handle/textHandler/pingMessageHandler.py:26-30`）；无语音 120s 触发结束语、180s 强制关（`config.yaml:61`；`connection.py:184-186,1720-1745`） | 每 30s 主动发 WS ping；90s 无入站即断（`index.js:257,261`；`src/ingress.js:276-286`） | ❌ | 长时间沉默被踢；无告别话术 |
-| 11 | WS 鉴权 | `server.auth.enabled` 默认 false；开启后校验 `Authorization: Bearer`（`config.yaml:31-37`；`core/websocket_server.py:210-231`） | 仅校验 `Device-Id` 头 + `autoProvision`/封禁名单；`endpoints.token` 只随 OTA 下发，**WS 建连不校验**（`src/ingress.js:148-149,179-206`） | ❌ | 同网段任意设备可直连（LAN 场景风险，公网暴露前必须补） |
+| 11 | WS 鉴权 | `server.auth.enabled` 默认 false；开启后校验 `Authorization: Bearer`（`config.yaml:31-37`；`core/websocket_server.py:210-231`） | 仅校验 `Device-Id` 头 + `autoProvision`；`endpoints.token` 只随 OTA 下发，**WS 建连不校验**（`src/ingress.js:148-149,179-206`） | ❌ | 同网段任意设备可直连（LAN 场景风险，公网暴露前必须补） |
 | 12 | 时区单位 | `server.timezone_offset: +8`（小时），下发时 ×60 = 480（`config.yaml:29`；`core/api/ota_handler.py:226`） | 配置即 480（分钟），直接下发（`index.js:212-214`；`src/ingress.js:150`） | ⚠️ | 线上值等价，**配置单位不同**，改配置易错 |
 | 13 | 激活码 / 绑定 | 走 manager-api 绑定流程（`connection.py:800-830`；`receiveAudioHandle.py:148-183`） | 不激活：陌生设备先入待审核（`403 device-pending`），控制台选智能体批准后才建档；`activate` 恒返回 ok（`src/ingress.js`、`src/pending.js`、`src/control.js`） | ⚠️ | 待审核 vs 运营侧账号绑定 |
 
@@ -202,7 +202,7 @@
 | 三段（LLM/TTS/ASR）多服务商故障转移链，备用条数不设上限（2026-11-08 去掉原来的 5 条），切成功后有冷却粘性 | `adapters/index.js:230-271`；`settings.js:25-26,50-89`；`failover.js` | 无 | 主用挂掉自动顶上，语音不中断 |
 | 智能体级覆盖（人设/模型名/音色/语种/语速/静音，一台智能体可绑定多台设备） | `src/agents.js`；`src/device-config.js:23-47`（合并函数） | 官方是设备级（见 #81）；插件按智能体配，更接近官方 manager 的 `ai_agent` | 「同一个智能体在几块表上共用配置」；provider/Key/端点仍全局，不能按智能体改 |
 | 运行时设置热更新（`settings.json` + 控制 API，不用重启 DSH，下次连接生效） | `settings.js:208-506`；`control.js:377-390`；`index.js:390-411` | 官方靠 manager 平台 | 面板改完设备重连即可 |
-| 控制 API + 设备管理（状态/设备/记忆/历史/工具开关/OTA 探测/注入播报/重命名/封禁/断开/删除） | `control.js:160-575`（`/state`、`/devices/*`、`/memory/*`、`/tools/toggle`、`/settings`、`/probe/ota`、`/test/*`） | 官方为 manager 控制台（独立服务） | 单机轻量运维 |
+| 控制 API + 设备管理（状态/设备/记忆/历史/工具开关/OTA 探测/注入播报/重命名/断开/删除） | `control.js:160-575`（`/state`、`/devices/*`、`/memory/*`、`/tools/toggle`、`/settings`、`/probe/ota`、`/test/*`） | 官方为 manager 控制台（独立服务） | 单机轻量运维 |
 | 本机命令网关（白名单 + Bearer + 限流 + 失败锁定） | `src/gateway.js:104-149` | 无 | 手表可执行本机命令（高风险能力，默认 token 空=关闭） |
 | mDNS 广播 `_xiaozhi._tcp` + `xiaozhi.local` | `src/mdns.js:20,136-186` | 无（`grep mdns` 无命中） | 免手工填 OTA 地址、DHCP 换 IP 自愈 |
 | 防「幽灵音频」的 generation epoch + 播放队列丢弃策略 | `src/voice/elements.js:12-25,179-196`；`session.js:638-652` | 官方靠 `client_abort` 标志（较粗） | 打断后不会把上一轮残音念出来 |

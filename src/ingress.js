@@ -4,9 +4,9 @@
  *
  * Onboarding is device-driven, not operator-driven: the watch is configured
  * through its own Wi-Fi portal with this server's OTA URL (`ota_url`), so the
- * first OTA poll is the registration event. There is no code to read out and no
- * approval step; what the operator keeps is the ability to rename, block, or
- * forget a device afterwards.
+ * first OTA poll is the registration event. There is no code to read out; a new
+ * device either auto-registers or waits in the pending queue for operator
+ * approval, and the operator can rename or forget it afterwards.
  *
  * This listener is separate from the Harness Web UI on purpose. The UI binds to
  * loopback and is for the human; this one binds to the LAN because an ESP32 has
@@ -150,11 +150,6 @@ export function createIngress({ config, store, hub, logger, inboundMcp, pending,
       throw error
     }
     const { device, created } = ensured
-    if (device.blocked) {
-      logger.warn?.(`dsh-xiaozhi: blocked device ${device.deviceId} polled OTA from ${ip || 'unknown'}`)
-      sendJson(res, 403, { error: { code: 'device-blocked', message: '设备已被封禁' } })
-      return
-    }
     if (created) {
       logger.info?.(`dsh-xiaozhi: discovered device ${device.deviceId} at ${ip || 'unknown'}`)
     }
@@ -277,11 +272,6 @@ export function createIngress({ config, store, hub, logger, inboundMcp, pending,
         })
         device = ensured.device
         logger.info?.(`dsh-xiaozhi: device ${device.deviceId} registered on first WebSocket connect`)
-      }
-      if (device.blocked) {
-        logger.warn?.(`dsh-xiaozhi: rejected blocked device ${device.deviceId} (${ip})`)
-        rejectUpgrade(socket, 403, { error: { code: 'device-blocked', message: '设备已被封禁' } })
-        return
       }
 
       let connection

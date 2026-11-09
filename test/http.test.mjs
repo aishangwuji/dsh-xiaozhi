@@ -186,7 +186,6 @@ test('a cold device registers itself and is told where to connect', async () => 
 
     const record = harness.store.get(MAC)
     assert.ok(record, 'the first poll must create the device row')
-    assert.equal(record.blocked, false)
     assert.equal(record.lastIp, '192.168.1.44')
 
     // A public peer gets the configured WAN endpoint instead.
@@ -197,24 +196,18 @@ test('a cold device registers itself and is told where to connect', async () => 
   }
 })
 
-test('OTA without identity is rejected, and a blocked device is refused', async () => {
+test('OTA without identity is rejected', async () => {
   const harness = await startHarness()
   try {
     const bare = await fetch(`${harness.base}/xiaozhi/ota/`, { method: 'POST' })
     assert.equal(bare.status, 400)
     assert.equal((await bare.json()).error.code, 'identity-required')
-
-    await ota(harness)
-    await harness.store.setBlocked({ deviceId: MAC, blocked: true })
-    const blocked = await ota(harness)
-    assert.equal(blocked.status, 403)
-    assert.equal((await blocked.json()).error.code, 'device-blocked')
   } finally {
     await harness.dispose()
   }
 })
 
-test('the WebSocket opens without any activation, and refuses a blocked device', async () => {
+test('the WebSocket opens without any activation', async () => {
   const harness = await startHarness()
   try {
     const first = await connect(harness)
@@ -228,11 +221,6 @@ test('the WebSocket opens without any activation, and refuses a blocked device',
     await new Promise((resolve) => setTimeout(resolve, 100))
     assert.ok(harness.store.get(MAC), 'connecting registers the device')
     first.ws.destroy()
-
-    await harness.store.setBlocked({ deviceId: MAC, blocked: true })
-    const blocked = await connect(harness)
-    assert.equal(blocked.status, 403)
-    assert.equal(blocked.body.error.code, 'device-blocked')
 
     const anonymous = await openWebSocket({ port: harness.port, host: '127.0.0.1', path: '/xiaozhi/v1/' })
     assert.equal(anonymous.status, 400)
@@ -345,7 +333,7 @@ test('a second connection evicts the first and survives', async () => {
   }
 })
 
-test('the operator API renames, blocks, disconnects and forgets', async () => {
+test('the operator API renames, disconnects and forgets', async () => {
   const harness = await startHarness()
   try {
     const connection = await connect(harness)
@@ -379,14 +367,6 @@ test('the operator API renames, blocks, disconnects and forgets', async () => {
     assert.equal(disconnect.status, 200)
     assert.equal((await disconnect.json()).disconnected, true)
     assert.equal((await connection.ws.waitClose()).code, 1001)
-
-    const block = await fetch(`${harness.controlBase}${CONTROL}/devices/block`, {
-      method: 'POST',
-      headers: controlHeaders(),
-      body: JSON.stringify({ deviceId: MAC, blocked: true }),
-    })
-    assert.equal(block.status, 200)
-    assert.equal((await block.json()).device.blocked, true)
 
     const removed = await fetch(`${harness.controlBase}${CONTROL}/devices/remove`, {
       method: 'POST',

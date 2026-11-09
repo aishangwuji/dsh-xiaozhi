@@ -48,7 +48,7 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 | 字段 | 含义 | 不变量 |
 |---|---|---|
 | `deviceId` | 主键，MAC 归一化为 `AA:BB:CC:DD:EE:FF` | 同一物理设备只有一行 |
-| `blocked` | 封禁 | 跨重启保持；封禁时 WS/OTA 均 403 |
+| `notes` | 备注 | 控制台设备弹窗可编辑 |
 | `agentId` | 绑定的智能体 | 空串 = 未绑定（启动迁移给旧设备补建）；绑定是移动，不复制配置 |
 | `overrides` | **已废弃**（迁移到智能体）：保留只为回滚，运行时只在没有绑定关系时才回落 | 新代码不要再读写它 |
 | `nickName` / `notes` | 操作者标注 | 仅本机操作台可改 |
@@ -75,7 +75,7 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 ## 状态机
 
 ```
-(不存在) --OTA/WS 首次出现--> 待审核 --approve(agentId)--> 已登记 --block--> 已封禁 --unblock--> 已登记
+(不存在) --OTA/WS 首次出现--> 待审核 --approve(agentId)--> 已登记
       |                         |--reject--> (移出队列，下次请求重新申请)
       |--autoProvision=true--> 已登记
                                  |--remove--> (不存在，下次上电重新登记)
@@ -98,7 +98,7 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 5. **不做激活码，默认待审核**：激活码/HMAC 是云控制台的多租户产品流程；局域网单管理员没有账号可绑，所以 `activation` 恒为 `null`，`/activate` 只留 200 兼容占位。但“指过来即登记”不再是默认：`autoProvision: false`（默认）时陌生设备进 `pending.json`，控制台选择智能体并批准后才建档（`POST /pending/approve`）；`autoProvision: true` 才恢复零接触自动登记。待审核解决的是“谁可以入网”，不是官方六位绑定码的“设备归哪个账号”。
 6. **设备网关按固件契约实现**：`/health`、`/commands`、`/exec` + `Bearer`，与 `main/server_gateway.cc` 的 `self.server.exec`/`self.server.commands` 对齐；`/exec` 回 200 + `[exit N]`，因为手表把正文念给模型。
 3. **网关默认关闭**：`gateway.token` 为空时 `/exec` 直接 404；白名单 argv、参数逐项白名单、限流、失败锁定、超时与截断都在 `src/gateway.js` 内强制。
-4. **两个监听面**：设备入口必须 LAN 可达且无浏览器凭据；操作台是 loopback，改名/封禁这类动作不暴露到 LAN。
+4. **两个监听面**：设备入口必须 LAN 可达且无浏览器凭据；操作台是 loopback，改名这类动作不暴露到 LAN。
 5. **端点回显 Host 兜底**：`endpoints.lanWsUrl`/`wanWsUrl` 为空时，把设备自己请求用的 Host 回给它，按定义可达。
 6. **自实现 WebSocket 服务端/客户端**：插件零依赖安装，`ws` 不可用；Edge 侧客户端还要自定义头（Node 内置 WebSocket 不支持）。
 7. **主用 + 备用服务商（2026-11-06）**：一段能力的凭据经常不止一把（多账号/多厂商），所以每段是「主用 + 有序备份」候选链，运行期失败自动切、成功后粘 5 分钟再回主用。切换粒度按环节定：LLM 只在未出字前、TTS 整句重缓冲、ASR 回放 PCM（≤60s）；一条备用配错只跳过不打死链路。**备用条数不设上限**（2026-11-08 去掉原来的 5 条上限：服务端 `normalizeBackups`/`loadBackups` 不再校验/截断条数，控制台「添加」按钮永不禁用、标题只显示 `备用 N 个`）。契约 `docs/backup-providers.md`。
@@ -136,4 +136,4 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 ## 验证
 
 - 单测/集成：`test/unit.test.mjs`、`test/http.test.mjs`（含网关 8 项、设备级语种白名单）、`test/settings.test.mjs`（人设/静音收口持久化与空值回落、备用服务商持久化/掩码/留空保留/整次失败/`/test/provider`、「全局 TTS 只存凭据、可清空 voice/model/resourceId」）、`test/failover.test.mjs`（三段候选链 26 项）、`test/tts-defaults.test.mjs`（4 项：凭证-only 主用/备用构建、空音色→厂商默认、跨厂商回落与自定义保留）、`test/voice*.test.mjs`、`test/voice-language.test.mjs`（白名单/指令/音色语种/豆包 additions）、`test/history.test.mjs`（13 项：会话聚合/标题/旧格式迁移/裁剪/音频 WAV 与路径安全/保留期清理）、`test/history-http.test.mjs`（5 项：4 条路由 + CSRF/404/400）、`test/agents.test.mjs`（5 项：旧设备迁移与记忆复制 / 多设备绑定与移动 / 配置共享 / 级联删除 / 历史合并）。
-- 已安装实例：`/healthz` 报 devices/connections/gateway/voice；操作台 `/state` 面板可改名/封禁/删除。
+- 已安装实例：`/healthz` 报 devices/connections/gateway/voice；操作台 `/state` 面板可改名/删除。

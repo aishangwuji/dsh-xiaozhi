@@ -540,10 +540,7 @@ var DshXiaozhi = (() => {
     actions: "\u64CD\u4F5C",
     online: "\u5728\u7EBF",
     offline: "\u79BB\u7EBF",
-    blocked: "\u5DF2\u5C01\u7981",
     rename: "\u6539\u540D",
-    block: "\u5C01\u7981",
-    unblock: "\u89E3\u5C01",
     disconnect: "\u65AD\u5F00",
     remove: "\u5220\u9664",
     inject: "\u64AD\u62A5",
@@ -805,10 +802,7 @@ var DshXiaozhi = (() => {
     actions: "Actions",
     online: "Online",
     offline: "Offline",
-    blocked: "Blocked",
     rename: "Rename",
-    block: "Block",
-    unblock: "Unblock",
     disconnect: "Disconnect",
     remove: "Remove",
     inject: "Speak",
@@ -2056,8 +2050,7 @@ var DshXiaozhi = (() => {
                 }),
                 h("span", { className: "xz-device-row-mac" }, device.deviceId),
                 h("span", { className: `xz-dot ${device.online ? "on" : ""}` }),
-                h("span", { className: "xz-devcard-state" }, device.online ? t("online") : t("offline")),
-                device.blocked ? h("span", { className: "xz-chip mute" }, t("blocked")) : null
+                h("span", { className: "xz-devcard-state" }, device.online ? t("online") : t("offline"))
               ),
               h(
                 "div",
@@ -2073,11 +2066,6 @@ var DshXiaozhi = (() => {
                   className: "xz-btn",
                   onClick: () => onDeviceAction("disconnect", device)
                 }, t("disconnect")) : null,
-                h("button", {
-                  type: "button",
-                  className: "xz-btn",
-                  onClick: () => onDeviceAction("block", device)
-                }, device.blocked ? t("unblock") : t("block")),
                 h("button", {
                   type: "button",
                   className: "xz-btn",
@@ -2573,8 +2561,6 @@ var DshXiaozhi = (() => {
           await callApi("/devices/rename", { method: "POST", body: { deviceId: device.deviceId, nickName: value } });
         } else if (action === "ota") {
           await callApi("/devices/ota", { method: "POST", body: { deviceId: device.deviceId, enabled: value === true } });
-        } else if (action === "block") {
-          await callApi("/devices/block", { method: "POST", body: { deviceId: device.deviceId, blocked: !device.blocked } });
         } else if (action === "disconnect") {
           await callApi("/devices/disconnect", { method: "POST", body: { deviceId: device.deviceId } });
         } else if (action === "remove") {

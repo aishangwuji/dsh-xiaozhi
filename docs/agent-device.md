@@ -17,7 +17,7 @@
 ├─ id                              ├─ deviceId (MAC，主键)
 ├─ name                            ├─ agentId → 指向智能体
 ├─ overrides {人设/模型/音色/…}      ├─ nickName（设备别名）
-├─ memoryEnabled                   ├─ blocked / notes / otaEnabled
+├─ memoryEnabled                   ├─ notes / otaEnabled
 ├─ toolDisabled[]                  ├─ lastSeenAt / lastConnectedAt / firmwareVersion
 └─ createdAt / updatedAt           └─ createdAt / updatedAt
 ```
@@ -26,7 +26,7 @@
 - **历史按设备**（`history/<deviceId>.jsonl`）：音频与消息本来就是设备维度的；
   智能体页的「历史」把绑定设备的会话合并展示（每条带 `deviceId` / `deviceName`）。
 - **工具开关按智能体**：`toolDisabled` 在 agent 上，同一智能体的设备共享。
-- **OTA / 封禁 / 断开 / 删除设备** 仍是设备级（物理属性）。
+- **OTA / 断开 / 删除设备** 仍是设备级（物理属性）。
 
 ## 2. 存储与迁移
 
@@ -104,7 +104,7 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
 | POST | `/pending/reject` | `{deviceId}`：拒绝并移出待审核队列 |
 
 兼容入口：`POST /devices/config` 按设备反查智能体后写同一份配置（旧页面/脚本不会 404）；
-`/devices/ota|block|disconnect|remove|rename` 不变。
+`/devices/ota|disconnect|remove|rename` 不变（设备封禁已于 2026-11-09 删除）。
 
 写接口照旧要 `x-dsh-xiaozhi: 1` 头。删智能体是**破坏性**操作：控制台做成二次确认，
 提示里带「会一起删掉几台设备」。
@@ -129,7 +129,7 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
   扩展能力（工具开关）——全部写智能体。
 - 顶部「待审核设备」：`autoProvision:false` 时陌生设备先列在这里；每行显示 MAC/IP/首次请求/尝试次数，
   用 PillSelect 选择智能体后「批准」，或「拒绝」。批准后设备下一次连接即通过。
-- 「设备(N)」弹窗：已绑定到本智能体的设备（改名 / OTA / 断开 / 封禁 / 解绑 / 删除设备）+
+- 「设备(N)」弹窗：已绑定到本智能体的设备（改名 / OTA / 断开 / 解绑 / 删除设备）+
   其他设备（显示「当前：<智能体>」，按钮「移入本智能体」；移入是移动，会从原智能体移走）。
   **语义是 N 台设备 : 1 个智能体**——多台设备绑同一智能体即不同区域的麦克风/扬声器矩阵；
   一台设备同一时刻只属于一个智能体，不做设备↔智能体多对多。布局：头部标题块可收缩、关闭按钮

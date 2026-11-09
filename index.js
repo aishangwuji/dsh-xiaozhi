@@ -10,7 +10,7 @@
  *     `/exec`) the watch calls. Reachable from the LAN because an ESP32 has no
  *     browser session and no cookie.
  *   - the Harness Web server (loopback) carries the operator API under
- *     `/dsh-xiaozhi-7c3a`: rename, block, forget, disconnect.
+ *     `/dsh-xiaozhi-7c3a`: rename, forget, disconnect.
  *
  * Onboarding is device-driven: the watch is configured with this server's OTA URL
  * through its own Wi-Fi portal, and its first poll registers it. No code, no

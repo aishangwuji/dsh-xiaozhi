@@ -126,7 +126,6 @@ export function createControlHandler({
       // 绑定的智能体；空串 = 未绑定（旧数据在启动迁移时补上）。
       agentId: device.agentId ?? '',
       nickName: device.nickName,
-      blocked: device.blocked,
       notes: device.notes,
       online: hub.has(device.deviceId),
       lastIp: device.lastIp,
@@ -970,18 +969,6 @@ export function createControlHandler({
         nickName: body.nickName,
         notes: body.notes,
       })
-      sendJson(res, 200, { device: publicDevice(device) })
-      return
-    }
-
-    if (method === 'POST' && path === '/devices/block') {
-      if (!requireTrustedMutation(req, res)) return
-      const body = await readJson(req)
-      const deviceId = deviceIdOf(body)
-      const blocked = body.blocked !== false
-      if (blocked) hub.evict(deviceId, 'blocked by operator')
-      const device = await store.setBlocked({ deviceId, blocked })
-      logger.info?.(`dsh-xiaozhi: device ${deviceId} ${blocked ? 'blocked' : 'unblocked'} by operator`)
       sendJson(res, 200, { device: publicDevice(device) })
       return
     }

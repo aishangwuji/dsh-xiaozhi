@@ -2,7 +2,7 @@ import { h } from '../react.js'
 import { t } from '../core.js'
 
     /**
-     * 智能体的「管理设备」弹窗：绑定 / 解绑 / 改名 / OTA / 封禁 / 断开 / 删除设备。
+     * 智能体的「管理设备」弹窗：绑定 / 解绑 / 改名 / OTA / 断开 / 删除设备。
      *
      * 页面单位是智能体，设备的物理操作收在这里，卡片上只留最常用的配置/历史/播报/删除。
      */
@@ -50,8 +50,7 @@ import { t } from '../core.js'
                       }),
                       h('span', { className: 'xz-device-row-mac' }, device.deviceId),
                       h('span', { className: `xz-dot ${device.online ? 'on' : ''}` }),
-                      h('span', { className: 'xz-devcard-state' }, device.online ? t('online') : t('offline')),
-                      device.blocked ? h('span', { className: 'xz-chip mute' }, t('blocked')) : null
+                      h('span', { className: 'xz-devcard-state' }, device.online ? t('online') : t('offline'))
                     ),
                     h('div', { className: 'xz-device-row-actions' },
                       h('button', {
@@ -67,11 +66,6 @@ import { t } from '../core.js'
                             onClick: () => onDeviceAction('disconnect', device)
                           }, t('disconnect'))
                         : null,
-                      h('button', {
-                        type: 'button',
-                        className: 'xz-btn',
-                        onClick: () => onDeviceAction('block', device)
-                      }, device.blocked ? t('unblock') : t('block')),
                       h('button', {
                         type: 'button',
                         className: 'xz-btn',

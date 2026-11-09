@@ -4,13 +4,11 @@
  * There is no account, no code, and no approval step: a device that reaches the
  * LAN ingress is the device the operator plugged in, so first contact creates the
  * row (`autoProvision`). What the operator keeps is control, not consent —
- * rename, block, forget.
+ * rename, forget, disconnect.
  *
  * A JSON file with atomic replace is enough for a household roster, and it stays
- * inspectable by hand. Two invariants live here rather than in HTTP:
- *   - a blocked device stays blocked across restarts until it is unblocked;
- *   - `lastSeenAt` only ever moves forward, so a stale request cannot reorder the
- *     audit trail.
+ * inspectable by hand. The invariant here is that `lastSeenAt` only ever moves
+ * forward, so a stale request cannot reorder the audit trail.
  */
 
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
@@ -34,7 +32,6 @@ function createRecord({ deviceId, clientId, ip, now }) {
     clientId,
     // 绑定的智能体（配置单位）。空串 = 未绑定；启动时 adoptLegacyDevices 会给旧设备补建。
     agentId: '',
-    blocked: false,
     notes: '',
     lastIp: ip,
     lastSeenAt: now,
@@ -68,7 +65,6 @@ function normalizeRecord(raw, now) {
   })
   record.nickName = typeof raw.nickName === 'string' ? raw.nickName.slice(0, 64) : ''
   record.agentId = typeof raw.agentId === 'string' ? raw.agentId.slice(0, 64) : ''
-  record.blocked = raw.blocked === true
   record.notes = typeof raw.notes === 'string' ? raw.notes.slice(0, 200) : ''
   record.lastSeenAt = Number.isSafeInteger(raw.lastSeenAt) ? raw.lastSeenAt : 0
   record.lastConnectedAt = Number.isSafeInteger(raw.lastConnectedAt) ? raw.lastConnectedAt : 0
@@ -287,15 +283,6 @@ export class DeviceStore {
     if (!device) throw new DeviceStoreError('not-found', '设备不存在')
     if (nickName !== undefined) device.nickName = String(nickName ?? '').trim().slice(0, 64)
     if (notes !== undefined) device.notes = String(notes ?? '').trim().slice(0, 200)
-    device.updatedAt = this.clock()
-    await this.persist()
-    return device
-  }
-
-  async setBlocked({ deviceId, blocked }) {
-    const device = this.devices.get(deviceId)
-    if (!device) throw new DeviceStoreError('not-found', '设备不存在')
-    device.blocked = blocked === true
     device.updatedAt = this.clock()
     await this.persist()
     return device

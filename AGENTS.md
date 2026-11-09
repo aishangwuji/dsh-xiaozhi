@@ -172,6 +172,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   **自动保存 + 测试**：未落盘时测试按钮变「保存并测试」，先 `POST /settings` 再按服务端顺序测
   （契约仍是「只测已保存的配置」，只是把两步合成一次点击）；已自动保存时直接测。
 - 弹窗尺寸（2026-11-08 修）：控制台 4 个弹窗**一律固定外框**、只有内部区域滚动，不要再退回「max-height + 内容撑开」（父层 `align-items:center`，高度一变标题与页签就上下跳）：智能体配置 `.xz-config-modal` 720×600（页签条固定，只有 `.xz-pane` 滚动）、历史对话 `.xz-history-modal` 920×720、服务商编辑 `.xz-modal-lg` 560×460（表单区滚动）、播报测试 `.xz-inject-modal` 520×320。高度统一写 `height:min(Xpx,86~88vh)` 兜底小视口；切页签 / 换厂商 / 消息增减都不得改变外框尺寸。**例外**：设备管理 `.xz-devices-modal` 用 `max-height:min(560px,86vh)` + 内容自适应高度（2026-11-09 修，设备少时不留大片空白），只有 `.xz-modal-body` 滚动。
+- **设备封禁已删除（2026-11-09）**：设备只是智能体的麦克风/扬声器，封禁没有实际价值；已从 `devices.json` 字段、`DeviceStore.setBlocked`、OTA/WS 的 403 校验、控制台按钮、`/devices/block` 路由和 i18n 全部移除。旧 `devices.json` 里的 `blocked` 字段在加载时被忽略，不再拦截设备。
 - **智能体卡片内联改名（2026-11-09）**：输入框用 `.xz-devcard-rename`（28px 高、最多 220px 宽），不再沿用表单 `.xz-input` 的 36px 高度，避免点名字改名时卡片被撑高、整页布局跳动。
 - **智能体重名拦截（2026-11-09）**：`AgentStore.create/update` 用 `assertNameAvailable` 做 trim 后的精确比较，重名抛 `duplicate-name`（HTTP 400）；改名时排除自己。控制台 `callApi` 带 `error.code`，`AgentsView` 把 `duplicate-name` 映射成 `agentNameDuplicate` 提示；新建默认名也改为找未占用的「智能体 N」，避免自动创建撞名。
 - **扩展能力卡片（2026-11-09）**：`.xz-capability-name` 占满剩余宽度并单行省略，`.xz-capability .xz-switch` 固定 `margin-left:auto`，所以标签长短不会把开关顶到不同位置；`CapabilitiesView` 复用同一套 class，规则对它同样生效。
@@ -318,7 +319,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 - 存储：`agents.json`（0600、版本 1；字段 `id` / `name` / `overrides` / `memoryEnabled` / `toolDisabled` /
   `createdAt` / `updatedAt`，`name` ≤64 字符、`toolDisabled` ≤50 项）；`devices.json` 只多一个 `agentId`。
   记忆按智能体（`memory/<agentId>.json`），历史仍按设备（`history/<deviceId>.jsonl`），
-  工具开关按智能体，OTA / 封禁 / 断开 / 删除仍是设备级。
+  工具开关按智能体，OTA / 断开 / 删除仍是设备级。
 - 迁移：启动时 `adoptLegacyDevices`（`src/agents.js`）给每台没有 `agentId` 的设备各建一个智能体，把旧
   `overrides` / `toolDisabled` / `memoryEnabled` 搬过去，并把设备键的记忆文件复制到智能体键。
   旧字段留在 devices.json 里不删（回滚安全），运行时只在没有绑定关系时才回落到它们
@@ -343,7 +344,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 - **删智能体是级联删除**：绑定设备、它们的历史与记忆一起删（对齐参考 `deleteAgent`），
   控制台做成二次确认（第一次点击变「再次点击删除」）。
 - 控制台：三个平级视图 **概览 / 智能体 / 全局设置**。卡片 = 智能体（名字/在线/绑定设备列表/音色/设备数/最近在线 +
-  配置/设备(N)/历史/播报/删除）；「设备(N)」弹窗里绑定/解绑、改设备别名、OTA/封禁/断开/删除设备；
+  配置/设备(N)/历史/播报/删除）；「设备(N)」弹窗里绑定/解绑、改设备别名、OTA/断开/删除设备；
   「播报」发给该智能体所有在线设备（一台都不在线时提示「这个智能体没有在线设备」）。
 - 验证：`node --test "test/*.test.mjs"`（233 项，含 `test/agents.test.mjs` 7 项）。
 
@@ -361,7 +362,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
    完整步骤见 `docs/provider-descriptors.md`。
 4. **改数据模型**：`agents.json` / `devices.json` / `pending.json` / `settings.json` 都要能"手改坏也能启动"——
    `normalizeAgent` / `normalizeDevice` / settings 的规范化函数要容错，坏文件隔离而不是拒绝启动。
-5. **改"谁来存"**：记忆按智能体、历史按设备、工具开关按智能体、OTA/封禁按设备。任何时候都不要再把
+5. **改"谁来存"**：记忆按智能体、历史按设备、工具开关按智能体、OTA 按设备。任何时候都不要再把
    配置写回 `devices.json`（旧字段只读，只做回滚兜底）。
 6. **生效时机（别答错）**：
    - `settings.json` 里的配置项：控制台保存即生效；但 adapter 是**建连时**装配的，设备要重连。
