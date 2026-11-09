@@ -187,6 +187,7 @@ const devicesHtml = render(
 assert.match(devicesHtml, /xz-devices-head/, 'device dialog header should render')
 assert.match(devicesHtml, /xz-modal-close/, 'close button should sit in the header')
 assert.match(devicesHtml, /xz-device-row-inline/, 'other devices should use one compact row')
+assert.match(devicesHtml, /xz-device-rename/, 'device name should be an inline rename field')
 assert.match(devicesHtml, /agentOtherTitle/, 'other devices section should render')
 render('HistoryDialog', React.createElement(HistoryDialog, { agent: state.agents[0], onClose: noop }))
 render(

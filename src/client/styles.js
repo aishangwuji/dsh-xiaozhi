@@ -340,7 +340,10 @@
 .xz-device-row{display:flex;flex-direction:column;gap:8px;padding:10px 0;border-bottom:1px solid var(--xz-line)}
 .xz-device-row:last-child{border-bottom:none}
 .xz-device-row-main{display:flex;align-items:center;gap:8px;min-width:0}
-.xz-device-row-main .xz-input{max-width:180px}
+/* 设备名是内联可编辑文本，不是表单字段：默认透明、悬停/聚焦才显边框。 */
+.xz-device-row-main .xz-device-rename{height:26px;padding:0 7px;font-size:12.5px;line-height:1.2;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--xz-text);box-sizing:border-box;transition:border-color .16s ease,background .16s ease,box-shadow .16s ease}
+.xz-device-row-main .xz-device-rename:hover{border-color:var(--xz-line);background:var(--xz-surface-muted)}
+.xz-device-row-main .xz-device-rename:focus{border-color:var(--xz-primary);background:var(--xz-surface-strong);outline:none;box-shadow:0 0 0 3px var(--xz-primary-soft)}
 .xz-device-row-inline{flex-direction:row;align-items:center;justify-content:space-between;gap:12px}
 .xz-device-row-inline .xz-device-row-main{flex:1;min-width:0;flex-wrap:wrap}
 .xz-device-row-inline .xz-btn{flex:none;padding:5px 10px;font-size:11.5px;border-radius:9px}

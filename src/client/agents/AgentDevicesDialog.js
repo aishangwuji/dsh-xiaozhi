@@ -11,6 +11,8 @@ import { t } from '../core.js'
       const boundIds = new Set(bound.map((device) => device.deviceId));
       const unbound = devices.filter((device) => !boundIds.has(device.deviceId));
       const agentName = (id) => agents.find((item) => item.id === id)?.name || t('unnamed');
+      // 设备名按字数给宽度，别用一个固定 180px 的大输入框把整行撑得很笨重。
+      const renameWidth = (name) => Math.min(180, Math.max(88, String(name || '').length * 13 + 28));
       return h('div', { className: 'xz-modal-mask', onClick: onClose },
         h('div', {
           className: 'xz-modal xz-devices-modal',
@@ -38,7 +40,8 @@ import { t } from '../core.js'
                   h('div', { key: device.deviceId, className: 'xz-device-row' },
                     h('div', { className: 'xz-device-row-main' },
                       h('input', {
-                        className: 'xz-input',
+                        className: 'xz-input xz-device-rename',
+                        style: { width: `${renameWidth(device.nickName)}px` },
                         defaultValue: device.nickName || '',
                         placeholder: t('name'),
                         'aria-label': t('name'),
