@@ -130,7 +130,7 @@ render(
     primary: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-••••99', hasApiKey: true },
     entries: [
       { id: 'e1', provider: 'deepseek', model: 'deepseek-flash', apiKey: 'sk-••••99', hasApiKey: true },
-      { id: 'e2', provider: 'openai', model: 'gpt-4o-mini', baseUrl: 'https://api.openai.com/v1' },
+      { id: 'e2', provider: 'mimo', model: 'mimo-v2', baseUrl: 'https://api.xiaomimimo.com/v1' },
     ],
     // dirty 时测试按钮应变成「保存并测试」且不再禁用（2026-11-08 改版）。
     providersDirty: true,
@@ -213,11 +213,15 @@ render(
 // 加厂商只改 src/providers.js，这里不新增用例也能覆盖（字段来自描述符本身）。
 const DIALOG_MATRIX = [
   { stage: 'llm', provider: 'deepseek', expect: ['baseUrl', 'apiKey'] },
+  // 2026-11-10：LLM 可以「复用 DSH」——没有 Key 字段，只有 DSH 厂商 + 模型。
+  { stage: 'llm', provider: 'host', expect: ['hostProvider', 'model'] },
   // MiMo 没有厂商默认模型，备用条目仍要选模型（模型清单来自 /v1/models）。
   { stage: 'llm', provider: 'mimo', expect: ['model', 'baseUrl', 'apiKey'] },
   { stage: 'tts', provider: 'xunfei', expect: ['appId', 'apiKey', 'apiSecret'] },
+  { stage: 'tts', provider: 'baizhi', expect: ['apiKey'] },
   { stage: 'tts', provider: 'edge', expect: ['ttsEdgeKeyless'] },
-  { stage: 'asr', provider: 'volc', expect: ['apiKey', 'resourceId', 'asrUrl'] },
+  { stage: 'asr', provider: 'volc', expect: ['apiKey', 'resourceId'] },
+  { stage: 'asr', provider: 'baizhi', expect: ['apiKey', 'asrLanguage'] },
   { stage: 'asr', provider: 'xunfei', expect: ['appId', 'apiKey', 'apiSecret', 'asrLanguage'] },
   { stage: 'asr', provider: 'local', expect: ['asrLanguage', 'localAsrNote'] },
 ]

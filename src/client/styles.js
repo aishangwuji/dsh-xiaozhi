@@ -198,8 +198,6 @@
 .xz-backup-test{font-size:10.5px;color:var(--xz-text-3);font-variant-numeric:tabular-nums}
 .xz-backup-test{padding:4px 6px;border-radius:8px;background:var(--xz-surface-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xz-btn.danger.confirm{background:rgba(255,59,48,.12);border-color:rgba(255,59,48,.35);color:var(--xz-danger);font-weight:600}
-.xz-backup-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
-.xz-backup-actions .xz-btn{padding:5px 9px;font-size:11.5px;border-radius:9px}
 .xz-backup-add{display:flex;align-items:center;justify-content:center;gap:6px;min-height:96px;padding:12px;border:1px dashed var(--xz-line);border-radius:14px;background:transparent;color:var(--xz-primary);font:inherit;font-size:12.5px;cursor:pointer;transition:background .16s ease,border-color .16s ease}
 .xz-backup-add:hover:not(:disabled){background:var(--xz-primary-soft);border-color:rgba(0,122,255,.4)}
 .xz-backup-add:disabled{opacity:.45;cursor:default;color:var(--xz-text-3)}
@@ -286,18 +284,39 @@
 .xz-stage-modal .xz-modal-head{padding:16px 20px 12px;border-bottom:1px solid var(--xz-line);flex:none}
 .xz-stage-modal .xz-modal-body{flex:1 1 auto;min-height:0;overflow:auto;padding:14px 20px;scrollbar-gutter:stable}
 .xz-stage-modal .xz-modal-foot{padding:12px 20px;border-top:1px solid var(--xz-line);flex:none;display:flex;justify-content:flex-end;gap:8px}
-/* 备用：纵向列表（不是 grid），行内信息 + 右侧编辑/⋯，操作区展开在行下方 */
+/* 备用：单行三段式（名称 / 摘要 / 右侧操作），⋯ 菜单是浮层、不参与行布局（2026-11-09 改版） */
 .xz-provider-list{display:flex;flex-direction:column;margin-top:12px}
-.xz-provider-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--xz-line);min-width:0}
+.xz-provider-row{display:grid;grid-template-columns:minmax(0,168px) minmax(0,1fr) auto;grid-template-areas:"main facts actions";align-items:center;gap:8px 14px;padding:9px 8px;margin:0 -8px;border-radius:10px;border-bottom:1px solid var(--xz-line);min-width:0;transition:background-color .12s ease}
 .xz-provider-row:last-child{border-bottom:none}
 .xz-provider-row.is-draft{border-bottom-style:dashed}
-.xz-provider-row-main{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 260px}
-.xz-provider-row-title{display:flex;align-items:center;gap:8px;min-width:0}
-.xz-provider-row-title strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.xz-provider-row-facts{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--xz-text-2)}
-.xz-provider-row-facts span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.xz-provider-row-actions{display:flex;gap:6px;flex:none;margin-left:auto}
-.xz-provider-row-menu{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 6px 34px}
+.xz-provider-row:hover{background:var(--xz-surface-muted)}
+.xz-provider-row.is-open{background:var(--xz-primary-soft)}
+.xz-provider-row-main{grid-area:main;display:flex;align-items:center;gap:8px;min-width:0}
+.xz-provider-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-provider-row-facts{grid-area:facts;display:flex;align-items:center;gap:6px 14px;min-width:0;font-size:11px;color:var(--xz-text-2);overflow:hidden}
+.xz-provider-fact{display:flex;align-items:baseline;gap:5px;min-width:0}
+.xz-provider-fact .k{flex:none;font-size:10.5px;color:var(--xz-text-3)}
+.xz-provider-fact .v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.xz-provider-fact.test{color:var(--xz-text-3);font-variant-numeric:tabular-nums}
+.xz-provider-row-actions{grid-area:actions;display:flex;align-items:center;gap:6px;flex:none;justify-self:end}
+/* 主用卡：状态点与 [编辑][测试] 同处标题行右侧，不再单独占一行 */
+.xz-provider-head{display:flex;align-items:center;gap:8px;min-width:0}
+.xz-provider-head .xz-devcard-title{min-width:0;flex:1 1 auto;display:flex;align-items:center}
+.xz-provider-head-actions{display:flex;align-items:center;gap:6px;flex:none;margin-left:auto}
+.xz-btn.sm{padding:4px 10px;font-size:11.5px;line-height:18px;border-radius:9px}
+.xz-btn.ghost.sm{padding:4px 8px}
+/* ⋯ 要有"按钮"的样子：默认淡描边 + 中性色，悬停才转主色；只点它才弹菜单 */
+.xz-btn.xz-provider-more{border-color:var(--xz-line);background:var(--xz-surface-strong);color:var(--xz-text-2);font-size:15px;line-height:14px;letter-spacing:1px;padding:3px 9px}
+.xz-btn.xz-provider-more:hover:not(:disabled){background:var(--xz-primary-soft);border-color:rgba(0,122,255,.35);color:var(--xz-primary)}
+.xz-btn.xz-provider-more[aria-expanded="true"]{background:var(--xz-primary-soft);border-color:rgba(0,122,255,.45);color:var(--xz-primary)}
+/* ⋯ 浮层菜单：贴按钮下沿、右侧对齐；底色/圆角/阴影沿用 .xz-menu */
+.xz-provider-row-menu{display:flex;flex-direction:column;gap:2px;padding:6px;min-width:150px;max-height:none;overflow:visible}
+.xz-provider-menu-item{display:flex;align-items:center;width:100%;min-height:30px;padding:0 10px;border:0;border-radius:9px;background:transparent;color:inherit;font:inherit;font-size:12px;text-align:left;cursor:pointer}
+.xz-provider-menu-item:hover:not(:disabled){background:rgba(0,0,0,.05)}
+.xz-provider-menu-item:disabled{opacity:.42;cursor:default}
+.xz-provider-menu-item.is-danger{color:var(--xz-danger)}
+.xz-provider-menu-item.is-danger:hover:not(:disabled){background:rgba(255,59,48,.1)}
+.xz-provider-menu-item.is-danger.confirm{background:rgba(255,59,48,.12);font-weight:600}
 .xz-provider-empty{margin:10px 0 2px;padding:12px;border:1px dashed var(--xz-line);border-radius:12px;background:var(--xz-surface-muted)}
 /* 添加备用：列表底部一整行，不再是同尺寸 dashed 方块 */
 .xz-backup-add-row{display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;margin-top:8px;padding:10px 12px;border:1px dashed var(--xz-line);border-radius:12px;background:transparent;color:var(--xz-primary);font:inherit;font-size:12.5px;cursor:pointer}
@@ -312,7 +331,7 @@
 .xz-config-footer{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:12px;justify-content:flex-end;margin:2px 2px 10px;padding:10px 12px;border:1px solid var(--xz-line);border-radius:14px;background:var(--xz-surface-strong);box-shadow:var(--xz-shadow-sm)}
 .xz-config-footer .xz-hint{margin-right:auto}
 @media (max-width:768px){.xz-config-footer{flex-wrap:wrap;justify-content:flex-end}.xz-config-footer .xz-hint{flex:1 1 100%;margin-right:0}}
-@media (max-width:640px){.xz-stage-cards{grid-template-columns:1fr}.xz-stage-modal{width:96vw;height:92vh;max-height:92vh}.xz-provider-row-menu{padding-left:0}}
+@media (max-width:640px){.xz-stage-cards{grid-template-columns:1fr}.xz-stage-modal{width:96vw;height:92vh;max-height:92vh}.xz-provider-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"main actions" "facts facts";row-gap:4px}}
 
 /* 弹窗骨架仍被「智能体 → 配置」的 AgentConfigDialog 复用：固定头 + 可滚动页签内容 + 页脚。
    高度必须写死，不能只给 max-height（2026-11-08 修）：三个页签内容高度差很大，弹窗按内容

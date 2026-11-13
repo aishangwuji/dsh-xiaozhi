@@ -158,6 +158,7 @@
       languageFollow: 'Follow the voice',
       asrProvider: 'ASR',
       asrUrl: 'ASR URL',
+      resourceId: 'Resource ID',
       silence: 'Silence cutoff (ms)',
       inheritHint: 'empty = keep the plugin config',
       save: 'Save',

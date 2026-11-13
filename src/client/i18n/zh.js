@@ -157,6 +157,7 @@
       languageFollow: '跟随音色',
       asrProvider: 'ASR',
       asrUrl: 'ASR 地址',
+      resourceId: '资源 ID',
       silence: '静音收口 (ms)',
       inheritHint: '留空 = 沿用插件配置',
       save: '保存',

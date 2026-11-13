@@ -18,7 +18,7 @@ const settings = {
     llm: {
       provider: 'deepseek', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com/v1',
       appId: '', apiKey: 'sk-••••99', hasApiKey: true, maxTokens: 120,
-      backups: [{ id: 'b1', provider: 'openai', model: 'gpt-4o-mini', baseUrl: '', apiKey: 'sk-••••11', hasApiKey: true }]
+      backups: [{ id: 'b1', provider: 'deepseek', model: 'deepseek-chat', baseUrl: '', apiKey: 'sk-••••11', hasApiKey: true }]
     },
     tts: {
       provider: 'volc', rate: '', speed: '', url: '', language: '', appId: '',
@@ -84,7 +84,7 @@ more.click()
 await new Promise((resolve) => setTimeout(resolve, 100))
 console.log('row menu open:', !!document.querySelector('.xz-provider-row-menu'))
 
-const deleteButton = [...document.querySelectorAll('.xz-provider-row-menu .xz-btn.danger')][0]
+const deleteButton = [...document.querySelectorAll('.xz-provider-row-menu .xz-provider-menu-item.is-danger')][0]
 deleteButton.click()
 await new Promise((resolve) => setTimeout(resolve, 100))
 console.log('delete confirm text:', deleteButton.textContent)
@@ -94,20 +94,40 @@ add.click()
 await new Promise((resolve) => setTimeout(resolve, 200))
 console.log('provider dialog open:', !!document.querySelector('.xz-modal-lg'))
 
-// 备用 LLM 有厂商默认模型：添加时不再让用户选模型（MiMo 例外，没有默认）。
+// 2026-11-10：LLM 新增「复用 DSH 已配置的厂商」并排在列表首位——它没有 Key 字段，
+// 只有 DSH 厂商 + 模型；这里先确认默认就是它，再切回 DeepSeek 走后面的直连流程。
 const addDialog = document.querySelector('.xz-modal-lg')
-const backupHasModel = [...addDialog.querySelectorAll('label')]
+const defaultProvider = addDialog.querySelector('.xz-field .xz-pill-label')?.textContent.trim()
+console.log('default provider:', defaultProvider)
+console.log('host entry has key input:', !!addDialog.querySelector('input[type="password"]'))
+console.log('host summary label:', [...addDialog.querySelectorAll('label')].some((label) => label.textContent.includes('DSH 厂商')))
+
+const choosePill = async (labelText, optionText) => {
+  const field = [...document.querySelectorAll('.xz-field')]
+    .find((node) => node.querySelector('label')?.textContent.trim() === labelText)
+  field.querySelector('.xz-pillselect-trigger').click()
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  const item = [...document.querySelectorAll('.xz-menu-item')]
+    .find((node) => node.textContent.trim() === optionText)
+  item.click()
+  await new Promise((resolve) => setTimeout(resolve, 150))
+}
+await choosePill('提供商', 'DeepSeek')
+console.log('provider after switch:', document.querySelector('.xz-modal-lg .xz-field .xz-pill-label')?.textContent.trim())
+
+// 备用 LLM 有厂商默认模型：添加时不再让用户选模型（MiMo 例外，没有默认）。
+const backupHasModel = [...document.querySelectorAll('.xz-modal-lg label')]
   .some((label) => label.textContent.trim() === '模型')
 console.log('backup model field:', backupHasModel)
 
 // 必填校验：不填 API Key 点保存应被拦下（弹窗不关）；填了才允许提交。
-const confirmBeforeKey = [...addDialog.querySelectorAll('.xz-btn.primary')][0]
+const confirmBeforeKey = [...document.querySelector('.xz-modal-lg').querySelectorAll('.xz-btn.primary')][0]
 confirmBeforeKey.click()
 await new Promise((resolve) => setTimeout(resolve, 100))
 const requiredBlocked = !!document.querySelector('.xz-modal-lg')
 console.log('required blocked:', requiredBlocked)
 
-const keyInput = [...addDialog.querySelectorAll('input[type="password"]')][0]
+const keyInput = [...document.querySelector(".xz-modal-lg").querySelectorAll('input[type="password"]')][0]
 if (keyInput) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
   setter.call(keyInput, 'sk-check-123456')
@@ -128,7 +148,7 @@ testButton.click()
 await new Promise((resolve) => setTimeout(resolve, 300))
 console.log('calls after save-and-test:', calls.join(' | '))
 
-// 编辑备用（OpenAI）同样不再显示模型字段；保存只改本地状态。
+// 编辑备用（DeepSeek）同样不再显示模型字段；保存只改本地状态。
 const row = document.querySelector('.xz-provider-row')
 const editButton = [...row.querySelectorAll('.xz-btn')].find((button) => button.textContent.trim() === '编辑')
 editButton.click()
