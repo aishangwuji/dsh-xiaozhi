@@ -143,7 +143,7 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"      # 全量 233 项必须全绿（2026-11-08）
+node --test "test/*.test.mjs"      # 全量 251 项必须全绿（2026-11-08）
 npm run build && npm run smoke      # 控制台构建 + 冒烟（src/client/** → client.js）
 node --check client.js
 ```

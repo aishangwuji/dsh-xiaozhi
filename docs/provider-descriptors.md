@@ -26,31 +26,39 @@
   "schemaVersion": 1,
   "providers": [
     {
-      "id": "volc",
-      "name": "火山引擎豆包",
+      "id": "deepseek",
+      "name": "DeepSeek",
       "group": "cloud",
       "stages": {
         "llm": {
-          "baseUrlHint": "https://ark.cn-beijing.volces.com/api/v3",
-          "modelHint": "doubao-1.5-pro-32k",
+          "baseUrlHint": "https://api.deepseek.com/v1",
+          "modelHint": "deepseek-chat",
           "fields": [
             { "key": "model", "type": "model", "modelKind": "llm", "label": "model", "placeholderKey": "modelFromApi" },
-            { "key": "baseUrl", "type": "url", "label": "baseUrl", "placeholder": "https://ark.cn-beijing.volces.com/api/v3" },
+            { "key": "baseUrl", "type": "url", "label": "baseUrl", "placeholder": "https://api.deepseek.com/v1" },
             { "key": "apiKey", "type": "secret", "label": "apiKey", "required": true }
           ],
           "summary": ["model", "baseUrl"],
           "secretFields": ["apiKey"],
           "probe": { "kind": "chat" }
-        },
+        }
+      }
+    },
+    {
+      "id": "volc",
+      "name": "火山引擎豆包",
+      "group": "cloud",
+      // 2026-11-09 起火山不再提供 llm 段（LLM 只留 DeepSeek / MiMo），只保留语音两段。
+      "stages": {
         "tts": { "fields": [{ "key": "apiKey", "type": "secret", "label": "apiKey" }], "summary": [], "secretFields": ["apiKey"], "probe": { "kind": "tts" } },
-        "asr": { "fields": ["apiKey", "resourceId", "url"], "summary": ["url", "resourceId"], "secretFields": ["apiKey"], "probe": { "kind": "none" } }
+        "asr": { "fields": ["apiKey", "resourceId"], "summary": ["resourceId"], "secretFields": ["apiKey"], "probe": { "kind": "none" } }
       }
     }
   ],
   "stages": {
     "llm": { "labelKey": "step4", "storageFields": ["model", "baseUrl", "appId", "apiKey"], "editFields": ["model", "baseUrl", "appId", "apiKey"] },
     "tts": { "labelKey": "step5", "storageFields": ["voice", "rate", "speed", "model", "resourceId", "url", "appId", "apiKey", "apiSecret"], "editFields": ["appId", "apiKey", "apiSecret"] },
-    "asr": { "labelKey": "step3", "storageFields": ["url", "language", "accent", "resourceId", "appId", "apiKey", "apiSecret"], "editFields": ["url", "language", "accent", "resourceId", "appId", "apiKey", "apiSecret"] }
+    "asr": { "labelKey": "step3", "storageFields": ["url", "language", "accent", "resourceId", "appId", "apiKey", "apiSecret"], "editFields": ["language", "accent", "resourceId", "appId", "apiKey", "apiSecret"] }
   }
 }
 ```
@@ -67,6 +75,12 @@
 | `number` / `checkbox` | 原生 | 预留 |
 | `select` | `PillSelect` | `options` 静态；动态枚举后续可加 `optionsEndpoint` |
 | `model` | `ModelField` | `modelKind: 'llm'` 拉 `/v1/models`；`modelKind: 'asrResource'` 拉 ASR 资源。当前值不在清单里时仍回显（补进选项）；空值用描述符 `modelHint` 占位 |
+| `hostProvider` | `HostProviderField` | 选项来自 DSH（`GET /llm/providers` → `ctx.llm.listProviders()`）；拿不到时退回文本框手填 provider id。只用于 `provider: 'host'`（复用 DSH 厂商） |
+
+**`host` 段（2026-11-10）**：`fields` 只有 `hostProvider` + `model`、`secretFields: []`、`keyless: true`，
+所以卡片显示「无需密钥」，弹窗里没有 Key 输入框。模型清单走 `GET /llm/providers?provider=<hostProvider>`
+（`ModelField` 在 `provider === 'host'` 时切到这条路径），不是厂商 `/v1/models`。
+`STAGE_META.llm.storageFields` 因此包含 `hostProvider`，备用条目也能是 host。
 
 字段级可选：`placeholder`、`placeholderKey`（i18n）、`note`（i18n）、`required`（表单显示 `*`，
 `commitEditor` 会拦下空值）、`showWhen: { key, equals }`（同表单条件显示）、`primaryOnly: true`
@@ -105,10 +119,19 @@
    - 存储白名单自动跟上（`settings.js` 的 `allProvidersForStage`），不用改 `BACKUP_SPEC`。
 2. **`src/voice/adapters/index.js`**：
    - OpenAI 兼容 LLM：只加 `OPENAI_COMPATIBLE[provider] = { baseUrl, model?, authStyle?, thinking? }`；
+     **当前 LLM 只支持 deepseek / mimo**（2026-11-09 用户要求，openai / volc / spark 已移除）；
+     要加回来必须同时加描述符的 `llm` 段，否则控制台选不到、手写 settings 只会报 `unknown LLM provider`。
    - TTS/ASR：加适配器文件 + `buildTtsAdapter` / `buildAsrAdapter` 的一个分支
      （协议差异大，这层保留分支是有意的，不强行统一）。
 3. **可选**：`src/models.js`（模型清单接口不兼容时）、`src/voice/voices.js`（音色目录）。
-4. **测试**：`test/providers.test.mjs` 会自动校验「描述符字段 ⊆ 存储白名单」；
+4. **端点写进适配器的默认值，不要在描述符里加 `url` 字段**（2026-11-09 起统一内置）：
+   控制台只为"要填的东西"负责，地址几乎不改，露出来只会让人以为必须填。
+   `voice.asr.url` 仍在 `BACKUP_SPEC.asr.fields` / `STAGE_META.asr.storageFields` 里，
+   手写 `settings.json` 的自建/代理端点继续生效；但 `STAGE_META.asr.editFields` **故意不含 `url`**，
+   否则主用保存会把已有 url 覆盖成空串（静默删配置）。`test/providers.test.mjs` 有反向断言：
+   任何 stage/provider 组合出现 `url` 字段即红。
+   注意 LLM 的 `baseUrl` 不在此列——它仍由描述符提供（自定义中转/自建网关常用）。
+5. **测试**：`test/providers.test.mjs` 会自动校验「描述符字段 ⊆ 存储白名单」；
    `npm run smoke` 的 `DIALOG_MATRIX` 会按描述符渲染每个 stage/provider 组合。
 
 **前端：0 改动**（旧 client.js 刷新后会从 `GET /providers` 拿到新厂商）。
@@ -140,7 +163,7 @@
 ## 8. 验收
 
 ```powershell
-node --test "test/*.test.mjs"   # 233 项，含 test/providers.test.mjs 6 项 + /providers 路由
+node --test "test/*.test.mjs"   # 251 项，含 test/providers.test.mjs 7 项 + /providers 路由
 npm run build
 npm run smoke                   # 描述符表单矩阵：llm/deepseek、tts/xunfei、tts/edge、asr/volc、asr/xunfei、asr/local
 npm run check:ui                # 全局设置交互

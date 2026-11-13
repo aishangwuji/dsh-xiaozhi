@@ -121,7 +121,7 @@ npm run build
 npm run smoke
 npm run check:ui
 node --check client.js
-node --test "test/*.test.mjs"   # 233 项
+node --test "test/*.test.mjs"   # 251 项
 ```
 
 ## 7. 变更记录
@@ -134,6 +134,8 @@ node --test "test/*.test.mjs"   # 233 项
   即白屏；`npm run smoke` 改为用非空 `tools` 渲染该弹窗，覆盖「扩展能力」页签。
 - **2026-11-08（改版）**：全局设置从「三块纵向卡片」改成「三个环节概览卡 + `xz-stage-modal`」；
   备用 grid → 纵向列表 + `⋯` 展开区；添加改整行；dirty 测试改「保存并测试」；底部保存条 sticky。
+  （2026-11-09 再收一版：`⋯` 由「行内展开按钮组」改成 `position:fixed` 浮层菜单，不再撑高行；
+  备用行改单行三段式，主用的 `[编辑][测试]` 也挪到标题行右侧。）
   新增 `npm run check:ui`（jsdom 交互检查）。顺带修 `ProviderDialog` 的 `React.Fragment` 未导入
   （拆分遗留，点「编辑」会崩）。
 - **2026-11-08（描述符化）**：服务商元数据从前端搬到 `src/providers.js` + `GET /providers`；

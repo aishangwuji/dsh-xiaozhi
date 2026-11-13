@@ -22,14 +22,21 @@
 
 | 环节 | 允许的 provider（备用列表） | 每条配置携带的字段 |
 |---|---|---|
-| LLM | `deepseek` / `mimo` / `openai` / `volc` / `spark` | `provider` `model` `baseUrl` `appId` `apiKey` |
+| LLM | `host` / `deepseek` / `mimo`（`host` = 复用 DSH 已配置的厂商，2026-11-10 起） | `provider` `hostProvider` `model` `baseUrl` `appId` `apiKey` |
 | TTS | `edge` / `xunfei` / `volc` | `provider` `appId` `apiKey` `apiSecret`（2026-11-08：控制台只提交这些；`voice` `rate` `speed` `model` `resourceId` `url` 是历史兼容字段，服务端 `BACKUP_SPEC` 仍接受手工配置） |
 | ASR | `local` / `funasr` / `xunfei` / `volc` | `provider` `url` `language` `accent` `resourceId` `appId` `apiKey` `apiSecret` |
 
-> 服务端白名单（`src/settings.js` 的 `BACKUP_SPEC`）保留 `funasr` 以兼容手工配置；**控制台只列
-> 当前环境真实可用的服务商**（`src/client/core.js` 的 `PROVIDER_CATALOG`）：LLM = DeepSeek / 小米 MiMo /
-> OpenAI / 火山引擎豆包 / 讯飞星火；TTS = 火山引擎豆包 / 讯飞语音合成 / 微软 Edge；ASR = 火山引擎豆包 /
-> 讯飞语音听写 / 本地 SenseVoice。`mock`、`host`、`funasr` 不出现在下拉里。
+> 服务端白名单（`src/settings.js` 的 `BACKUP_SPEC`）由描述符派生（保留 `funasr` 以兼容手工配置）；
+> **控制台只列描述符里声明过的服务商**：LLM = **DSH 已配置**（`host`，复用 DSH 的厂商与凭据，免密钥）/
+> DeepSeek / 小米 MiMo（OpenAI / 火山 / 星火已从 LLM 段移除，火山与讯飞仍保留 TTS/ASR）；
+> TTS = 火山引擎豆包 / 讯飞语音合成 / 百智云语音合成 / 微软 Edge；ASR = 火山引擎豆包 /
+> 讯飞语音听写 / 百智云语音识别 / 本地 SenseVoice。`mock` 与 `funasr` 不出现在下拉里。
+> 旧 settings 里残留的 openai/volc/spark LLM 条目在加载时被丢弃，手写主用会在建连时以
+> `unknown LLM provider` 明确报错（不静默换厂商）。
+>
+> **`host` 条目只存 `hostProvider` + `model`**：`hostProvider` 必须是当前 DSH profile 注册过的厂商 id
+> （主用与每条备用都在保存边界校验，坏值 400），模型不能一起复用——语音场景通常要更短、更低延迟的模型。
+> 切换来源（host ↔ 直连）时 `hostProvider` 由主用编辑显式写回，不会残留成"看起来还在复用 DSH"。
 
 > **小米 MiMo（`mimo`）的特殊约定**：OpenAI chat/completions 兼容，但认证头是 `api-key: <key>`
 > 而不是 `Authorization: Bearer`（`src/voice/adapters/openai-llm.js` 的 `authStyle: 'api-key'`）；
@@ -220,11 +227,18 @@
 **二级：stage 弹窗**（`xz-stage-modal`，固定头 + 可滚体 + 固定脚）
 
 - 头部：`‹ 返回` + 环节名 + 状态点 + 摘要；正文顶部一行说明；
-- 主用卡（淡蓝描边 + 主用徽标，固定第一优先级、不可删除/移位）：厂商中文名、
-  模型/地址摘要（**TTS 卡没有摘要行**：全局不配音色，只显示厂商 + 密钥状态，2026-11-08）、
-  密钥状态（已配置 / 未配置 / 无需密钥，只显示掩码）、最近测试结果、`编辑` / `测试`。
-- 备用：**纵向列表**（不是网格），每行 = 序号 + 厂商名 + 摘要/密钥状态/测试结果 + 右侧
-  `[编辑] [⋯]`；上移 / 下移 / 测试 / 删除收进 `⋯` 展开区（删除二次确认）。
+- 主用卡（淡蓝描边 + 主用徽标，固定第一优先级、不可删除/移位）：**标题行** = 厂商中文名 +
+  状态点 + 右侧 `[编辑]` `[测试]`（2026-11-09 收敛，按钮不再单独占一行）；
+  下面才是模型/资源摘要（**TTS 卡没有摘要行**：全局不配音色，只显示厂商 + 密钥状态，2026-11-08）、
+  密钥状态（已配置 / 未配置 / 无需密钥，只显示掩码）、最近测试结果。
+- 备用：**纵向列表**（不是网格），每行是**单行三段式** = 序号 + 厂商名 + 状态点 /
+  摘要 + 密钥状态 + 测试结果 / 右侧 `[编辑] [⋯]`；
+  `⋯` 打开的是**贴着按钮的浮层菜单**（`position:fixed`，右侧对齐；上移 / 下移 / 测试 / 删除），
+  **不再在行内展开按钮组**——行内展开会把行撑高、下面的行跟着跳；点空白或 Esc 关闭，删除仍是二次确认（2026-11-09）。
+  摘要为空（例如本地 SenseVoice 没有资源 ID）时整段不渲染，不显示「资源 ID: —」这类噪音。
+  摘要的**标签跟着该厂商描述符 `summary` 的第一个字段**走：`resourceId` →「资源 ID」、
+  `language` →「识别语种」、`model` →「模型」、`url` →「ASR 地址」；所以火山 ASR 显示资源 ID、
+  百智云/本地 ASR 显示识别语种，不会出现「资源 ID: zh-CN」这种错配（2026-11-09 修）。
   没有备用时显示一行灰字：`没有备用服务商；主用不可用时不会自动切换`。
 - 列表底部整行「+ 添加备用服务商」，**不设条数上限、永远可点**（2026-11-08 去掉 5 条禁用）。
 - **主用与备用走同一个编辑弹窗**（`ProviderDialog`）：先用 PillSelect（见 `docs/pill-popover.md`）
@@ -238,13 +252,14 @@
   （契约仍是「只测已保存的配置」，只是把两步合成一次点击）。
 - 保存：页面没有保存按钮，任何改动防抖 700ms 自动 `POST /settings`；保存中又有改动会等下一轮，
   服务端回写 id/掩码但不覆盖期间的新输入。底部状态条显示「保存中… / 已自动保存 / 自动保存失败（重试）」。
-- 移动端：概览卡单列；stage 弹窗 `96vw × 92vh`，备用行 `⋯` 展开区改为整行按钮组。
+- 移动端：概览卡单列；stage 弹窗 `96vw × 92vh`；备用行改成「名称+操作一行、摘要换到下一行」，
+  `⋯` 仍是浮层菜单（不再有整行按钮组）。
 
 ## 6. 验收
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"      # 全量 233 项必须全绿（2026-11-08）
+node --test "test/*.test.mjs"      # 全量 251 项必须全绿（2026-11-08）
 npm run build                      # src/client/** → client.js（esbuild，React external）
 npm run smoke                      # 真实 React SSR 渲染主要页面 + slot 注册校验
 node --check client.js             # UI 产物语法检查

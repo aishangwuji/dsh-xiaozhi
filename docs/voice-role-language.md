@@ -154,6 +154,10 @@ CREATE TABLE `ai_tts_voice` (
 
 来源 `202504092335.sql:5-75`。五条全用同一个 Edge 音色 → 模板与音色不绑定。
 
+> 本仓库控制台的「角色模板」2026-11-10 起**就是这 5 条**（逐字取自 `ai_agent_template` 种子），
+> 2026-11-10 起按用户要求换成**原服务端**（`xiaozhi-golang-src` manager）里 lingxi 三个 NPC 的
+> `agents.custom_prompt`（铁匠鲍勃 / 学者查理 / 守塔戴夫），逐字基准见 `test/fixtures/role-presets.json`。
+
 ## 附录 C：豆包 2.0 音色全表
 
 | 音色名 | 音色 ID | 语种 |

@@ -108,8 +108,11 @@
 | 视图 | 内容 |
 |---|---|
 | 概览 | 设备/在线/语音/网关四张指标卡；OTA、WebSocket、网关三个地址一键复制；**OTA 连通性测试**（服务端回环探针，结果以 JSON 展示）；最近事件 |
-| 智能体 | 卡片 = 智能体（配置单位），一台智能体可以绑定多台设备（对齐参考服务端 `ai_agent` / `ai_device`，契约 `docs/agent-device.md`）。卡片：名称（点名字就地改名，回车或失焦确认、Esc 退出）、在线呼吸灯（任一绑定设备在线）、播报、绑定设备列表（`序号. 名称 ●`），音色 / 设备数 / 最近在线，底部 **配置** / **设备(N)** / **历史** / **删除**。**配置**弹窗三个页签（角色 / 模型与记忆 / 扩展能力）改的是智能体 `overrides`，同一智能体的设备共用；其中「模型」是 **LLM 模型名**（空 = 全局默认，厂商/Key/端点仍用全局设置，下拉来自全局 LLM 的 `/models`）；**设备(N)** 弹窗里绑定/解绑、改设备别名、OTA 开关、断开、删除设备；一台智能体可绑定多台设备（不同区域的麦克风/扬声器矩阵），一台设备同一时刻只属于一个智能体，其他智能体的设备会显示当前归属并以「移入本智能体」移动；**历史**合并该智能体所有设备的会话（列表项带设备名）；**播报**发给所有在线设备；**删除**是二次确认（第一次点击变「再次点击删除」），确认后级联删除绑定设备与历史。新设备默认先进「待审核设备」，管理员选智能体并批准后才建档；`autoProvision: true` 才恢复自动建智能体 |
-| 全局设置 | **三个环节概览卡 + 二级弹窗，无侧边栏**：① **服务商**（页面主体：ASR 识别 / LLM 模型 / TTS 合成 三张概览卡，每张 = 主用厂商 + 摘要 + 密钥/备用数/降级链 + 状态点，点「管理」进弹窗；弹窗里主用卡一整行、备用纵向列表、底部「+ 添加备用服务商」；失败按顺序自动切换）；**TTS 块只配「厂商 + 凭据」，没有音色/模型/Resource ID**（音色在「智能体 → 配置 → 角色」按智能体选，2026-11-08）**LLM 备用条目不要求选模型**：有厂商默认（DeepSeek/OpenAI/火山/星火）自动填默认并隐藏模型字段，MiMo 无默认仍要选（模型清单走 `/v1/models`）；主用模型仍是全局默认，智能体「模型」可覆盖 ② **语音默认参数**（静音收口 / 回复长度上限 / 回复速度）③ **接入与网关**（默认折叠：LAN/WAN WS、OTA Token、固件版本/URL、强制升级、网关 Token）④ **没有保存按钮**：改动防抖 700ms 自动落盘，底部只显示「保存中… / 已自动保存 / 失败重试」，设备下次连接生效；未落盘时测试按钮变「保存并测试」。**人设不在这里**——按智能体在「智能体 → 配置 → 角色」里设置。所有下拉都是**胶囊式浮层**（`docs/pill-popover.md`）：`position:fixed`、不参与页面布局，展开时不会撑出滚动条或让页面内容位移，下方空间不足自动向上翻转 |
+| 智能体 | 卡片 = 智能体（配置单位），一台智能体可以绑定多台设备（对齐参考服务端 `ai_agent` / `ai_device`，契约 `docs/agent-device.md`）。卡片：名称（点名字就地改名，回车或失焦确认、Esc 退出）、在线呼吸灯（任一绑定设备在线）、播报、绑定设备列表（`序号. 名称 ●`），音色 / 设备数 / 最近在线，底部 **配置** / **设备(N)** / **历史** / **删除**。**配置**弹窗三个页签（角色 / 模型与记忆 / 扩展能力）改的是智能体 `overrides`，同一智能体的设备共用；「角色」页的「人设」右侧还有 **角色模板** 下拉（湾湾小何 / 星际游子 / 英语老师 / 好奇男孩 / 汪汪队长，文案逐字取自原服务端 `xiaozhi-esp32-server` 的 `ai_agent_template`，选中整段填进人设，手改后回落「自定义」，纯前端不回传）；其中「模型」是 **LLM 模型名**（空 = 全局默认，厂商/Key/端点仍用全局设置，下拉来自全局 LLM 的 `/models`）；**设备(N)** 弹窗里绑定/解绑、改设备别名、OTA 开关、断开、删除设备；一台智能体可绑定多台设备（不同区域的麦克风/扬声器矩阵），一台设备同一时刻只属于一个智能体，其他智能体的设备会显示当前归属并以「移入本智能体」移动；**历史**合并该智能体所有设备的会话（列表项带设备名）；**播报**发给所有在线设备；**删除**是二次确认（第一次点击变「再次点击删除」），确认后级联删除绑定设备与历史。新设备默认先进「待审核设备」，管理员选智能体并批准后才建档；`autoProvision: true` 才恢复自动建智能体 |
+| 全局设置 | **三个环节概览卡 + 二级弹窗，无侧边栏**：① **服务商**（页面主体：ASR 识别 / LLM 模型 / TTS 合成 三张概览卡，每张 = 主用厂商 + 摘要 + 密钥/备用数/降级链 + 状态点，点「管理」进弹窗；弹窗里主用卡一整行、备用纵向列表、底部「+ 添加备用服务商」；失败按顺序自动切换）；**TTS 块只配「厂商 + 凭据」，没有音色/模型/Resource ID**（音色在「智能体 → 配置 → 角色」按智能体选，2026-11-08）**LLM 备用条目不要求选模型**：DeepSeek 有厂商默认（`deepseek-chat`）自动填默认并隐藏模型字段，
+MiMo 无默认仍要选（模型清单走 `/v1/models`）；**LLM 可选「DSH 已配置」（复用 DSH 里已配置的厂商与凭据、
+不用再填 Key，2026-11-10 起排在首位）/ DeepSeek / 小米 MiMo**（OpenAI / 火山 / 星火已从 LLM 段移除，
+火山与讯飞仍保留 TTS/ASR）；主用模型仍是全局默认，智能体「模型」可覆盖 ② **语音默认参数**（静音收口 / 回复长度上限 / 回复速度）③ **接入与网关**（默认折叠：LAN/WAN WS、OTA Token、固件版本/URL、强制升级、网关 Token）④ **没有保存按钮**：改动防抖 700ms 自动落盘，底部只显示「保存中… / 已自动保存 / 失败重试」，设备下次连接生效；未落盘时测试按钮变「保存并测试」。**人设不在这里**——按智能体在「智能体 → 配置 → 角色」里设置。所有下拉都是**胶囊式浮层**（`docs/pill-popover.md`）：`position:fixed`、不参与页面布局，展开时不会撑出滚动条或让页面内容位移，下方空间不足自动向上翻转 |
 
 ### 权限模型：本机即管理员
 
@@ -131,12 +134,13 @@
 
 - 弹窗里最上面一张「主用」卡（淡蓝描边 + 主用徽标），下面按优先级排列备用**纵向列表**（备用 1、备用 2…），
   末尾是整行「+ 添加备用服务商」；
-- 备用行的 `[编辑]` 常驻，`上移 / 下移 / 测试 / 删除` 收进 `⋯` 展开区；删除仍是二次确认；
+- 备用行右侧只有 `[编辑]` 和 `⋯`；`上移 / 下移 / 测试 / 删除` 收进**浮层菜单**（贴着按钮弹出、
+  不撑高行，点空白或 Esc 关闭）；删除仍是二次确认；主用的 `[编辑][测试]` 也在标题行右侧（2026-11-09 排版收敛）；
 - 所有条目都走**同一个编辑弹窗**：先选厂商，再只显示该厂商需要的字段；不再有「上面一个
   provider 下拉、下面又一个添加服务商」两套入口；
 - **TTS 卡只有「厂商 + 凭据」**（2026-11-08）：编辑弹窗不出现音色 / 模型 / Resource ID / API URL；
   音色（= TTS 模型族）在「智能体 → 配置 → 角色」按智能体选，留空 = 厂商默认（火山
-  `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan`，见
+  `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan` / 百智云 `vivi`，见
   `src/voice/voices.js` 的 `DEFAULT_TTS_VOICES`）；备用条目运行时也用各自厂商默认音色；
   **火山 TTS 主用可另填 AccessKey ID / SecretAccessKey（可选）**：只用于调官方 `ListSpeakers`
   拉真实可用音色，合成仍用 API Key；不填时智能体「角色」页显示内置清单并标注「可能含未开通音色」；
@@ -149,12 +153,16 @@
 
 | 环节 | 可选服务商 |
 |---|---|
-| LLM | DeepSeek / 小米 MiMo / OpenAI / 火山引擎豆包 / 讯飞星火 |
-| TTS | 火山引擎豆包 / 讯飞语音合成 / 微软 Edge（免密钥） |
-| ASR | 火山引擎豆包 / 讯飞语音听写 / 本地 SenseVoice（免密钥，用 Harness 内置识别） |
+| LLM | **DSH 已配置**（复用 DSH 的厂商与凭据，免密钥）/ DeepSeek / 小米 MiMo |
+| TTS | 火山引擎豆包 / 讯飞语音合成 / 百智云语音合成 / 微软 Edge（免密钥） |
+| ASR | 火山引擎豆包 / 讯飞语音听写 / 百智云语音识别 / 本地 SenseVoice（免密钥，用 Harness 内置识别） |
 
 `mock`（仅桌面联调）、`host`（Harness 自带厂商，没有服务商 Key）、`funasr`（需本机额外部署
 FunASR 服务）不出现在下拉里；其中 FunASR 适配器仍保留在服务端，手工写配置可用，只是控制台不列。
+
+**厂商端点地址一律内置在适配器里，控制台不再出现「ASR 地址」这类输入框**（2026-11-09）：地址几乎不改，
+露在表单里只会让人以为必须填。需要自建/代理端点时，手写 `settings.json` 的 `voice.asr.url` 仍然生效
+（存储白名单保留该字段，主用保存也不会把它覆盖成空串）；LLM 的 `Base URL` 不在其中，仍保留在表单里。
 
 > **LLM 主路径是插件直连服务商**（`voice.llm.provider` = `deepseek` / `mimo` / …，用本插件自己
 > 填的 Key）。`host`（复用 DSH 自己的 `llm` 服务）只是历史兼容路径：**智能体级不再自动切 host**，
@@ -210,12 +218,10 @@ desktop\operator
 | `web_fetch` | 抓取**单个网页正文**（Markdown，≤3500 字）；搜索摘录不够、用户给了链接、要看公告/文档/价格时用 | DeepSeek Fetch API（Bearer，按成功请求计费） |
 | `get_news_from_chinanews` | 社会 / 国际 / 财经新闻播报 | 中国新闻网 RSS |
 | `get_news_from_newsnow` | 热榜新闻（澎湃/百度热搜/财联社/知乎/微博/36氪/IT之家等）；可抓上一条详情 | NewsNow 公共 API（`voice.tools.newsnow`） |
-| `get_weather` | 未来 3 天天气（城市查询 + QWeather 3d） | QWeather API（`voice.tools.weather.key`） |
 | `get_lunar` | 农历日期、干支年、生肖、星期（宜忌/节气暂不支持） | 本地 `Intl` 中国农历 |
 | `handle_exit_intent` | 用户说“再见/结束对话”时播告别语并断开连接 | 无 |
 | `hass_get_state` / `hass_set_state` / `hass_play_music` | 查询/控制 Home Assistant 设备（灯、音量、媒体播放） | Home Assistant REST API（`voice.tools.hass`） |
 | `search_from_ragflow` | 从 RAGFlow 知识库检索并回答 | RAGFlow retrieval API（`voice.tools.ragflow`） |
-| `change_role` | 切换内置角色（机车女友 / 英语老师 / 好奇小男孩）并改本会话人设 | 无（会话内生效，不落盘） |
 | `call_device` | 按备注名呼叫另一台设备（manager 通讯录） | manager API（`voice.tools.callDevice`） |
 | `play_music` | 从本地音乐目录按歌名匹配/随机播放；先 TTS 说“正在为您播放…”，再播音频 | 本地目录（`voice.tools.music`，ffmpeg 解码） |
 
@@ -229,9 +235,9 @@ desktop\operator
 - 计费按**成功请求次数**（Search / Fetch 各 5 元/1000 次），`count` 不影响单价；
   Search 无结果、请求失败、超时不收费。语音链路最多 3 轮工具（`MAX_TOOL_ROUNDS`），
   搜一次再看 1–2 个页面刚好在预算内。
-- 新闻/天气配置在 `cordis.patch.yml` 的 `voice.tools`：
-  `newsnow.url` / `newsnow.sources`，`weather.key` / `weather.host`（QWeather）。
-  `weather.key` 留空时 `get_weather` 只回「未配置」，不会发请求。
+- 新闻配置在 `cordis.patch.yml` 的 `voice.tools.newsnow`：`newsnow.url` / `newsnow.sources`。
+- **天气工具已下掉（2026-11-09）**：要用得先配 QWeather Key，用户明确不用，所以 `get_weather`
+  不再注册、`voice.tools.weather` 段也不再解析；问天气让模型走 `web_search`。
 
 ### 设备侧 MCP / IoT（2026-11-08 首阶段）
 
@@ -342,10 +348,10 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 |---|---|---|---|
 | ASR | `mock` / `funasr` | 本地 FunASR 2pass WebSocket | 已实现（控制台默认不列出：需本机自部署） |
 | ASR | `xunfei` | 讯飞听写 `wss://iat-api.xfyun.cn/v2/iat`，HMAC-SHA256 签名、`status 0/1/2` 分帧、`ws[].cw[].w` 累加 | 已实现（单测覆盖签名与解析） |
-| LLM | `mock` / `openai` / `deepseek` | OpenAI 兼容 chat/completions 流式 | 已实现 |
+| LLM | `mock` / `deepseek` | OpenAI 兼容 chat/completions 流式 | 已实现 |
+| LLM | `host`（复用 DSH） | 走 DSH 的 `llm` 服务（`ctx.llm.stream`），厂商为当前 profile 注册的 id（`hostProvider`），插件**不存 Key**；厂商清单来自 `GET /llm/providers`，模型仍单独选 | 已实现（保存/构建期校验 hostProvider，未注册即明确报错） |
 | LLM | `mimo`（小米 MiMo） | OpenAI 兼容 chat/completions（`api.xiaomimimo.com/v1`），**认证走 `api-key` 头**（不是 Bearer）；**模型清单从 `GET /v1/models` 实时拉取，插件不内置任何模型 id**（拿不到就手填）；语音场景默认请求 `thinking:{type:'disabled'}` 压低首字延迟 | 已实现（单测覆盖认证头/流式/工具调用） |
-| LLM | `volc` | 火山方舟 Ark（OpenAI 兼容，`ark.cn-beijing.volces.com/api/v3`） | 已实现（复用兼容客户端） |
-| LLM | `spark` | 讯飞星火 HTTP（`spark-api-open.xf-yun.com/v1`，`Bearer <APIPassword>`） | 已实现（复用兼容客户端） |
+| — | ~~`openai` / `volc` / `spark`~~ | 已从 **LLM 段**移除（2026-11-09，只保留 DeepSeek / MiMo）；手写 settings 里残留会以 `unknown LLM provider` 明确报错 | 已移除（火山/讯飞的 TTS/ASR 不受影响） |
 | TTS | `mock` / `edge` | Edge TTS，MP3 → ffmpeg → PCM | 已实现 |
 | TTS | `xunfei` | 讯飞在线合成 `wss://tts-api.xfyun.cn/v2/tts`，`aue=raw` 直出 PCM16 | 已实现（单测覆盖请求/响应帧） |
 | TTS | `volc`（豆包） | HTTP 单向流式 `api/v3/tts/unidirectional`（`seed-tts-2.0`），逐行 JSON + base64 PCM | 已实现 |
@@ -400,7 +406,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 智能体「角色」页选「跟随音色」会删除该智能体的 `language` 覆盖、撤掉语种指令；如果只在 `cordis.patch.yml` 里写过默认语种，需要智能体上显式选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，233 项）：
+实测（`node --test "test/*.test.mjs"`，251 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -456,7 +462,7 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 233 项
+node --test "test/*.test.mjs"   # 251 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 
