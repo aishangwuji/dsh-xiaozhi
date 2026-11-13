@@ -24,6 +24,7 @@
     "build": "node build.mjs",
     "smoke": "node scripts/smoke-client.mjs",
     "check:ui": "node scripts/check-config-wizard.mjs",
+    "check:role": "node scripts/check-role-preset.mjs",
     "test": "node --test \"test/*.test.mjs\""
   },
   "dsh": {

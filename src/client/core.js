@@ -218,14 +218,12 @@ import { PROVIDERS as BUNDLED_PROVIDERS, STAGE_META as BUNDLED_STAGE_META } from
         web_fetch: t('toolWebFetch'),
         get_news_from_chinanews: t('toolNews'),
         get_news_from_newsnow: t('toolNewsnow'),
-        get_weather: t('toolWeather'),
         get_lunar: t('toolLunar'),
         handle_exit_intent: t('toolExit'),
         hass_get_state: t('toolHassGet'),
         hass_set_state: t('toolHassSet'),
         hass_play_music: t('toolHassMusic'),
         search_from_ragflow: t('toolRagflow'),
-        change_role: t('toolChangeRole'),
         call_device: t('toolCallDevice'),
         play_music: t('toolPlayMusic')
       };

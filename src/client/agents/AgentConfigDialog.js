@@ -1,6 +1,7 @@
 import { h, useState, useEffect } from '../react.js'
 import { t, callApi, VOICES, voiceLabel, voicesForResource, OUTPUT_LANGUAGE_VALUES, toolLabel } from '../core.js'
 import { PillSelect } from '../ui/PillSelect.js'
+import { ROLE_PRESETS, rolePresetPrompt, matchRolePreset } from './rolePresets.js'
 
     function AgentConfigDialog({
       agent, tools, memory, memoryDraft,
@@ -134,7 +135,26 @@ import { PillSelect } from '../ui/PillSelect.js'
           )
         ),
         h('div', { className: 'xz-field' },
-          h('label', null, t('persona')),
+          // 角色模板 = 纯前端便利：选中后把人设整段替换成模板文本（{{assistant_name}} 换成
+          // 智能体自己的名字），之后仍可手改。人设文本与某个模板完全一致时才回显该模板，
+          // 手改过就回落「自定义」，不会假装还是那个模板。
+          h('div', { className: 'xz-row', style: { justifyContent: 'space-between', alignItems: 'center' } },
+            h('label', null, t('persona')),
+            h('div', { style: { width: 200, flex: 'none' } },
+              h(PillSelect, {
+                value: matchRolePreset(draftPrompt, agent.name),
+                ariaLabel: t('rolePreset'),
+                options: [{ value: '', label: t('rolePresetCustom') }].concat(
+                  ROLE_PRESETS.map((preset) => ({ value: preset.id, label: t(preset.labelKey) }))
+                ),
+                onChange: (id) => {
+                  const preset = ROLE_PRESETS.find((item) => item.id === id);
+                  if (preset) setDraftPrompt(rolePresetPrompt(preset.prompt, agent.name));
+                }
+              })
+            )
+          ),
+          h('span', { className: 'note' }, t('rolePresetHint')),
           h('textarea', {
             className: 'xz-textarea',
             rows: 8,

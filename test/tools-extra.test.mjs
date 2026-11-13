@@ -23,15 +23,12 @@ test('get_lunar returns lunar date, sexagenary year and zodiac', async () => {
   assert.match(out, /生肖：马/)
 })
 
-test('change_role returns a prompt switch and the assistant name is substituted', async () => {
+test('change_role is gone: role switching lives in the console persona, not as a voice tool', async () => {
   const registry = createToolRegistry()
-  const result = await registry.invoke('change_role', { role: '英语老师', role_name: 'Lily' })
-  assert.equal(result.action, 'change_prompt')
-  assert.match(result.response, /英语老师Lily/)
-  assert.match(result.prompt, /叫Lily/)
-  assert.match(result.prompt, /英语老师/)
-  const unsupported = await registry.invoke('change_role', { role: '不存在的角色', role_name: 'X' })
-  assert.match(unsupported.output, /不支持的角色/)
+  // 2026-11-09 按用户要求下掉：角色只由控制台「智能体 → 配置 → 角色 → 人设」配置，
+  // 语音侧不再提供切换角色的工具。这条断言防止有人把工具加回来。
+  assert.ok(!registry.names().includes('change_role'))
+  assert.equal(registry.catalog('agent').some((tool) => tool.name === 'change_role'), false)
 })
 
 test('call_device asks the manager API with callerMac and nickname', async () => {
@@ -138,33 +135,10 @@ test('get_news_from_newsnow reads the newsnow items shape', async () => {
   assert.match(calls[0], /id=thepaper/)
 })
 
-test('get_weather explains missing key and formats QWeather 3-day data', async () => {
-  const missing = createToolRegistry({ toolsConfig: { weather: {} } })
-  assert.match(await missing.execute('get_weather', { location: '杭州' }), /未配置/)
-
-  const registry = createToolRegistry({
-    toolsConfig: { weather: { key: 'k', host: 'weather.example' } },
-    fetchImpl: async (url) => {
-      if (url.includes('/geo/v2/city/lookup')) {
-        return {
-          ok: true,
-          async json() {
-            return { code: '200', location: [{ id: '101210101', name: '杭州' }] }
-          },
-        }
-      }
-      return {
-        ok: true,
-        async json() {
-          return {
-            code: '200',
-            daily: [{ fxDate: '2026-11-08', textDay: '晴', tempMin: '12', tempMax: '20', windDirDay: '东风', windScaleDay: '2' }],
-          }
-        },
-      }
-    },
-  })
-  const out = await registry.execute('get_weather', { location: '杭州' })
-  assert.match(out, /杭州未来 1 天天气/)
-  assert.match(out, /晴 12~20℃/)
+test('get_weather is gone: it needs a QWeather key the user does not want to configure', async () => {
+  // 2026-11-09 按用户要求下掉：天气要配 QWeather API Key，用户明确不用。
+  // 这条断言防止有人把工具加回来（加回来之前先回答：Key 从哪来、没 Key 时为什么还要注册）。
+  const registry = createToolRegistry()
+  assert.ok(!registry.names().includes('get_weather'))
+  assert.equal(registry.catalog('agent').some((tool) => tool.name === 'get_weather'), false)
 })

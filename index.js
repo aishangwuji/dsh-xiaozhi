@@ -295,17 +295,14 @@ export function resolveConfig(config = {}) {
     voice: {
       enabled: field(voiceRaw, ['enabled'], false) === true,
       ffmpegPath: text(field(voiceRaw, ['ffmpegPath', 'ffmpeg_path'], 'ffmpeg'), 'ffmpeg') || 'ffmpeg',
-      // 服务端插件工具配置（官方 config.yaml 的 plugins 段）：目前用于 newsnow / weather。
+      // 服务端插件工具配置（官方 config.yaml 的 plugins 段）：newsnow / hass / ragflow / callDevice / music。
+      // 天气工具已于 2026-11-09 下掉（要 QWeather Key，用户不用），这里不再解析 weather 段。
       tools: {
         newsnow: {
           url: text(field(voiceTools.newsnow ?? {}, ['url'], 'https://newsnow.busiyi.world/api/s?id=')),
           sources: text(
             field(voiceTools.newsnow ?? {}, ['sources', 'newsSources', 'news_sources'], '澎湃新闻;百度热搜;财联社'),
           ),
-        },
-        weather: {
-          key: text(field(voiceTools.weather ?? {}, ['key', 'apiKey', 'api_key'], '')),
-          host: text(field(voiceTools.weather ?? {}, ['host', 'apiHost', 'api_host'], 'devapi.qweather.com')),
         },
         hass: {
           baseUrl: text(field(voiceTools.hass ?? {}, ['baseUrl', 'base_url'], '')),

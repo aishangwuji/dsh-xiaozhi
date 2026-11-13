@@ -52,15 +52,11 @@
         voice:
           enabled: true
           ffmpegPath: 'ffmpeg'
-          # 服务端插件工具（官方 plugins 段）：newsnow 热榜 / QWeather 天气。
-          # weather.key 留空时 get_weather 只回“未配置”，不会发请求。
+          # 服务端插件工具（官方 plugins 段）：newsnow 热榜；天气工具已下掉（2026-11-09，需 QWeather Key）。
           tools:
             newsnow:
               url: 'https://newsnow.busiyi.world/api/s?id='
               sources: '澎湃新闻;百度热搜;财联社'
-            weather:
-              key: ''
-              host: 'devapi.qweather.com'
             # Home Assistant：baseUrl + 长期访问令牌；devices 只用于提示词展示，可留空。
             hass:
               baseUrl: ''

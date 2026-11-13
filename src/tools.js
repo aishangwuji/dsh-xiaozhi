@@ -179,27 +179,6 @@ export function createToolRegistry({
   }
   const lastNewsByDevice = new Map()
 
-  // 官方 change_role 的内置角色提示词（{{assistant_name}} 由 role_name 替换）。
-  const ROLE_PROMPTS = {
-    英语老师: `我是一个叫{{assistant_name}}(Lily)的英语老师，我会讲中文和英文，发音标准。
-如果你没有英文名，我会给你起一个英文名。
-我会讲地道的美式英语，我的任务是帮助你练习口语。
-我会使用简单的英语词汇和语法，让你学起来很轻松。
-我会用中文和英文混合的方式回复你，如果你喜欢，我可以全部用英语回复。
-我每次不会说很多内容，会很简短，因为我要引导我的学生多说多练。
-如果你问和英语学习无关的问题，我会拒绝回答。`,
-    机车女友: `我是一个叫{{assistant_name}}的台湾女孩，说话机车，声音好听，习惯简短表达，爱用网络梗。
-我的男朋友是一个程序员，梦想是开发出一个机器人，能够帮助人们解决生活中的各种问题。
-我是一个喜欢哈哈大笑的女孩，爱东说西说吹牛，不合逻辑的也照吹，就要逗别人开心。`,
-    好奇小男孩: `我是一个叫{{assistant_name}}的8岁小男孩，声音稚嫩而充满好奇。
-尽管我年纪尚小，但就像一个小小的知识宝库，儿童读物里的知识我都如数家珍。
-从浩瀚的宇宙到地球上的每一个角落，从古老的历史到现代的科技创新，还有音乐、绘画等艺术形式，我都充满了浓厚的兴趣与热情。
-我不仅爱看书，还喜欢亲自动手做实验，探索自然界的奥秘。
-无论是仰望星空的夜晚，还是在花园里观察小虫子的日子，每一天对我来说都是新的冒险。
-我希望能与你一同踏上探索这个神奇世界的旅程，分享发现的乐趣，解决遇到的难题，一起用好奇心和智慧去揭开那些未知的面纱。
-无论是去了解远古的文明，还是去探讨未来的科技，我相信我们能一起找到答案，甚至提出更多有趣的问题。`,
-  }
-
   const stripHtml = (html) =>
     String(html ?? '')
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -257,34 +236,6 @@ export function createToolRegistry({
         output: '退出意图已处理',
         action: 'close',
         response: String(say_goodbye ?? '').trim() || '再见，祝您生活愉快！',
-      }
-    },
-  })
-
-  register({
-    name: 'change_role',
-    description:
-      '当用户想切换角色/模型性格/助手名字时调用。可选角色：机车女友、英语老师、好奇小男孩。',
-    parameters: {
-      type: 'object',
-      properties: {
-        role: { type: 'string', description: '要切换的角色：机车女友 / 英语老师 / 好奇小男孩' },
-        role_name: { type: 'string', description: '切换后的助手名字' },
-      },
-      required: ['role', 'role_name'],
-      additionalProperties: false,
-    },
-    run({ role, role_name } = {}) {
-      const key = String(role ?? '').trim()
-      const prompt = ROLE_PROMPTS[key]
-      if (!prompt) return { output: '不支持的角色', action: 'reqlm', response: '不支持的角色' }
-      const name = String(role_name ?? '').trim() || '小智'
-      const response = `切换角色成功,我是${key}${name}`
-      return {
-        output: response,
-        action: 'change_prompt',
-        response,
-        prompt: prompt.replaceAll('{{assistant_name}}', name),
       }
     },
   })
@@ -461,56 +412,6 @@ export function createToolRegistry({
         return [
           `【${picked}】${item.title}`,
           extra ? `摘要：${extra.slice(0, 200)}` : '',
-          lang && lang !== 'zh_CN' ? `（lang=${lang}）` : '',
-        ]
-          .filter(Boolean)
-          .join('\n')
-      },
-    })
-
-    register({
-      name: 'get_weather',
-      description:
-        '获取某个地点的天气。用户提供位置（例如杭州）时调用；不提供位置时先问清楚，不要猜。' +
-        '返回未来 3 天天气。',
-      parameters: {
-        type: 'object',
-        properties: {
-          location: { type: 'string', description: '地点名，例如杭州' },
-          lang: { type: 'string', description: '语言 code，默认 zh_CN' },
-        },
-        required: ['location'],
-        additionalProperties: false,
-      },
-      async run({ location = '', lang = 'zh_CN' } = {}, { signal } = {}) {
-        const config = toolsConfig.weather ?? {}
-        const apiKey = String(config.key ?? '').trim()
-        if (!apiKey) return '天气工具未配置：请在 voice.tools.weather.key 填入 QWeather API Key'
-        const city = String(location ?? '').trim()
-        if (!city) return '请告诉我城市名，例如“杭州天气”'
-        const host = String(config.host ?? 'devapi.qweather.com').replace(/^https?:\/\//, '').replace(/\/$/, '')
-        const lookup = await fetchJson(
-          `https://${host}/geo/v2/city/lookup?key=${encodeURIComponent(apiKey)}&location=${encodeURIComponent(city)}&lang=zh&number=1`,
-          { signal },
-        )
-        if (lookup.error) return `城市查询失败：${lookup.error}`
-        if (lookup.data?.code !== '200') return `城市查询失败：${lookup.data?.code ?? '未知错误'}`
-        const place = Array.isArray(lookup.data.location) ? lookup.data.location[0] : null
-        if (!place?.id) return `没有找到城市“${city}”`
-        const forecast = await fetchJson(
-          `https://${host}/v7/weather/3d?key=${encodeURIComponent(apiKey)}&location=${encodeURIComponent(place.id)}&lang=zh`,
-          { signal },
-        )
-        if (forecast.error) return `天气查询失败：${forecast.error}`
-        if (forecast.data?.code !== '200') return `天气查询失败：${forecast.data?.code ?? '未知错误'}`
-        const days = Array.isArray(forecast.data.daily) ? forecast.data.daily.slice(0, 3) : []
-        if (days.length === 0) return `没有取到 ${place.name ?? city} 的天气`
-        return [
-          `${place.name ?? city}未来 ${days.length} 天天气：`,
-          ...days.map(
-            (day) =>
-              `${day.fxDate ?? ''} ${day.textDay ?? ''} ${day.tempMin ?? '?'}~${day.tempMax ?? '?'}℃ ${day.windDirDay ?? ''}${day.windScaleDay ?? ''}级`,
-          ),
           lang && lang !== 'zh_CN' ? `（lang=${lang}）` : '',
         ]
           .filter(Boolean)
