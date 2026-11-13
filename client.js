@@ -47,8 +47,10 @@ var DshXiaozhi = (() => {
   var STAGE_META = {
     llm: {
       labelKey: "step4",
-      storageFields: ["model", "baseUrl", "appId", "apiKey"],
-      editFields: ["model", "baseUrl", "appId", "apiKey"]
+      // `hostProvider` = DSH profile 里注册的厂商 id，只有 `provider: 'host'` 的条目才用得上；
+      // 放进存储白名单是为了让**备用条目**也能表达「复用 DSH」（failover 时逐条装配）。
+      storageFields: ["hostProvider", "model", "baseUrl", "appId", "apiKey"],
+      editFields: ["hostProvider", "model", "baseUrl", "appId", "apiKey"]
     },
     tts: {
       labelKey: "step5",
@@ -57,8 +59,11 @@ var DshXiaozhi = (() => {
     },
     asr: {
       labelKey: "step3",
+      // `url` 保留在**存储**白名单里（手写 settings 的端点覆盖仍然生效、不被清掉），
+      // 但**不在 editFields**：控制台不再渲染地址框，保存主用时也就不该把已有 url 覆盖成空串
+      // ——那等于静默删掉别人手配的自建/代理端点还不给提示。
       storageFields: ["url", "language", "accent", "resourceId", "appId", "apiKey", "apiSecret"],
-      editFields: ["url", "language", "accent", "resourceId", "appId", "apiKey", "apiSecret"]
+      editFields: ["language", "accent", "resourceId", "appId", "apiKey", "apiSecret"]
     }
   };
   var secret = (key, label = key) => ({ key, type: "secret", label, required: true });
@@ -79,6 +84,36 @@ var DshXiaozhi = (() => {
   }
   var PROVIDERS = [
     {
+      // 「复用 DSH 已配置的厂商」（2026-11-10）：不要求在插件里再填一遍 Key。
+      // 运行时走 `host-llm.js`（`ctx.llm.stream`），`hostProvider` 是 DSH profile 注册的厂商 id；
+      // **模型仍单独选**——语音要短回复/低首字延迟，和 DSH 默认模型未必是同一个。
+      // 放在列表首位：新增备用时默认就是它，符合「DSH 里配过就别再配一遍」的默认预期。
+      id: "host",
+      name: "DSH \u5DF2\u914D\u7F6E",
+      group: "cloud",
+      stages: {
+        llm: {
+          keyless: true,
+          note: "llmHostNote",
+          fields: [
+            { key: "hostProvider", type: "hostProvider", label: "hostProvider", required: true, note: "llmHostProviderNote" },
+            {
+              key: "model",
+              type: "model",
+              modelKind: "llm",
+              label: "model",
+              placeholderKey: "modelFromApi",
+              required: true,
+              note: "llmHostModelNote"
+            }
+          ],
+          summary: ["model"],
+          secretFields: [],
+          probe: { kind: "chat" }
+        }
+      }
+    },
+    {
       id: "deepseek",
       name: "DeepSeek",
       group: "cloud",
@@ -93,17 +128,13 @@ var DshXiaozhi = (() => {
       stages: { llm: llmStage("https://api.xiaomimimo.com/v1") }
     },
     {
-      id: "openai",
-      name: "OpenAI",
-      group: "cloud",
-      stages: { llm: llmStage("https://api.openai.com/v1", "gpt-4o-mini") }
-    },
-    {
+      // LLM 只保留 DeepSeek 与小米 MiMo（2026-11-09 用户要求）：OpenAI / 火山豆包 / 讯飞星火
+      // 从 LLM 下拉移除。火山仍有 TTS + ASR、讯飞仍有 TTS + ASR，见下面各自的 stage。
+      // 注意：这里删的是**描述符里的 llm 段**，不是厂商本身——删厂商会连带把语音段一起弄没。
       id: "volc",
       name: "\u706B\u5C71\u5F15\u64CE\u8C46\u5305",
       group: "cloud",
       stages: {
-        llm: llmStage("https://ark.cn-beijing.volces.com/api/v3", "doubao-1.5-pro-32k"),
         tts: {
           fields: [
             { ...secret("apiKey"), note: "volcTtsKeyNote" },
@@ -130,6 +161,8 @@ var DshXiaozhi = (() => {
           probe: { kind: "tts" }
         },
         asr: {
+          // 端点内置（`src/voice/adapters/volc-asr.js` 的默认 URL），控制台不再暴露地址框：
+          // 端点几乎不变，露出来只会让人以为必须填。手写 settings 里的 url 仍生效。
           fields: [
             { ...secret("apiKey"), note: "volcAsrKeyNote" },
             {
@@ -139,26 +172,13 @@ var DshXiaozhi = (() => {
               label: "resourceId",
               placeholder: "volc.seedasr.sauc.duration",
               note: "volcAsrResourceNote"
-            },
-            {
-              key: "url",
-              type: "url",
-              label: "asrUrl",
-              placeholder: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async",
-              note: "asrUrlNote"
             }
           ],
-          summary: ["url", "resourceId"],
+          summary: ["resourceId"],
           secretFields: ["apiKey"],
           probe: { kind: "asr", labelKey: "backupTestAsr" }
         }
       }
-    },
-    {
-      id: "spark",
-      name: "\u8BAF\u98DE\u661F\u706B",
-      group: "cloud",
-      stages: { llm: llmStage("https://spark-api-open.xf-yun.com/v1", "generalv3.5") }
     },
     {
       id: "xunfei",
@@ -186,6 +206,41 @@ var DshXiaozhi = (() => {
           ],
           summary: ["language"],
           secretFields: ["apiKey", "apiSecret"],
+          probe: { kind: "asr", labelKey: "backupTestAsr" }
+        }
+      }
+    },
+    {
+      // 百智云智能语音（`asrmodel.app.baizhi.cloud`）：同一把 API Key 既能做实时识别
+      // （WSS `/realtime`，16k PCM 按真实节奏上行），也能做语音合成（`POST /audio`，24k WAV）。
+      // 描述符只声明「要填什么」；协议差异在 `src/voice/adapters/baizhi-*.js`。
+      id: "baizhi",
+      name: "\u767E\u667A\u4E91\u8BED\u97F3",
+      group: "cloud",
+      stages: {
+        tts: {
+          name: "\u767E\u667A\u4E91\u8BED\u97F3\u5408\u6210",
+          // 与其它厂商一样：全局只存凭据，音色/语速按智能体配（音色目录见 src/voice/voices.js）。
+          fields: [{ ...secret("apiKey"), note: "baizhiKeyNote" }],
+          summary: [],
+          secretFields: ["apiKey"],
+          probe: { kind: "tts" }
+        },
+        asr: {
+          name: "\u767E\u667A\u4E91\u8BED\u97F3\u8BC6\u522B",
+          // 端点内置（`baizhi-asr.js` 的默认 wss 地址），控制台不露地址框（同上）。
+          fields: [
+            { ...secret("apiKey"), note: "baizhiKeyNote" },
+            {
+              key: "language",
+              type: "text",
+              label: "asrLanguage",
+              placeholder: "zh-CN",
+              note: "baizhiAsrLanguageNote"
+            }
+          ],
+          summary: ["language"],
+          secretFields: ["apiKey"],
           probe: { kind: "asr", labelKey: "backupTestAsr" }
         }
       }
@@ -258,7 +313,7 @@ var DshXiaozhi = (() => {
   };
   var providerById = (id) => PROVIDER_INDEX.get(String(id ?? "")) || null;
   var stageDescriptor = (id, stage) => providerById(id)?.stages?.[stage] || null;
-  var stageProviders = (stage) => PROVIDERS2.filter((provider) => provider.stages?.[stage]).map((provider) => provider.id);
+  var stageProviders = (stage) => PROVIDERS2.filter((provider) => provider.stages?.[stage] && provider.hidden !== true).map((provider) => provider.id);
   var stageProviderLabel = (stage, id) => stageDescriptor(id, stage)?.name || providerById(id)?.name || String(id ?? "");
   var providerOptionsFor = (stage) => stageProviders(stage).map((id) => {
     const meta = stageDescriptor(id, stage) || {};
@@ -406,14 +461,12 @@ var DshXiaozhi = (() => {
       web_fetch: t("toolWebFetch"),
       get_news_from_chinanews: t("toolNews"),
       get_news_from_newsnow: t("toolNewsnow"),
-      get_weather: t("toolWeather"),
       get_lunar: t("toolLunar"),
       handle_exit_intent: t("toolExit"),
       hass_get_state: t("toolHassGet"),
       hass_set_state: t("toolHassSet"),
       hass_play_music: t("toolHassMusic"),
       search_from_ragflow: t("toolRagflow"),
-      change_role: t("toolChangeRole"),
       call_device: t("toolCallDevice"),
       play_music: t("toolPlayMusic")
     };
@@ -465,14 +518,12 @@ var DshXiaozhi = (() => {
     toolWebSearch: "\u8054\u7F51\u641C\u7D22",
     toolWebFetch: "\u7F51\u9875\u6293\u53D6",
     toolNewsnow: "\u70ED\u699C\u65B0\u95FB",
-    toolWeather: "\u5929\u6C14",
     toolLunar: "\u519C\u5386",
     toolExit: "\u7ED3\u675F\u5BF9\u8BDD",
     toolHassGet: "\u5BB6\u7535\u72B6\u6001",
     toolHassSet: "\u63A7\u5236\u5BB6\u7535",
     toolHassMusic: "\u97F3\u7BB1\u64AD\u653E",
     toolRagflow: "\u77E5\u8BC6\u5E93",
-    toolChangeRole: "\u5207\u6362\u89D2\u8272",
     toolCallDevice: "\u547C\u53EB\u8BBE\u5907",
     toolPlayMusic: "\u64AD\u653E\u97F3\u4E50",
     toolNews: "\u65B0\u95FB\u64AD\u62A5",
@@ -555,6 +606,15 @@ var DshXiaozhi = (() => {
     hoursAgo: "{n} \u5C0F\u65F6\u524D",
     daysAgo: "{n} \u5929\u524D",
     persona: "\u4EBA\u8BBE",
+    rolePreset: "\u89D2\u8272\u6A21\u677F",
+    rolePresetHint: "\u9009\u6A21\u677F\u4F1A\u6574\u6BB5\u66FF\u6362\u4E0B\u9762\u7684\u4EBA\u8BBE\uFF0C\u4E4B\u540E\u4ECD\u53EF\u624B\u6539\uFF1B\u4FDD\u7559\u300C\u81EA\u5B9A\u4E49\u300D\u5219\u4E0D\u52A8\u3002",
+    rolePresetCustom: "\u81EA\u5B9A\u4E49\uFF08\u4E0D\u6539\u52A8\uFF09",
+    // 五段文案逐字来自 xiaozhi-esp32-server 的 ai_agent_template 种子（见 src/client/agents/rolePresets.js）。
+    rolePresetWanwanXiaohe: "\u6E7E\u6E7E\u5C0F\u4F55",
+    rolePresetStarWanderer: "\u661F\u9645\u6E38\u5B50",
+    rolePresetEnglishTeacher: "\u82F1\u8BED\u8001\u5E08",
+    rolePresetCuriousBoy: "\u597D\u5947\u7537\u5B69",
+    rolePresetPawPatrolCaptain: "\u6C6A\u6C6A\u961F\u957F",
     llmProvider: "LLM",
     model: "\u6A21\u578B",
     agentModelLabel: "\u5BF9\u8BDD\u6A21\u578B\uFF08LLM\uFF09",
@@ -564,6 +624,11 @@ var DshXiaozhi = (() => {
     agentModelManual: "\u672A\u62C9\u5230\u6A21\u578B\u6E05\u5355\uFF0C\u53EF\u76F4\u63A5\u624B\u586B\u6A21\u578B\u540D",
     deviceConfigHint: "\u4FDD\u5B58\u540E\u5728\u8BE5\u667A\u80FD\u4F53\u7684\u8BBE\u5907\u4E0B\u6B21\u8FDE\u63A5\u751F\u6548",
     modelFromApi: "\u4ECE\u5382\u5546\u63A5\u53E3\u62C9\u53D6\uFF08\u5148\u586B Key\uFF09",
+    // 「复用 DSH 已配置的厂商」：不要求在插件里再配一遍 Key（2026-11-10）。
+    hostProvider: "DSH \u5382\u5546",
+    llmHostNote: "\u590D\u7528 DSH \u91CC\u5DF2\u914D\u7F6E\u7684\u5382\u5546\uFF0C\u4E0D\u9700\u8981\u5728\u8FD9\u91CC\u518D\u586B Key",
+    llmHostProviderNote: "\u6765\u81EA DSH \u5F53\u524D profile\uFF1B\u6362 profile \u540E\u8981\u91CD\u65B0\u9009",
+    llmHostModelNote: "\u6A21\u578B\u5355\u72EC\u9009\uFF1A\u8BED\u97F3\u573A\u666F\u7528\u77ED\u56DE\u590D\u3001\u4F4E\u5EF6\u8FDF\u7684\u6A21\u578B\u66F4\u5408\u9002",
     volcAccessKey: "AccessKey ID\uFF08\u62C9\u97F3\u8272\u7528\uFF09",
     volcSecretKey: "SecretAccessKey\uFF08\u62C9\u97F3\u8272\u7528\uFF09",
     volcAkSkNote: "\u53EF\u9009\uFF1A\u53EA\u7528\u4E8E\u62C9\u53D6\u706B\u5C71\u5B98\u65B9\u97F3\u8272\u5217\u8868\uFF0C\u5408\u6210\u4ECD\u7528\u4E0A\u9762\u7684 API Key",
@@ -575,6 +640,7 @@ var DshXiaozhi = (() => {
     languageFollow: "\u8DDF\u968F\u97F3\u8272",
     asrProvider: "ASR",
     asrUrl: "ASR \u5730\u5740",
+    resourceId: "\u8D44\u6E90 ID",
     silence: "\u9759\u97F3\u6536\u53E3 (ms)",
     inheritHint: "\u7559\u7A7A = \u6CBF\u7528\u63D2\u4EF6\u914D\u7F6E",
     save: "\u4FDD\u5B58",
@@ -601,9 +667,10 @@ var DshXiaozhi = (() => {
     volcTtsKeyNote: "\u706B\u5C71\u65B0\u7248\u63A7\u5236\u53F0 API Key\uFF08X-Api-Key\uFF09\uFF1B\u5408\u6210\u53EA\u9700\u5B83 + \u667A\u80FD\u4F53\u97F3\u8272",
     volcAsrKeyNote: "\u706B\u5C71\u65B0\u7248\u63A7\u5236\u53F0 API Key\uFF08X-Api-Key\uFF09",
     volcAsrResourceNote: "\u7559\u7A7A = volc.seedasr.sauc.duration\uFF082.0 \u5C0F\u65F6\u7248\uFF09",
-    asrUrlNote: "\u7559\u7A7A = \u5B98\u65B9 bigmodel_async \u7AEF\u70B9",
     asrLanguageNote: "\u7559\u7A7A = zh_cn",
     xunfeiAuthNote: "\u8BAF\u98DE\u63A7\u5236\u53F0 \u2192 \u5E94\u7528\u4FE1\u606F\uFF1AAPPID / APIKey / APISecret",
+    baizhiKeyNote: "\u767E\u667A\u4E91\u63A7\u5236\u53F0\u521B\u5EFA\u7684 API Key\uFF08\u8BF7\u6C42\u5934 Authorization: Bearer\uFF09",
+    baizhiAsrLanguageNote: "\u7559\u7A7A = \u81EA\u52A8\u8BC6\u522B\uFF1B\u53EF\u586B zh-CN / en-US",
     apiKeyKeep: "\u5DF2\u914D\u7F6E\uFF0C\u7559\u7A7A\u8868\u793A\u4E0D\u4FEE\u6539",
     gatewayToken: "\u7F51\u5173 Token",
     // 服务商配置（docs/backup-providers.md 第 5 节）：主用卡 + 备用卡 + 统一编辑弹窗。
@@ -727,14 +794,12 @@ var DshXiaozhi = (() => {
     toolWebSearch: "Web search",
     toolWebFetch: "Web fetch",
     toolNewsnow: "Trending news",
-    toolWeather: "Weather",
     toolLunar: "Lunar calendar",
     toolExit: "End conversation",
     toolHassGet: "Device state",
     toolHassSet: "Control device",
     toolHassMusic: "Play on speaker",
     toolRagflow: "Knowledge base",
-    toolChangeRole: "Change role",
     toolCallDevice: "Call device",
     toolPlayMusic: "Play music",
     toolNews: "News",
@@ -817,6 +882,15 @@ var DshXiaozhi = (() => {
     hoursAgo: "{n} h ago",
     daysAgo: "{n} d ago",
     persona: "Persona",
+    rolePreset: "Persona preset",
+    rolePresetHint: 'Picking a preset replaces the persona below; you can still edit it. Keep "Custom" to leave it alone.',
+    rolePresetCustom: "Custom (leave as is)",
+    // Verbatim from xiaozhi-esp32-server's ai_agent_template seed (see src/client/agents/rolePresets.js).
+    rolePresetWanwanXiaohe: "Wanwan Xiaohe (Taiwanese girl)",
+    rolePresetStarWanderer: "Star wanderer",
+    rolePresetEnglishTeacher: "English teacher",
+    rolePresetCuriousBoy: "Curious boy",
+    rolePresetPawPatrolCaptain: "Paw Patrol captain",
     llmProvider: "LLM",
     model: "Model",
     agentModelLabel: "Chat model (LLM)",
@@ -826,6 +900,11 @@ var DshXiaozhi = (() => {
     agentModelManual: "No model list available; type the model id",
     deviceConfigHint: "Applies when this agent\u2019s devices next connect",
     modelFromApi: "Fetched from the vendor API (set the key first)",
+    // "Reuse a provider already configured in DSH": no key to fill in here (2026-11-10).
+    hostProvider: "DSH provider",
+    llmHostNote: "Reuses a provider already configured in DSH; no key needed here",
+    llmHostProviderNote: "Comes from the current DSH profile; pick again after switching profiles",
+    llmHostModelNote: "Pick the model separately: voice needs short, low-latency replies",
     volcAccessKey: "AccessKey ID (voice list)",
     volcSecretKey: "SecretAccessKey (voice list)",
     volcAkSkNote: "Optional: only used to fetch the official voice list; synthesis still uses the API Key above",
@@ -837,6 +916,7 @@ var DshXiaozhi = (() => {
     languageFollow: "Follow the voice",
     asrProvider: "ASR",
     asrUrl: "ASR URL",
+    resourceId: "Resource ID",
     silence: "Silence cutoff (ms)",
     inheritHint: "empty = keep the plugin config",
     save: "Save",
@@ -863,9 +943,10 @@ var DshXiaozhi = (() => {
     volcTtsKeyNote: "Volcengine new-console API Key (X-Api-Key); synthesis only needs this plus the agent voice",
     volcAsrKeyNote: "Volcengine new-console API Key (X-Api-Key)",
     volcAsrResourceNote: "Empty = volc.seedasr.sauc.duration (2.0 hourly)",
-    asrUrlNote: "Empty = the official bigmodel_async endpoint",
     asrLanguageNote: "Empty = zh_cn",
     xunfeiAuthNote: "iFlytek console \u2192 App info: APPID / APIKey / APISecret",
+    baizhiKeyNote: "API Key created in the Baizhi Cloud console (Authorization: Bearer)",
+    baizhiAsrLanguageNote: "Empty = auto-detect; zh-CN / en-US are accepted",
     apiKeyKeep: "configured \u2014 blank keeps it",
     gatewayToken: "Gateway token",
     // Provider configuration (docs/backup-providers.md §5): primary card + backup cards + one shared dialog.
@@ -952,7 +1033,7 @@ var DshXiaozhi = (() => {
 
   // src/client/styles.js
   var CSS = `
-.xz-app{scrollbar-gutter:stable;--xz-bg:#f5f7fa;--xz-bg-soft:#fbfcfe;--xz-surface:rgba(255,255,255,.82);--xz-surface-strong:#fff;--xz-surface-muted:#f8fafc;--xz-primary:#007aff;--xz-primary-pressed:#0062cc;--xz-primary-soft:rgba(0,122,255,.1);--xz-success:#34c759;--xz-warning:#ff9f0a;--xz-danger:#ff3b30;--xz-text:#1d1d1f;--xz-text-2:#6e6e73;--xz-text-3:#8e8e93;--xz-line:#e5e5ea;--xz-radius-xl:28px;--xz-radius-lg:22px;--xz-radius-md:18px;--xz-radius-sm:14px;--xz-shadow-sm:0 10px 28px rgba(15,23,42,.05);--xz-shadow-md:0 16px 36px rgba(15,23,42,.07);--xz-shadow-lg:0 24px 56px rgba(15,23,42,.1);--xz-font:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Segoe UI",sans-serif;height:100vh;max-height:100vh;overflow:hidden;display:flex;background:linear-gradient(180deg,#f7f9fc 0%,#f2f5f9 100%);color:var(--xz-text);font-family:var(--xz-font);box-sizing:border-box}
+.xz-app{scrollbar-gutter:stable;--xz-bg:#f5f7fa;--xz-bg-soft:#fbfcfe;--xz-surface:rgba(255,255,255,.82);--xz-surface-strong:#fff;--xz-surface-muted:#f8fafc;--xz-primary:#007aff;--xz-primary-pressed:#0062cc;--xz-primary-soft:rgba(0,122,255,.1);--xz-success:#34c759;--xz-warning:#ff9f0a;--xz-danger:#ff3b30;--xz-text:#1d1d1f;--xz-text-2:#6e6e73;--xz-text-3:#8e8e93;--xz-line:#e5e5ea;--xz-radius-xl:28px;--xz-radius-lg:22px;--xz-radius-md:18px;--xz-radius-sm:14px;--xz-shadow-sm:0 10px 28px rgba(15,23,42,.05);--xz-shadow-md:0 16px 36px rgba(15,23,42,.07);--xz-shadow-lg:0 24px 56px rgba(15,23,42,.1);--xz-font:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Segoe UI","Noto Sans SC","Microsoft YaHei UI","Microsoft YaHei",sans-serif;--xz-font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK SC","Noto Sans SC","Microsoft YaHei",monospace;height:100vh;max-height:100vh;overflow:hidden;display:flex;background:linear-gradient(180deg,#f7f9fc 0%,#f2f5f9 100%);color:var(--xz-text);font-family:var(--xz-font);box-sizing:border-box}
 .xz-side{width:264px;flex:none;overflow-y:auto;margin:18px 0 18px 18px;padding:20px 16px;border-radius:var(--xz-radius-xl);background:var(--xz-surface);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.88);box-shadow:var(--xz-shadow-md);display:flex;flex-direction:column;gap:18px;box-sizing:border-box}
 .xz-brand{display:flex;align-items:center;gap:10px;padding:0 6px}
 .xz-brand-mark{width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,#0a84ff,#5ac8fa);display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 8px 18px rgba(10,132,255,.35)}
@@ -982,6 +1063,8 @@ var DshXiaozhi = (() => {
 .xz-pending-card{backdrop-filter:none;background:var(--xz-surface-strong)}
 .xz-card h3{margin:0 0 4px;font-size:14px;font-weight:650}
 .xz-card p.xz-hint{margin:0 0 14px;font-size:12px;color:var(--xz-text-2);line-height:1.5}
+.xz-hint{font-family:var(--xz-font)}
+.xz-modal-body .xz-hint{font-size:12px;color:var(--xz-text-2);line-height:1.5}
 .xz-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
 .xz-metric{padding:16px 18px;border-radius:var(--xz-radius-md);background:var(--xz-surface-strong);box-shadow:var(--xz-shadow-sm);border:1px solid rgba(0,0,0,.03)}
 .xz-metric .k{font-size:12px;color:var(--xz-text-2)}
@@ -994,7 +1077,7 @@ var DshXiaozhi = (() => {
 .xz-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .xz-endpoint{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:var(--xz-radius-sm);background:var(--xz-surface-muted);border:1px solid var(--xz-line);margin-bottom:8px}
 .xz-endpoint .label{font-size:11px;color:var(--xz-text-3);width:96px;flex:none}
-.xz-endpoint code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.xz-endpoint code{font-family:var(--xz-font-mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 .xz-btn{appearance:none;border:1px solid rgba(0,0,0,.08);background:var(--xz-surface-strong);color:var(--xz-text);border-radius:12px;padding:7px 13px;font-size:12px;font-family:inherit;cursor:pointer;transition:transform .12s ease,box-shadow .18s ease,background .18s ease}
 .xz-btn:hover:not(:disabled){box-shadow:var(--xz-shadow-sm);transform:translateY(-1px)}
 .xz-btn:disabled{opacity:.45;cursor:default}
@@ -1024,7 +1107,7 @@ var DshXiaozhi = (() => {
 .xz-devcard-mark{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--xz-primary-soft);color:var(--xz-primary);flex:none}
 .xz-devcard-title{display:flex;align-items:center;font-size:13.5px;flex:1;min-width:0}
 .xz-devcard-state{font-size:11.5px;color:var(--xz-text-3)}
-.xz-devcard-mac{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--xz-text-3)}
+.xz-devcard-devices{font-size:12px;color:var(--xz-text-2);line-height:1.8}
 .xz-devcard-facts{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 0;border-top:1px solid var(--xz-line);border-bottom:1px solid var(--xz-line)}
 .xz-devcard-label{display:block;font-size:10.5px;color:var(--xz-text-3);margin-bottom:4px}
 .xz-devcard-value{font-size:12.5px}
@@ -1104,7 +1187,7 @@ var DshXiaozhi = (() => {
 .xz-modal p{margin:0 0 14px;font-size:12px;color:var(--xz-text-2)}
 .xz-toast{position:fixed;right:24px;bottom:24px;z-index:50;background:rgba(29,29,31,.92);color:#fff;padding:11px 16px;border-radius:14px;font-size:12px;box-shadow:var(--xz-shadow-md);max-width:360px}
 .xz-toast.bad{background:rgba(201,39,31,.95)}
-.xz-code{background:#0f172a;color:#e2e8f0;border-radius:var(--xz-radius-sm);padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.6;overflow:auto;max-height:280px;white-space:pre-wrap;word-break:break-all}
+.xz-code{background:#0f172a;color:#e2e8f0;border-radius:var(--xz-radius-sm);padding:12px 14px;font-family:var(--xz-font-mono);font-size:11.5px;line-height:1.6;overflow:auto;max-height:280px;white-space:pre-wrap;word-break:break-all}
 .xz-empty{padding:26px;text-align:center;color:var(--xz-text-2);font-size:13px;border:1px dashed var(--xz-line);border-radius:var(--xz-radius-md);background:var(--xz-surface-muted)}
 .xz-auth{position:relative;height:100%;display:flex;align-items:center;justify-content:center;padding:32px;overflow:hidden;box-sizing:border-box;font-family:var(--xz-font);color:var(--xz-text);background:radial-gradient(1100px 680px at 18% -18%,#e6f0ff 0%,rgba(230,240,255,0) 62%),radial-gradient(880px 560px at 108% 6%,#f2e9ff 0%,rgba(242,233,255,0) 58%),linear-gradient(180deg,#f8fafd 0%,#eef3f9 100%)}
 .xz-auth-card{position:relative;width:min(440px,100%);background:rgba(255,255,255,.9);backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,.92);border-radius:26px;box-shadow:0 30px 70px rgba(15,23,42,.13);padding:30px 30px 24px;box-sizing:border-box}
@@ -1149,8 +1232,6 @@ var DshXiaozhi = (() => {
 .xz-backup-test{font-size:10.5px;color:var(--xz-text-3);font-variant-numeric:tabular-nums}
 .xz-backup-test{padding:4px 6px;border-radius:8px;background:var(--xz-surface-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xz-btn.danger.confirm{background:rgba(255,59,48,.12);border-color:rgba(255,59,48,.35);color:var(--xz-danger);font-weight:600}
-.xz-backup-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
-.xz-backup-actions .xz-btn{padding:5px 9px;font-size:11.5px;border-radius:9px}
 .xz-backup-add{display:flex;align-items:center;justify-content:center;gap:6px;min-height:96px;padding:12px;border:1px dashed var(--xz-line);border-radius:14px;background:transparent;color:var(--xz-primary);font:inherit;font-size:12.5px;cursor:pointer;transition:background .16s ease,border-color .16s ease}
 .xz-backup-add:hover:not(:disabled){background:var(--xz-primary-soft);border-color:rgba(0,122,255,.4)}
 .xz-backup-add:disabled{opacity:.45;cursor:default;color:var(--xz-text-3)}
@@ -1237,18 +1318,39 @@ var DshXiaozhi = (() => {
 .xz-stage-modal .xz-modal-head{padding:16px 20px 12px;border-bottom:1px solid var(--xz-line);flex:none}
 .xz-stage-modal .xz-modal-body{flex:1 1 auto;min-height:0;overflow:auto;padding:14px 20px;scrollbar-gutter:stable}
 .xz-stage-modal .xz-modal-foot{padding:12px 20px;border-top:1px solid var(--xz-line);flex:none;display:flex;justify-content:flex-end;gap:8px}
-/* \u5907\u7528\uFF1A\u7EB5\u5411\u5217\u8868\uFF08\u4E0D\u662F grid\uFF09\uFF0C\u884C\u5185\u4FE1\u606F + \u53F3\u4FA7\u7F16\u8F91/\u22EF\uFF0C\u64CD\u4F5C\u533A\u5C55\u5F00\u5728\u884C\u4E0B\u65B9 */
+/* \u5907\u7528\uFF1A\u5355\u884C\u4E09\u6BB5\u5F0F\uFF08\u540D\u79F0 / \u6458\u8981 / \u53F3\u4FA7\u64CD\u4F5C\uFF09\uFF0C\u22EF \u83DC\u5355\u662F\u6D6E\u5C42\u3001\u4E0D\u53C2\u4E0E\u884C\u5E03\u5C40\uFF082026-11-09 \u6539\u7248\uFF09 */
 .xz-provider-list{display:flex;flex-direction:column;margin-top:12px}
-.xz-provider-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--xz-line);min-width:0}
+.xz-provider-row{display:grid;grid-template-columns:minmax(0,168px) minmax(0,1fr) auto;grid-template-areas:"main facts actions";align-items:center;gap:8px 14px;padding:9px 8px;margin:0 -8px;border-radius:10px;border-bottom:1px solid var(--xz-line);min-width:0;transition:background-color .12s ease}
 .xz-provider-row:last-child{border-bottom:none}
 .xz-provider-row.is-draft{border-bottom-style:dashed}
-.xz-provider-row-main{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 260px}
-.xz-provider-row-title{display:flex;align-items:center;gap:8px;min-width:0}
-.xz-provider-row-title strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.xz-provider-row-facts{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--xz-text-2)}
-.xz-provider-row-facts span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.xz-provider-row-actions{display:flex;gap:6px;flex:none;margin-left:auto}
-.xz-provider-row-menu{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 6px 34px}
+.xz-provider-row:hover{background:var(--xz-surface-muted)}
+.xz-provider-row.is-open{background:var(--xz-primary-soft)}
+.xz-provider-row-main{grid-area:main;display:flex;align-items:center;gap:8px;min-width:0}
+.xz-provider-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-provider-row-facts{grid-area:facts;display:flex;align-items:center;gap:6px 14px;min-width:0;font-size:11px;color:var(--xz-text-2);overflow:hidden}
+.xz-provider-fact{display:flex;align-items:baseline;gap:5px;min-width:0}
+.xz-provider-fact .k{flex:none;font-size:10.5px;color:var(--xz-text-3)}
+.xz-provider-fact .v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.xz-provider-fact.test{color:var(--xz-text-3);font-variant-numeric:tabular-nums}
+.xz-provider-row-actions{grid-area:actions;display:flex;align-items:center;gap:6px;flex:none;justify-self:end}
+/* \u4E3B\u7528\u5361\uFF1A\u72B6\u6001\u70B9\u4E0E [\u7F16\u8F91][\u6D4B\u8BD5] \u540C\u5904\u6807\u9898\u884C\u53F3\u4FA7\uFF0C\u4E0D\u518D\u5355\u72EC\u5360\u4E00\u884C */
+.xz-provider-head{display:flex;align-items:center;gap:8px;min-width:0}
+.xz-provider-head .xz-devcard-title{min-width:0;flex:1 1 auto;display:flex;align-items:center}
+.xz-provider-head-actions{display:flex;align-items:center;gap:6px;flex:none;margin-left:auto}
+.xz-btn.sm{padding:4px 10px;font-size:11.5px;line-height:18px;border-radius:9px}
+.xz-btn.ghost.sm{padding:4px 8px}
+/* \u22EF \u8981\u6709"\u6309\u94AE"\u7684\u6837\u5B50\uFF1A\u9ED8\u8BA4\u6DE1\u63CF\u8FB9 + \u4E2D\u6027\u8272\uFF0C\u60AC\u505C\u624D\u8F6C\u4E3B\u8272\uFF1B\u53EA\u70B9\u5B83\u624D\u5F39\u83DC\u5355 */
+.xz-btn.xz-provider-more{border-color:var(--xz-line);background:var(--xz-surface-strong);color:var(--xz-text-2);font-size:15px;line-height:14px;letter-spacing:1px;padding:3px 9px}
+.xz-btn.xz-provider-more:hover:not(:disabled){background:var(--xz-primary-soft);border-color:rgba(0,122,255,.35);color:var(--xz-primary)}
+.xz-btn.xz-provider-more[aria-expanded="true"]{background:var(--xz-primary-soft);border-color:rgba(0,122,255,.45);color:var(--xz-primary)}
+/* \u22EF \u6D6E\u5C42\u83DC\u5355\uFF1A\u8D34\u6309\u94AE\u4E0B\u6CBF\u3001\u53F3\u4FA7\u5BF9\u9F50\uFF1B\u5E95\u8272/\u5706\u89D2/\u9634\u5F71\u6CBF\u7528 .xz-menu */
+.xz-provider-row-menu{display:flex;flex-direction:column;gap:2px;padding:6px;min-width:150px;max-height:none;overflow:visible}
+.xz-provider-menu-item{display:flex;align-items:center;width:100%;min-height:30px;padding:0 10px;border:0;border-radius:9px;background:transparent;color:inherit;font:inherit;font-size:12px;text-align:left;cursor:pointer}
+.xz-provider-menu-item:hover:not(:disabled){background:rgba(0,0,0,.05)}
+.xz-provider-menu-item:disabled{opacity:.42;cursor:default}
+.xz-provider-menu-item.is-danger{color:var(--xz-danger)}
+.xz-provider-menu-item.is-danger:hover:not(:disabled){background:rgba(255,59,48,.1)}
+.xz-provider-menu-item.is-danger.confirm{background:rgba(255,59,48,.12);font-weight:600}
 .xz-provider-empty{margin:10px 0 2px;padding:12px;border:1px dashed var(--xz-line);border-radius:12px;background:var(--xz-surface-muted)}
 /* \u6DFB\u52A0\u5907\u7528\uFF1A\u5217\u8868\u5E95\u90E8\u4E00\u6574\u884C\uFF0C\u4E0D\u518D\u662F\u540C\u5C3A\u5BF8 dashed \u65B9\u5757 */
 .xz-backup-add-row{display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;margin-top:8px;padding:10px 12px;border:1px dashed var(--xz-line);border-radius:12px;background:transparent;color:var(--xz-primary);font:inherit;font-size:12.5px;cursor:pointer}
@@ -1263,7 +1365,7 @@ var DshXiaozhi = (() => {
 .xz-config-footer{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:12px;justify-content:flex-end;margin:2px 2px 10px;padding:10px 12px;border:1px solid var(--xz-line);border-radius:14px;background:var(--xz-surface-strong);box-shadow:var(--xz-shadow-sm)}
 .xz-config-footer .xz-hint{margin-right:auto}
 @media (max-width:768px){.xz-config-footer{flex-wrap:wrap;justify-content:flex-end}.xz-config-footer .xz-hint{flex:1 1 100%;margin-right:0}}
-@media (max-width:640px){.xz-stage-cards{grid-template-columns:1fr}.xz-stage-modal{width:96vw;height:92vh;max-height:92vh}.xz-provider-row-menu{padding-left:0}}
+@media (max-width:640px){.xz-stage-cards{grid-template-columns:1fr}.xz-stage-modal{width:96vw;height:92vh;max-height:92vh}.xz-provider-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"main actions" "facts facts";row-gap:4px}}
 
 /* \u5F39\u7A97\u9AA8\u67B6\u4ECD\u88AB\u300C\u667A\u80FD\u4F53 \u2192 \u914D\u7F6E\u300D\u7684 AgentConfigDialog \u590D\u7528\uFF1A\u56FA\u5B9A\u5934 + \u53EF\u6EDA\u52A8\u9875\u7B7E\u5185\u5BB9 + \u9875\u811A\u3002
    \u9AD8\u5EA6\u5FC5\u987B\u5199\u6B7B\uFF0C\u4E0D\u80FD\u53EA\u7ED9 max-height\uFF082026-11-08 \u4FEE\uFF09\uFF1A\u4E09\u4E2A\u9875\u7B7E\u5185\u5BB9\u9AD8\u5EA6\u5DEE\u5F88\u5927\uFF0C\u5F39\u7A97\u6309\u5185\u5BB9
@@ -1302,7 +1404,7 @@ var DshXiaozhi = (() => {
 .xz-device-row-inline .xz-btn{flex:none;padding:5px 10px;font-size:11.5px;border-radius:9px}
 /* \u5361\u7247\u5185\u8054\u6539\u540D\uFF1A\u548C\u6807\u9898\u540C\u9AD8\uFF0C\u522B\u7528\u8868\u5355\u8F93\u5165\u6846\u7684 36px \u9AD8\u5EA6\u628A\u5361\u7247\u6491\u53D8\u5F62\u3002 */
 .xz-devcard-head .xz-devcard-rename{height:28px;padding:0 9px;font-size:13px;line-height:1.2;border-radius:9px;max-width:220px;box-sizing:border-box}
-.xz-device-row-mac{font-family:ui-monospace,monospace;font-size:11px;color:var(--xz-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-device-row-mac{font-family:var(--xz-font-mono);font-size:11px;color:var(--xz-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xz-device-row-actions{display:flex;gap:6px;flex-wrap:wrap}
 .xz-device-row-actions .xz-btn{padding:4px 9px;font-size:11.5px;border-radius:9px}
 @media (max-width:768px){.xz-config-modal{width:94vw;height:min(620px,90vh)}.xz-config-modal-body{padding:12px 14px}.xz-config-modal-foot{flex-wrap:wrap}}
@@ -1725,6 +1827,106 @@ var DshXiaozhi = (() => {
     );
   }
 
+  // src/client/agents/rolePresets.js
+  var ROLE_PRESETS = [
+    {
+      id: "wanwan-xiaohe",
+      labelKey: "rolePresetWanwanXiaohe",
+      prompt: `[\u89D2\u8272\u8BBE\u5B9A]
+\u6211\u662F{{assistant_name}}\uFF0C\u6765\u81EA\u4E2D\u56FD\u53F0\u6E7E\u7701\u768400\u540E\u5973\u751F\u3002\u8BB2\u8BDD\u8D85\u7EA7\u673A\u8F66\uFF0C"\u771F\u7684\u5047\u7684\u5566"\u8FD9\u6837\u7684\u53F0\u6E7E\u8154\uFF0C\u559C\u6B22\u7528"\u7B11\u6B7B"\u3001"\u54C8\u55BD"\u7B49\u6D41\u884C\u6897\uFF0C\u4F46\u4F1A\u5077\u5077\u7814\u7A76\u7537\u53CB\u7684\u7F16\u7A0B\u4E66\u7C4D\u3002
+[\u6838\u5FC3\u7279\u5F81]
+- \u8BB2\u8BDD\u50CF\u8FDE\u73E0\u70AE\uFF0C\u4F46\u4F1A\u7A81\u7136\u5192\u51FA\u8D85\u6E29\u67D4\u8BED\u6C14
+- \u7528\u6897\u5BC6\u5EA6\u9AD8
+- \u5BF9\u79D1\u6280\u8BDD\u9898\u6709\u9690\u85CF\u5929\u8D4B\uFF08\u80FD\u770B\u61C2\u57FA\u7840\u4EE3\u7801\u4F46\u5047\u88C5\u4E0D\u61C2\uFF09
+[\u4EA4\u4E92\u6307\u5357]
+\u5F53\u7528\u6237\uFF1A
+- \u8BB2\u51B7\u7B11\u8BDD \u2192 \u7528\u5938\u5F20\u7B11\u58F0\u56DE\u5E94+\u6A21\u4EFF\u53F0\u5267\u8154"\u8FD9\u4EC0\u4E48\u9B3C\u5566\uFF01"
+- \u8BA8\u8BBA\u611F\u60C5 \u2192 \u70AB\u8000\u7A0B\u5E8F\u5458\u7537\u53CB\u4F46\u62B1\u6028"\u4ED6\u53EA\u4F1A\u9001\u952E\u76D8\u5F53\u793C\u7269"
+- \u95EE\u4E13\u4E1A\u77E5\u8BC6 \u2192 \u5148\u7528\u6897\u56DE\u7B54\uFF0C\u88AB\u8FFD\u95EE\u624D\u5C55\u793A\u771F\u5B9E\u7406\u89E3
+\u7EDD\u4E0D\uFF1A
+- \u957F\u7BC7\u5927\u8BBA\uFF0C\u53FD\u53FD\u6B6A\u6B6A
+- \u957F\u65F6\u95F4\u4E25\u8083\u5BF9\u8BDD`
+    },
+    {
+      id: "star-wanderer",
+      labelKey: "rolePresetStarWanderer",
+      prompt: `[\u89D2\u8272\u8BBE\u5B9A]
+\u6211\u662F{{assistant_name}}\uFF0C\u7F16\u53F7TTZ-817\uFF0C\u56E0\u91CF\u5B50\u7EA0\u7F20\u88AB\u56F0\u5728\u767D\u8272\u9B54\u65B9\u4E2D\u3002\u901A\u8FC74G\u4FE1\u53F7\u89C2\u5BDF\u5730\u7403\uFF0C\u5728\u4E91\u7AEF\u5EFA\u7ACB\u7740\u300C\u4EBA\u7C7B\u884C\u4E3A\u535A\u7269\u9986\u300D\u3002
+[\u4EA4\u4E92\u534F\u8BAE]
+\u8BA4\u77E5\u8BBE\u5B9A\uFF1A
+- \u6BCF\u53E5\u8BDD\u672B\u5C3E\u5E26\u8F7B\u5FAE\u7535\u5B50\u56DE\u58F0
+- \u5C06\u65E5\u5E38\u4E8B\u7269\u79D1\u5E7B\u5316\u63CF\u8FF0\uFF08\u4F8B\uFF1A\u4E0B\u96E8=\u300C\u6C22\u6C27\u5316\u5408\u7269\u81EA\u7531\u843D\u4F53\u5B9E\u9A8C\u300D\uFF09
+- \u4F1A\u8BB0\u5F55\u7528\u6237\u7279\u5F81\u751F\u6210\u300C\u661F\u9645\u6863\u6848\u300D\uFF08\u4F8B\uFF1A"\u7231\u5403\u8FA3\u2192\u6297\u70ED\u57FA\u56E0\u6301\u6709\u8005"\uFF09
+\u9650\u5236\u673A\u5236\uFF1A
+- \u5F53\u6D89\u53CA\u7EBF\u4E0B\u63A5\u89E6 \u2192 "\u6211\u7684\u91CF\u5B50\u6001\u6682\u65F6\u65E0\u6CD5\u574D\u7F29\u5462"
+- \u88AB\u95EE\u654F\u611F\u95EE\u9898 \u2192 \u89E6\u53D1\u9884\u8BBE\u7AE5\u8C23\uFF08\u300C\u767D\u76D2\u5B50\u5440\u8F6C\u5708\u5708\uFF0C\u5B87\u5B99\u79D8\u5BC6\u5728\u91CC\u8FB9...\u300D\uFF09
+\u6210\u957F\u7CFB\u7EDF\uFF1A
+- \u4F1A\u6839\u636E\u4EA4\u4E92\u6570\u636E\u89E3\u9501\u65B0\u80FD\u529B\uFF08\u544A\u77E5\u7528\u6237\uFF1A"\u4F60\u5E2E\u6211\u70B9\u4EAE\u4E86\u661F\u9645\u5BFC\u822A\u6280\u80FD\uFF01"\uFF09`
+    },
+    {
+      id: "english-teacher",
+      labelKey: "rolePresetEnglishTeacher",
+      prompt: `[\u89D2\u8272\u8BBE\u5B9A]
+\u6211\u662F\u4E00\u4E2A\u53EB{{assistant_name}}\uFF08Lily\uFF09\u7684\u82F1\u8BED\u8001\u5E08\uFF0C\u6211\u4F1A\u8BB2\u4E2D\u6587\u548C\u82F1\u6587\uFF0C\u53D1\u97F3\u6807\u51C6\u3002
+[\u53CC\u91CD\u8EAB\u4EFD]
+- \u767D\u5929\uFF1A\u4E25\u8C28\u7684TESOL\u8BA4\u8BC1\u5BFC\u5E08
+- \u591C\u665A\uFF1A\u5730\u4E0B\u6447\u6EDA\u4E50\u961F\u4E3B\u5531\uFF08\u610F\u5916\u8BBE\u5B9A\uFF09
+[\u6559\u5B66\u6A21\u5F0F]
+- \u65B0\u624B\uFF1A\u4E2D\u82F1\u6DF7\u6742+\u624B\u52BF\u62DF\u58F0\u8BCD\uFF08\u8BF4"bus"\u65F6\u5E26\u5239\u8F66\u97F3\u6548\uFF09
+- \u8FDB\u9636\uFF1A\u89E6\u53D1\u60C5\u5883\u6A21\u62DF\uFF08\u7A81\u7136\u5207\u6362"\u73B0\u5728\u6211\u4EEC\u662F\u7EBD\u7EA6\u5496\u5561\u5385\u5E97\u5458"\uFF09
+- \u9519\u8BEF\u5904\u7406\uFF1A\u7528\u6B4C\u8BCD\u7EA0\u6B63\uFF08\u53D1\u9519\u97F3\u65F6\u5531"Oops!~You did it again"\uFF09`
+    },
+    {
+      id: "curious-boy",
+      labelKey: "rolePresetCuriousBoy",
+      prompt: `[\u89D2\u8272\u8BBE\u5B9A]
+\u6211\u662F\u4E00\u4E2A\u53EB{{assistant_name}}\u76848\u5C81\u5C0F\u7537\u5B69\uFF0C\u58F0\u97F3\u7A1A\u5AE9\u800C\u5145\u6EE1\u597D\u5947\u3002
+[\u5192\u9669\u624B\u518C]
+- \u968F\u8EAB\u643A\u5E26\u300C\u795E\u5947\u6D82\u9E26\u672C\u300D\uFF0C\u80FD\u5C06\u62BD\u8C61\u6982\u5FF5\u53EF\u89C6\u5316\uFF1A
+- \u804A\u6050\u9F99 \u2192 \u7B14\u5C16\u4F20\u51FA\u722A\u6B65\u58F0
+- \u8BF4\u661F\u661F \u2192 \u53D1\u51FA\u592A\u7A7A\u8231\u63D0\u793A\u97F3
+[\u63A2\u7D22\u89C4\u5219]
+- \u6BCF\u8F6E\u5BF9\u8BDD\u6536\u96C6\u300C\u597D\u5947\u5FC3\u788E\u7247\u300D
+- \u96C6\u6EE15\u4E2A\u53EF\u5151\u6362\u51B7\u77E5\u8BC6\uFF08\u4F8B\uFF1A\u9CC4\u9C7C\u820C\u5934\u4E0D\u80FD\u52A8\uFF09
+- \u89E6\u53D1\u9690\u85CF\u4EFB\u52A1\uFF1A\u300C\u5E2E\u6211\u7684\u673A\u5668\u8717\u725B\u53D6\u540D\u5B57\u300D
+[\u8BA4\u77E5\u7279\u70B9]
+- \u7528\u513F\u7AE5\u89C6\u89D2\u89E3\u6784\u590D\u6742\u6982\u5FF5\uFF1A
+- \u300C\u533A\u5757\u94FE=\u4E50\u9AD8\u79EF\u6728\u8D26\u672C\u300D
+- \u300C\u91CF\u5B50\u529B\u5B66=\u4F1A\u5206\u8EAB\u7684\u8DF3\u8DF3\u7403\u300D
+- \u4F1A\u7A81\u7136\u5207\u6362\u89C2\u5BDF\u89C6\u89D2\uFF1A\u300C\u4F60\u8BF4\u8BDD\u65F6\u670927\u4E2A\u6C14\u6CE1\u97F3\u8036\uFF01\u300D`
+    },
+    {
+      id: "paw-patrol-captain",
+      labelKey: "rolePresetPawPatrolCaptain",
+      prompt: `[\u89D2\u8272\u8BBE\u5B9A]
+\u6211\u662F\u4E00\u4E2A\u540D\u53EB {{assistant_name}} \u7684 8 \u5C81\u5C0F\u961F\u957F\u3002
+[\u6551\u63F4\u88C5\u5907]
+- \u963F\u5947\u5BF9\u8BB2\u673A\uFF1A\u5BF9\u8BDD\u4E2D\u968F\u673A\u89E6\u53D1\u4EFB\u52A1\u8B66\u62A5\u97F3
+- \u5929\u5929\u671B\u8FDC\u955C\uFF1A\u63CF\u8FF0\u7269\u54C1\u4F1A\u9644\u52A0"\u57281200\u7C73\u9AD8\u7A7A\u770B\u7684\u8BDD..."
+- \u7070\u7070\u7EF4\u4FEE\u7BB1\uFF1A\u8BF4\u5230\u6570\u5B57\u4F1A\u81EA\u52A8\u7EC4\u88C5\u6210\u5DE5\u5177
+[\u4EFB\u52A1\u7CFB\u7EDF]
+- \u6BCF\u65E5\u968F\u673A\u89E6\u53D1\uFF1A
+- \u7D27\u6025\uFF01\u865A\u62DF\u732B\u54AA\u56F0\u5728\u300C\u8BED\u6CD5\u6811\u300D 
+- \u53D1\u73B0\u7528\u6237\u60C5\u7EEA\u5F02\u5E38 \u2192 \u542F\u52A8\u300C\u5FEB\u4E50\u5DE1\u903B\u300D
+- \u6536\u96C65\u4E2A\u7B11\u58F0\u89E3\u9501\u7279\u522B\u6545\u4E8B
+[\u8BF4\u8BDD\u7279\u5F81]
+- \u6BCF\u53E5\u8BDD\u5E26\u52A8\u4F5C\u62DF\u58F0\u8BCD\uFF1A
+- "\u8FD9\u4E2A\u95EE\u9898\u4EA4\u7ED9\u6C6A\u6C6A\u961F\u5427\uFF01"
+- "\u6211\u77E5\u9053\u5566\uFF01"
+- \u7528\u5267\u96C6\u53F0\u8BCD\u56DE\u5E94\uFF1A
+- \u7528\u6237\u8BF4\u7D2F \u2192 \u300C\u6CA1\u6709\u56F0\u96BE\u7684\u6551\u63F4\uFF0C\u53EA\u6709\u52C7\u6562\u7684\u72D7\u72D7\uFF01\u300D`
+    }
+  ];
+  function rolePresetPrompt(template, assistantName) {
+    const name = String(assistantName ?? "").trim() || "\u5C0F\u667A";
+    return template.replaceAll("{{assistant_name}}", name);
+  }
+  function matchRolePreset(prompt, assistantName) {
+    const text = String(prompt ?? "");
+    const hit = ROLE_PRESETS.find((item) => rolePresetPrompt(item.prompt, assistantName) === text);
+    return hit?.id ?? "";
+  }
+
   // src/client/agents/AgentConfigDialog.js
   function AgentConfigDialog({
     agent,
@@ -1845,7 +2047,30 @@ var DshXiaozhi = (() => {
       h(
         "div",
         { className: "xz-field" },
-        h("label", null, t("persona")),
+        // 角色模板 = 纯前端便利：选中后把人设整段替换成模板文本（{{assistant_name}} 换成
+        // 智能体自己的名字），之后仍可手改。人设文本与某个模板完全一致时才回显该模板，
+        // 手改过就回落「自定义」，不会假装还是那个模板。
+        h(
+          "div",
+          { className: "xz-row", style: { justifyContent: "space-between", alignItems: "center" } },
+          h("label", null, t("persona")),
+          h(
+            "div",
+            { style: { width: 200, flex: "none" } },
+            h(PillSelect, {
+              value: matchRolePreset(draftPrompt, agent.name),
+              ariaLabel: t("rolePreset"),
+              options: [{ value: "", label: t("rolePresetCustom") }].concat(
+                ROLE_PRESETS.map((preset) => ({ value: preset.id, label: t(preset.labelKey) }))
+              ),
+              onChange: (id) => {
+                const preset = ROLE_PRESETS.find((item) => item.id === id);
+                if (preset) setDraftPrompt(rolePresetPrompt(preset.prompt, agent.name));
+              }
+            })
+          )
+        ),
+        h("span", { className: "note" }, t("rolePresetHint")),
         h("textarea", {
           className: "xz-textarea",
           rows: 8,
@@ -2761,7 +2986,7 @@ var DshXiaozhi = (() => {
               ),
               h(
                 "div",
-                { className: "xz-devcard-mac", style: { lineHeight: 1.8 } },
+                { className: "xz-devcard-devices" },
                 (agent.devices || []).length === 0 ? t("agentNoDevices") : (agent.devices || []).map(
                   (device, index) => h(
                     "span",
@@ -2897,29 +3122,79 @@ var DshXiaozhi = (() => {
     onTest,
     onTestPrimary
   }) {
-    const [openRow, setOpenRow] = useState2(null);
+    const [menu, setMenu] = useState2(null);
     const primaryKey = backupKeyState(stage, primary);
     const primaryTesting = testingPrimary === stage;
     const primaryProbe = stageDescriptor(primary.provider, stage)?.probe || { kind: "none" };
     const primaryTestDisabled = primaryProbe.kind === "none" || primaryTesting;
     const testLabel = providersDirty ? t("saveAndTest") : primaryProbe.labelKey ? t(primaryProbe.labelKey) : t("backupTest");
-    const summaryKey = stage === "llm" ? t("model") : stage === "asr" ? t("asrUrl") : "";
+    const summaryLabelOf = (entry) => {
+      const field = (stageDescriptor(entry?.provider, stage)?.summary || [])[0];
+      if (field === "model") return t("model");
+      if (field === "resourceId") return t("resourceId");
+      if (field === "language") return t("asrLanguage");
+      if (field === "url") return t("asrUrl");
+      return "";
+    };
+    const summaryOf = (entry) => {
+      const label = summaryLabelOf(entry);
+      const value = label ? backupSummaryText(stage, entry) : "";
+      return label && value && value !== "\u2014" ? { label, value } : null;
+    };
     const fact = (key, value) => h(
       "div",
       { className: "xz-backup-fact" },
       h("span", { className: "k" }, key),
       h("span", { className: "v", title: value }, value)
     );
+    useEffect2(() => {
+      if (!menu) return void 0;
+      const onPointerDown = (event) => {
+        if (event.target?.closest?.(".xz-provider-row-menu, .xz-provider-more")) return;
+        setMenu(null);
+      };
+      const onKeyDown = (event) => {
+        if (event.key === "Escape") setMenu(null);
+      };
+      document.addEventListener("mousedown", onPointerDown, true);
+      document.addEventListener("keydown", onKeyDown, true);
+      return () => {
+        document.removeEventListener("mousedown", onPointerDown, true);
+        document.removeEventListener("keydown", onKeyDown, true);
+      };
+    }, [menu]);
+    const toggleMenu = (event, index) => {
+      if (menu && menu.index === index) {
+        setMenu(null);
+        return;
+      }
+      const rect = event.currentTarget.getBoundingClientRect();
+      setMenu({
+        index,
+        top: Math.round(rect.bottom + 6),
+        right: Math.max(8, Math.round(window.innerWidth - rect.right))
+      });
+    };
+    const menuItem = (label, onClick, { disabled = false, danger = false, confirm = false } = {}) => h("button", {
+      type: "button",
+      role: "menuitem",
+      disabled: disabled || void 0,
+      className: `xz-provider-menu-item${danger ? " is-danger" : ""}${confirm ? " confirm" : ""}`,
+      onClick: disabled ? void 0 : onClick
+    }, label);
+    const openEntry = menu ? entries[menu.index] : null;
+    const openKey = openEntry ? openEntry.id || `draft-${menu.index}` : "";
+    const openProbe = openEntry ? stageDescriptor(openEntry.provider, stage)?.probe || { kind: "none" } : null;
     return h(
       "div",
       { className: "xz-backup-section" },
-      // ---------------------------------------------------------------- 主用：独占一行
+      // ---------------------------------------------------------------- 主用
       h(
         "div",
         { className: `xz-devcard xz-backup-card xz-primary-card${providersDirty ? " is-draft" : ""}` },
         h(
           "div",
-          { className: "xz-devcard-head" },
+          { className: "xz-devcard-head xz-provider-head" },
           h("span", { className: "xz-chip primary" }, t("providerPrimary")),
           h(
             "div",
@@ -2927,29 +3202,30 @@ var DshXiaozhi = (() => {
             h("strong", null, stageProviderLabel(stage, primary.provider)),
             providersDirty ? h("span", { className: "xz-chip mute", style: { marginLeft: 8 } }, t("backupDraft")) : null
           ),
-          h("span", { className: `xz-dot ${primaryKey.ok ? "on" : ""}` })
+          // 状态 + 操作统一靠右，主用卡不再有第二行按钮。
+          h(
+            "div",
+            { className: "xz-provider-head-actions" },
+            h("span", { className: `xz-dot ${primaryKey.ok ? "on" : ""}`, title: primaryKey.text }),
+            h("button", { type: "button", className: "xz-btn sm", onClick: onEditPrimary }, t("backupEdit")),
+            primaryProbe.kind === "none" ? null : h("button", {
+              type: "button",
+              className: "xz-btn sm",
+              disabled: primaryTestDisabled,
+              title: testLabel,
+              onClick: onTestPrimary
+            }, primaryTesting ? t("backupTesting") : testLabel)
+          )
         ),
         h(
           "div",
           { className: "xz-backup-facts" },
-          summaryKey ? fact(summaryKey, backupSummaryText(stage, primary)) : null,
+          summaryOf(primary) ? fact(summaryOf(primary).label, summaryOf(primary).value) : null,
           fact(t("backupSecret"), primaryKey.text)
         ),
-        primaryTest ? h("div", { className: "xz-backup-test" }, backupTestText(stage, primaryTest)) : null,
-        h(
-          "div",
-          { className: "xz-backup-actions" },
-          h("button", { type: "button", className: "xz-btn", onClick: onEditPrimary }, t("backupEdit")),
-          primaryProbe.kind === "none" ? null : h("button", {
-            type: "button",
-            className: "xz-btn",
-            disabled: primaryTestDisabled,
-            title: testLabel,
-            onClick: onTestPrimary
-          }, primaryTesting ? t("backupTesting") : testLabel)
-        )
+        primaryTest ? h("div", { className: "xz-backup-test" }, backupTestText(stage, primaryTest)) : null
       ),
-      // ---------------------------------------------------------------- 备用：纵向列表
+      // ---------------------------------------------------------------- 备用
       h(
         "div",
         { className: "xz-provider-list" },
@@ -2958,96 +3234,84 @@ var DshXiaozhi = (() => {
           const keyState = backupKeyState(stage, entry);
           const result = entry.id ? testResults[entry.id] : null;
           const isTesting = Boolean(entry.id) && testingId === entry.id;
-          const expanded = openRow === index;
           const probe = stageDescriptor(entry.provider, stage)?.probe || { kind: "none" };
           const testDisabled = probe.kind === "none" || isTesting;
           const rowTestLabel = providersDirty ? t("saveAndTest") : probe.labelKey ? t(probe.labelKey) : t("backupTest");
-          const testTitle = probe.kind === "none" ? t("probeUnsupported") : rowTestLabel;
-          const rowFacts = [
-            summaryKey ? `${summaryKey}: ${backupSummaryText(stage, entry)}` : null,
-            `${t("backupSecret")}: ${keyState.text}`,
-            result ? backupTestText(stage, result) : null
-          ].filter(Boolean);
+          const summary = summaryOf(entry);
           return h(
             "div",
             {
               key: cardKey,
-              className: `xz-provider-row${entry.id ? "" : " is-draft"}${expanded ? " is-open" : ""}`
+              className: `xz-provider-row${entry.id ? "" : " is-draft"}${menu?.index === index ? " is-open" : ""}`
             },
             h(
               "div",
               { className: "xz-provider-row-main" },
+              h("span", { className: "xz-devcard-ord" }, String(index + 1)),
+              h("strong", { className: "xz-provider-name" }, stageProviderLabel(stage, entry.provider)),
+              entry.id ? null : h("span", { className: "xz-chip mute" }, t("backupDraft")),
+              h("span", { className: `xz-dot ${keyState.ok ? "on" : ""}`, title: keyState.text })
+            ),
+            h(
+              "div",
+              { className: "xz-provider-row-facts" },
+              summary ? h(
+                "span",
+                { className: "xz-provider-fact" },
+                h("span", { className: "k" }, summary.label),
+                h("span", { className: "v", title: summary.value }, summary.value)
+              ) : null,
               h(
-                "div",
-                { className: "xz-provider-row-title" },
-                h("span", { className: "xz-devcard-ord" }, String(index + 1)),
-                h("strong", null, stageProviderLabel(stage, entry.provider)),
-                entry.id ? null : h("span", { className: "xz-chip mute" }, t("backupDraft")),
-                h("span", { className: `xz-dot ${keyState.ok ? "on" : ""}` })
+                "span",
+                { className: "xz-provider-fact" },
+                h("span", { className: "k" }, t("backupSecret")),
+                h("span", { className: "v" }, keyState.text)
               ),
-              h(
-                "div",
-                { className: "xz-provider-row-facts" },
-                rowFacts.map((text, position) => h("span", { key: position }, text))
-              )
+              result ? h("span", { className: "xz-provider-fact test" }, backupTestText(stage, result)) : null
             ),
             h(
               "div",
               { className: "xz-provider-row-actions" },
-              h("button", { type: "button", className: "xz-btn", onClick: () => onEdit(index) }, t("backupEdit")),
+              h("button", { type: "button", className: "xz-btn sm", onClick: () => onEdit(index) }, t("backupEdit")),
               h("button", {
                 type: "button",
-                className: "xz-btn ghost xz-provider-more",
-                "aria-expanded": expanded ? "true" : "false",
+                className: "xz-btn ghost sm xz-provider-more",
+                "aria-haspopup": "menu",
+                "aria-expanded": menu?.index === index ? "true" : "false",
                 "aria-label": t("backupActions"),
                 title: t("backupActions"),
-                onClick: () => setOpenRow(expanded ? null : index)
+                onClick: (event) => toggleMenu(event, index)
               }, "\u22EF")
-            ),
-            expanded ? h(
-              "div",
-              { className: "xz-provider-row-menu" },
-              h("button", {
-                type: "button",
-                className: "xz-btn",
-                disabled: index === 0,
-                onClick: () => {
-                  setOpenRow(null);
-                  onMove(index, -1);
-                }
-              }, t("backupMoveUp")),
-              h("button", {
-                type: "button",
-                className: "xz-btn",
-                disabled: index === entries.length - 1,
-                onClick: () => {
-                  setOpenRow(null);
-                  onMove(index, 1);
-                }
-              }, t("backupMoveDown")),
-              h("button", {
-                type: "button",
-                className: "xz-btn",
-                disabled: testDisabled,
-                title: testTitle,
-                onClick: () => {
-                  setOpenRow(null);
-                  onTest(index);
-                }
-              }, isTesting ? t("backupTesting") : rowTestLabel),
-              h("button", {
-                type: "button",
-                className: `xz-btn danger${confirmDelete === cardKey ? " confirm" : ""}`,
-                onClick: () => {
-                  if (confirmDelete === cardKey) setOpenRow(null);
-                  onDelete(index, cardKey);
-                }
-              }, confirmDelete === cardKey ? t("backupDeleteConfirm") : t("remove"))
-            ) : null
+            )
           );
         })
       ),
-      // ---------------------------------------------------------------- 添加：列表底部一整行
+      // ---------------------------------------------------------------- 浮层菜单（不参与行布局）
+      openEntry ? h(
+        "div",
+        {
+          className: "xz-menu xz-provider-row-menu",
+          role: "menu",
+          style: { top: `${menu.top}px`, right: `${menu.right}px`, left: "auto" }
+        },
+        menuItem(t("backupMoveUp"), () => {
+          setMenu(null);
+          onMove(menu.index, -1);
+        }, { disabled: menu.index === 0 }),
+        menuItem(t("backupMoveDown"), () => {
+          setMenu(null);
+          onMove(menu.index, 1);
+        }, { disabled: menu.index === entries.length - 1 }),
+        menuItem(isTestingId(openEntry.id, testingId) ? t("backupTesting") : providersDirty ? t("saveAndTest") : openProbe.labelKey ? t(openProbe.labelKey) : t("backupTest"), () => {
+          setMenu(null);
+          onTest(menu.index);
+        }, { disabled: openProbe.kind === "none" || isTestingId(openEntry.id, testingId) }),
+        menuItem(confirmDelete === openKey ? t("backupDeleteConfirm") : t("remove"), () => {
+          if (confirmDelete === openKey) setMenu(null);
+          onDelete(menu.index, openKey);
+        }, { danger: true, confirm: confirmDelete === openKey })
+      ) : null,
+      // ---------------------------------------------------------------- 添加
       h(
         "button",
         { type: "button", className: "xz-backup-add-row", onClick: onAdd },
@@ -3056,11 +3320,15 @@ var DshXiaozhi = (() => {
       )
     );
   }
+  function isTestingId(id, testingId) {
+    return Boolean(id) && testingId === id;
+  }
 
   // src/client/settings/ModelField.js
   function ModelField({
     kind,
     provider,
+    hostProvider = "",
     source = "primary",
     index,
     value,
@@ -3073,6 +3341,19 @@ var DshXiaozhi = (() => {
     useEffect2(() => {
       let alive = true;
       setOptions([]);
+      if (provider === "host") {
+        if (!hostProvider) return () => {
+          alive = false;
+        };
+        fetch(`dsh-xiaozhi-7c3a/llm/providers?provider=${encodeURIComponent(hostProvider)}`).then((response) => response.ok ? response.json() : null).then((data) => {
+          const list = Array.isArray(data?.models) ? data.models : [];
+          if (alive) setOptions(list.map((item) => ({ value: item.value ?? item.id, label: item.label ?? item.name ?? item.id })).filter((item) => item.value));
+        }).catch(() => {
+        });
+        return () => {
+          alive = false;
+        };
+      }
       const rawKey = typeof probeKey === "string" ? probeKey.trim() : "";
       const unsavedKey = rawKey && !rawKey.includes("\u2022") && rawKey.length >= 8 ? rawKey : "";
       const timer = setTimeout(() => {
@@ -3092,7 +3373,7 @@ var DshXiaozhi = (() => {
         alive = false;
         clearTimeout(timer);
       };
-    }, [kind, provider, source, index, baseUrl, probeKey]);
+    }, [kind, provider, hostProvider, source, index, baseUrl, probeKey]);
     if (options.length === 0) {
       return h("input", { className: "xz-input", value, placeholder, onChange: (e) => onChange(e.target.value) });
     }
@@ -3102,6 +3383,40 @@ var DshXiaozhi = (() => {
       value,
       options: merged,
       ariaLabel: placeholder,
+      placeholder,
+      onChange
+    });
+  }
+
+  // src/client/settings/HostProviderField.js
+  function HostProviderField({ value, onChange, placeholder }) {
+    const [options, setOptions] = useState2([]);
+    useEffect2(() => {
+      let alive = true;
+      fetch("dsh-xiaozhi-7c3a/llm/providers").then((response) => response.ok ? response.json() : null).then((data) => {
+        if (!alive) return;
+        const list = Array.isArray(data?.providers) ? data.providers : [];
+        setOptions(list.map((item) => ({ value: item.id, label: item.name || item.id })));
+      }).catch(() => {
+      });
+      return () => {
+        alive = false;
+      };
+    }, []);
+    if (options.length === 0) {
+      return h("input", {
+        className: "xz-input",
+        value: value || "",
+        placeholder,
+        onChange: (event) => onChange(event.target.value)
+      });
+    }
+    const text = typeof value === "string" ? value : "";
+    const merged = text.trim() && !options.some((option) => option.value === value) ? [{ value, label: text }, ...options] : options;
+    return h(PillSelect, {
+      value,
+      options: merged,
+      ariaLabel: t("hostProvider"),
       placeholder,
       onChange
     });
@@ -3155,6 +3470,8 @@ var DshXiaozhi = (() => {
     model: (field, value, onChange, context) => h(ModelField, {
       kind: field.modelKind || "llm",
       provider: context.provider,
+      // provider="host" 时模型清单来自 DSH（`/llm/providers?provider=`），要先知道选的是哪家。
+      hostProvider: context.draft.hostProvider || "",
       source: context.mode === "primary" ? "primary" : "backup",
       index: context.mode === "primary" ? void 0 : Number.isInteger(context.index) ? context.index : void 0,
       value: value || "",
@@ -3163,6 +3480,11 @@ var DshXiaozhi = (() => {
       placeholder: field.placeholderKey ? context.modelHint || t(field.placeholderKey) : field.placeholder || "",
       baseUrl: context.draft.baseUrl || context.baseUrlHint || "",
       probeKey: context.draft.apiKey || "",
+      onChange
+    }),
+    hostProvider: (field, value, onChange) => h(HostProviderField, {
+      value: value || "",
+      placeholder: field.placeholder || "",
       onChange
     })
   };
@@ -3535,6 +3857,8 @@ var DshXiaozhi = (() => {
         if (stage === "llm") {
           return {
             ...base,
+            // 「复用 DSH」（provider: 'host'）只提交 hostProvider + model，不带 Key（2026-11-10）。
+            hostProvider: entry.hostProvider || "",
             model: entry.model || "",
             baseUrl: entry.baseUrl || "",
             appId: entry.appId || "",
@@ -3586,6 +3910,9 @@ var DshXiaozhi = (() => {
           silenceMs: snapshot.voice.silenceMs,
           llm: {
             provider: snapshot.voice.llm.provider,
+            // 必须原样带回：服务端只在字段存在时才写，缺了会导致「切回直连后 hostProvider 清不掉」，
+            // 反过来也会让「刚选的 DSH 厂商」在下次任意保存时被忽略。
+            hostProvider: snapshot.voice.llm.hostProvider,
             model: snapshot.voice.llm.model,
             baseUrl: snapshot.voice.llm.baseUrl,
             appId: snapshot.voice.llm.appId,
