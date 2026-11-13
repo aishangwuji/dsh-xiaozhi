@@ -171,7 +171,6 @@
       volcTtsKeyNote: '火山新版控制台 API Key（X-Api-Key）；合成只需它 + 智能体音色',
       volcAsrKeyNote: '火山新版控制台 API Key（X-Api-Key）',
       volcAsrResourceNote: '留空 = volc.seedasr.sauc.duration（2.0 小时版）',
-      asrUrlNote: '留空 = 官方 bigmodel_async 端点',
       asrLanguageNote: '留空 = zh_cn',
       xunfeiAuthNote: '讯飞控制台 → 应用信息：APPID / APIKey / APISecret',
       apiKeyKeep: '已配置，留空表示不修改',

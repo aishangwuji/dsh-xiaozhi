@@ -282,6 +282,6 @@ test('modelsFor uses Bearer for bearer-style vendors and never falls back to a b
   assert.equal(seen[0].url, 'https://api.deepseek.com/v1/models')
   assert.equal(seen[0].headers.authorization, 'Bearer sk-x')
 
-  const empty = await modelsFor({ kind: 'llm', provider: 'openai', baseUrl: '', apiKey: 'sk-x', fetchImpl })
+  const empty = await modelsFor({ kind: 'llm', provider: 'deepseek', baseUrl: '', apiKey: 'sk-x', fetchImpl })
   assert.deepEqual(empty.options, [], '没有 baseUrl 时也不许用内置模型兜底')
 })

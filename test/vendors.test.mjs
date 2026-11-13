@@ -89,12 +89,12 @@ test('iflytek ASR accumulates words and reports the final frame', () => {
 test('vendor providers are wired to real adapters and refuse to start without credentials', () => {
   const voice = {
     sampleRate: { uplink: 16_000, downlink: 24_000 },
-    llm: { provider: 'volc', apiKey: 'ark-key', model: 'doubao-1.5-pro-32k' },
+    llm: { provider: 'deepseek', apiKey: 'sk-key', model: 'deepseek-chat' },
     tts: { provider: 'xunfei', appId: 'a', apiKey: 'k', apiSecret: 's', voice: 'xiaoyan' },
     asr: { provider: 'xunfei', appId: 'a', apiKey: 'k', apiSecret: 's' },
   }
   const adapters = createVoiceAdapters(voice, { ffmpegPath: 'ffmpeg' })
-  assert.equal(adapters.llm.name, 'openai', 'volc rides the OpenAI-compatible client')
+  assert.equal(adapters.llm.name, 'openai', 'LLM 共用 OpenAI 兼容客户端')
   assert.equal(adapters.tts.name, 'xunfei')
   assert.equal(adapters.asr.name, 'xunfei')
 
@@ -104,8 +104,13 @@ test('vendor providers are wired to real adapters and refuse to start without cr
     /apiSecret/,
   )
   assert.throws(
-    () => createVoiceAdapters({ ...voice, llm: { provider: 'volc' } }),
+    () => createVoiceAdapters({ ...voice, llm: { provider: 'deepseek' } }),
     (error) => error instanceof AdapterConfigError && /apiKey/.test(error.message),
+  )
+  // 火山 / OpenAI / 星火已不是 LLM 厂商：手写 settings 里残留会明确报错，不会静默换厂商。
+  assert.throws(
+    () => createVoiceAdapters({ ...voice, llm: { provider: 'volc', apiKey: 'k' } }),
+    (error) => error instanceof AdapterConfigError && /unknown LLM provider "volc"/.test(error.message),
   )
 })
 

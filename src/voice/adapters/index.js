@@ -39,15 +39,16 @@ export class AdapterConfigError extends Error {
  * OpenAI-compatible vendors only differ in base URL and default model, so they
  * share one client. Keys stay per provider: a 火山 key is not a 讯飞 key.
  *
+ * 2026-11-09 起 LLM **只支持 DeepSeek 与小米 MiMo**（用户要求；OpenAI / 火山 / 星火已从
+ * LLM 段移除，火山与讯飞仍保留 TTS/ASR）。往这里加厂商前先确认描述符里也有对应 llm 段，
+ * 否则控制台选不到、手写 settings 反而会以 `unknown LLM provider` 失败。
+ *
  * 除端点/默认模型外，个别厂商还差在认证头与思维链默认值上，一并放进 preset：
  * - `authStyle: 'api-key'`：小米 MiMo 只认 `api-key: <key>`，不认 Bearer；
  * - `thinking: 'disabled'`：MiMo 默认 thinking=enabled（先吐思维链），语音首字预算扛不住。
  */
 const OPENAI_COMPATIBLE = {
   deepseek: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-  openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-  volc: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-1.5-pro-32k' },
-  spark: { baseUrl: IFLYTEK_ENDPOINTS.llm, model: 'generalv3.5' },
   // MiMo **故意不写默认 model**：模型清单要从厂商 `GET /v1/models` 拉（见 src/models.js），
   // 代码里不内置模型 id；没填 model 时构建期直接报错，而不是偷偷用一个写死的名字。
   mimo: {
@@ -122,7 +123,7 @@ export function buildLlmAdapter(spec = {}, { systemPrompt = '', llm, deviceId = 
     })
   }
   throw new AdapterConfigError(
-    `unknown LLM provider "${provider}" (expected mock, deepseek, openai, volc, spark or mimo)`,
+    `unknown LLM provider "${provider}" (expected mock, deepseek or mimo)`,
   )
 }
 

@@ -59,7 +59,7 @@ test('maxTokens 只接受正整数；0 / 负数 / 非整数沿用 Loader', () =>
 
 test('backups 永远是覆盖式：删光备用必须真的清空', () => {
   const voice = loaderVoice()
-  voice.llm.backups = [{ provider: 'volc', apiKey: 'x' }]
+  voice.llm.backups = [{ provider: 'deepseek', apiKey: 'x' }]
   applyRuntimeVoiceSettings(voice, { llm: { backups: [] }, tts: { backups: [] }, asr: { backups: [] } })
   assert.deepEqual(voice.llm.backups, [])
   assert.deepEqual(voice.tts.backups, [])

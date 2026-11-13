@@ -267,13 +267,13 @@ test('backup providers persist with server ids and only masks leave the process'
             apiKey: 'sk-primary-llm-secret',
             backups: [
               {
-                provider: 'volc',
-                model: 'doubao-1.5-pro-32k',
-                baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-                appId: 'volc-app',
-                apiKey: 'sk-backup-volc-secret',
+                provider: 'deepseek',
+                model: 'deepseek-chat',
+                baseUrl: 'https://api.deepseek.com/v1',
+                appId: 'deepseek-app',
+                apiKey: 'sk-backup-deepseek-secret',
               },
-              { provider: 'openai', model: 'gpt-4o-mini', apiKey: 'sk-backup-openai-secret' },
+              { provider: 'mimo', model: 'mimo-v2', apiKey: 'sk-backup-mimo-secret' },
             ],
           },
           tts: {
@@ -293,19 +293,19 @@ test('backup providers persist with server ids and only masks leave the process'
     assert.equal(saved.status, 200)
     const voice = saved.json.settings.voice
     assert.equal(voice.llm.backups.length, 2)
-    const [volc, openai] = voice.llm.backups
-    assert.match(volc.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
-    assert.notEqual(volc.id, openai.id, 'each entry gets its own id')
-    assert.equal(volc.provider, 'volc')
+    const [first, second] = voice.llm.backups
+    assert.match(first.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    assert.notEqual(first.id, second.id, 'each entry gets its own id')
+    assert.equal(first.provider, 'deepseek')
     // 非密钥字段原样回显，顺序即优先级。
-    assert.equal(volc.model, 'doubao-1.5-pro-32k')
-    assert.equal(volc.baseUrl, 'https://ark.cn-beijing.volces.com/api/v3')
-    assert.equal(volc.appId, 'volc-app')
-    assert.equal(openai.provider, 'openai')
+    assert.equal(first.model, 'deepseek-chat')
+    assert.equal(first.baseUrl, 'https://api.deepseek.com/v1')
+    assert.equal(first.appId, 'deepseek-app')
+    assert.equal(second.provider, 'mimo')
     // 只有掩码 + has 布尔。
-    assert.equal(volc.hasApiKey, true)
-    assert.match(volc.apiKey, /•/)
-    assert.notEqual(volc.apiKey, 'sk-backup-volc-secret')
+    assert.equal(first.hasApiKey, true)
+    assert.match(first.apiKey, /•/)
+    assert.notEqual(first.apiKey, 'sk-backup-deepseek-secret')
     assert.equal(voice.tts.backups[0].hasApiSecret, true)
     assert.match(voice.tts.backups[0].apiSecret, /•/)
     assert.equal(voice.asr.backups[0].provider, 'local')
@@ -315,7 +315,7 @@ test('backup providers persist with server ids and only masks leave the process'
     // 整个响应（含主用）里没有任何明文密钥。
     assert.doesNotMatch(
       JSON.stringify(saved.json),
-      /sk-primary-llm-secret|sk-backup-volc-secret|sk-backup-openai-secret|tts-key-raw|tts-secret-raw|asr-key-raw|asr-secret-raw/,
+      /sk-primary-llm-secret|sk-backup-deepseek-secret|sk-backup-mimo-secret|tts-key-raw|tts-secret-raw|asr-key-raw|asr-secret-raw/,
     )
 
     // GET 与 POST 返回同一份掩码视图（前端回填后原样提交）。
@@ -325,12 +325,12 @@ test('backup providers persist with server ids and only masks leave the process'
       readBack.json.settings.voice.llm.backups.map((entry) => entry.id),
       voice.llm.backups.map((entry) => entry.id),
     )
-    assert.equal(readBack.json.settings.voice.llm.backups[0].apiKey, volc.apiKey)
+    assert.equal(readBack.json.settings.voice.llm.backups[0].apiKey, first.apiKey)
 
     // 明文只在 0600 的 settings.json 里（运行时适配器要真 Key），版本升到 3。
     const disk = await readDisk(harness)
     assert.equal(disk.version, 3)
-    assert.equal(disk.voice.llm.backups[0].apiKey, 'sk-backup-volc-secret')
+    assert.equal(disk.voice.llm.backups[0].apiKey, 'sk-backup-deepseek-secret')
     assert.equal(disk.voice.tts.backups[0].apiSecret, 'tts-secret-raw')
     assert.equal(disk.voice.asr.backups[0].provider, 'local')
     assert.equal(disk.voice.asr.backups[0].apiKey, '')
@@ -345,7 +345,7 @@ test('backup providers persist with server ids and only masks leave the process'
       voice.llm.backups.map((entry) => [entry.id, entry.provider]),
     )
     assert.equal(restored.llm.backups[0].hasApiKey, true)
-    assert.doesNotMatch(JSON.stringify(restored), /sk-backup-volc-secret/)
+    assert.doesNotMatch(JSON.stringify(restored), /sk-backup-deepseek-secret/)
   } finally {
     await harness.dispose()
   }
@@ -361,15 +361,15 @@ test('a blank or masked backup secret is kept only for the same id and provider'
           llm: {
             provider: 'deepseek',
             backups: [
-              { provider: 'volc', model: 'doubao-1.5-pro-32k', apiKey: 'sk-volc-old' },
-              { provider: 'spark', model: 'generalv3.5', appId: 'spark-app', apiKey: 'sk-spark-old' },
+              { provider: 'mimo', model: 'mimo-v2', apiKey: 'sk-mimo-old' },
+              { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-deepseek-old' },
             ],
           },
         },
       },
     })
     assert.equal(created.status, 200)
-    const [volc, spark] = created.json.settings.voice.llm.backups
+    const [mimo, deepseek] = created.json.settings.voice.llm.backups
 
     // 掩码原样回传 / 空串 = 「留空 = 保留」。
     const kept = await harness.call('/settings', {
@@ -378,8 +378,8 @@ test('a blank or masked backup secret is kept only for the same id and provider'
         voice: {
           llm: {
             backups: [
-              { id: volc.id, provider: 'volc', model: 'doubao-1.5-pro-32k', apiKey: volc.apiKey },
-              { id: spark.id, provider: 'spark', model: 'generalv3.5', appId: 'spark-app', apiKey: '' },
+              { id: mimo.id, provider: 'mimo', model: 'mimo-v2', apiKey: mimo.apiKey },
+              { id: deepseek.id, provider: 'deepseek', model: 'deepseek-chat', apiKey: '' },
             ],
           },
         },
@@ -387,8 +387,8 @@ test('a blank or masked backup secret is kept only for the same id and provider'
     })
     assert.equal(kept.status, 200)
     let disk = await readDisk(harness)
-    assert.equal(disk.voice.llm.backups[0].apiKey, 'sk-volc-old')
-    assert.equal(disk.voice.llm.backups[1].apiKey, 'sk-spark-old')
+    assert.equal(disk.voice.llm.backups[0].apiKey, 'sk-mimo-old')
+    assert.equal(disk.voice.llm.backups[1].apiKey, 'sk-deepseek-old')
     assert.doesNotMatch(JSON.stringify(disk.voice.llm.backups), /•/)
 
     // 同一个 id 换了 provider：那是另一家的凭据，旧密钥不能跟过去。
@@ -397,7 +397,7 @@ test('a blank or masked backup secret is kept only for the same id and provider'
       body: {
         voice: {
           llm: {
-            backups: [{ id: volc.id, provider: 'deepseek', model: 'deepseek-chat', apiKey: volc.apiKey }],
+            backups: [{ id: mimo.id, provider: 'deepseek', model: 'deepseek-chat', apiKey: mimo.apiKey }],
           },
         },
       },
@@ -413,7 +413,7 @@ test('a blank or masked backup secret is kept only for the same id and provider'
       method: 'POST',
       body: {
         voice: {
-          llm: { backups: [{ id: volc.id, provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-deepseek-new' }] },
+          llm: { backups: [{ id: mimo.id, provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-deepseek-new' }] },
         },
       },
     })
@@ -424,7 +424,7 @@ test('a blank or masked backup secret is kept only for the same id and provider'
       body: {
         voice: {
           llm: {
-            backups: [{ id: volc.id, provider: 'deepseek', model: 'deepseek-chat', apiKey: masked, clearApiKey: true }],
+            backups: [{ id: mimo.id, provider: 'deepseek', model: 'deepseek-chat', apiKey: masked, clearApiKey: true }],
           },
         },
       },
@@ -438,17 +438,15 @@ test('a blank or masked backup secret is kept only for the same id and provider'
       body: {
         voice: {
           llm: {
-            backups: [
-              { id: spark.id, provider: 'spark', model: 'generalv3.5', appId: 'spark-app', apiKey: 'sk-spark-old' },
-            ],
+            backups: [{ id: deepseek.id, provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-deepseek-old' }],
           },
         },
       },
     })
     disk = await readDisk(harness)
     assert.equal(disk.voice.llm.backups.length, 1)
-    assert.equal(disk.voice.llm.backups[0].provider, 'spark')
-    assert.doesNotMatch(JSON.stringify(disk.voice.llm), /sk-volc-old|sk-deepseek-new/)
+    assert.equal(disk.voice.llm.backups[0].provider, 'deepseek')
+    assert.doesNotMatch(JSON.stringify(disk.voice.llm), /sk-mimo-old|sk-deepseek-new/)
   } finally {
     await harness.dispose()
   }
@@ -498,7 +496,7 @@ test('an invalid backup list fails the whole save instead of half-applying it', 
       400,
     )
     assert.equal(
-      (await harness.call('/settings', { method: 'POST', body: { voice: { llm: { backups: ['volc'] } } } })).status,
+      (await harness.call('/settings', { method: 'POST', body: { voice: { llm: { backups: ['deepseek'] } } } })).status,
       400,
     )
 
@@ -516,7 +514,7 @@ test('backup lists have no count cap: 12 entries persist in order', async () => 
   try {
     // 旧契约是「每段最多 5 条」，2026-11-08 去掉：顺序即优先级，用户想加几条就加几条。
     const many = Array.from({ length: 12 }, (_, index) => ({
-      provider: index % 2 === 0 ? 'deepseek' : 'volc',
+      provider: index % 2 === 0 ? 'deepseek' : 'mimo',
       model: `model-${index}`,
       apiKey: `sk-${index}`,
     }))
@@ -560,7 +558,7 @@ test('a version-2 settings file upgrades to version 3 with empty backup lists', 
             apiKey: 'sk-legacy-key',
             configured: true,
             // 旧/脏数据里可能混进不受支持的 provider：加载时丢弃，不让整份设置不可读。
-            backups: [{ provider: 'mock', apiKey: 'sk-mock' }, { provider: 'volc', apiKey: 'sk-legacy-backup' }],
+            backups: [{ provider: 'mock', apiKey: 'sk-mock' }, { provider: 'mimo', model: 'mimo-v2', apiKey: 'sk-legacy-backup' }],
           },
         },
       }),
@@ -571,7 +569,7 @@ test('a version-2 settings file upgrades to version 3 with empty backup lists', 
     const before = store.snapshot()
     assert.equal(before.voice.llm.hasApiKey, true)
     assert.equal(before.voice.llm.backups.length, 1)
-    assert.equal(before.voice.llm.backups[0].provider, 'volc')
+    assert.equal(before.voice.llm.backups[0].provider, 'mimo')
     assert.equal(before.voice.llm.backups[0].hasApiKey, true)
     assert.deepEqual(before.voice.tts.backups, [])
     assert.deepEqual(before.voice.asr.backups, [])
@@ -583,9 +581,51 @@ test('a version-2 settings file upgrades to version 3 with empty backup lists', 
     assert.deepEqual(disk.voice.asr.backups, [])
     // 旧文件里的密钥原样保留：只有 snapshot 会把它换成掩码。
     assert.equal(disk.voice.llm.apiKey, 'sk-legacy-key')
-    assert.equal(disk.voice.llm.backups[0].provider, 'volc')
+    assert.equal(disk.voice.llm.backups[0].provider, 'mimo')
   } finally {
     await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('a DSH-hosted LLM entry persists hostProvider without any key', async () => {
+  const harness = await start()
+  try {
+    const saved = await harness.call('/settings', {
+      method: 'POST',
+      body: {
+        voice: {
+          llm: {
+            provider: 'host',
+            hostProvider: 'deepseek',
+            model: 'deepseek-chat',
+            backups: [{ provider: 'host', hostProvider: 'mimo', model: 'mimo-v2' }],
+          },
+        },
+      },
+    })
+    assert.equal(saved.status, 200)
+    const llm = saved.json.settings.voice.llm
+    assert.equal(llm.provider, 'host')
+    assert.equal(llm.hostProvider, 'deepseek')
+    assert.equal(llm.hasApiKey, false, 'host entries carry no key')
+    assert.equal(llm.backups[0].provider, 'host')
+    assert.equal(llm.backups[0].hostProvider, 'mimo', 'backups can also reuse DSH')
+    assert.equal(llm.backups[0].hasApiKey, false)
+
+    const disk = await readDisk(harness)
+    assert.equal(disk.voice.llm.hostProvider, 'deepseek')
+    assert.equal(disk.voice.llm.backups[0].hostProvider, 'mimo')
+    assert.equal(disk.voice.llm.apiKey, '')
+
+    // 切回直连：hostProvider 被显式清空，不留下「看起来还在复用 DSH」的残留。
+    const direct = await harness.call('/settings', {
+      method: 'POST',
+      body: { voice: { llm: { provider: 'deepseek', hostProvider: '', model: 'deepseek-chat' } } },
+    })
+    assert.equal(direct.json.settings.voice.llm.provider, 'deepseek')
+    assert.equal(direct.json.settings.voice.llm.hostProvider, '')
+  } finally {
+    await harness.dispose()
   }
 })
 
@@ -602,8 +642,8 @@ test('POST /test/provider proxies primary and backup probes and keeps failures i
     if (request.kind === 'llm') {
       return {
         kind: 'llm',
-        provider: 'volc',
-        model: 'doubao-1.5-pro-32k',
+        provider: 'deepseek',
+        model: 'deepseek-chat',
         firstTokenMs: 12,
         totalMs: 34,
         sample: '你好',
@@ -616,7 +656,7 @@ test('POST /test/provider proxies primary and backup probes and keeps failures i
     const primary = await harness.call('/test/provider', { method: 'POST', body: { kind: 'llm', source: 'primary' } })
     assert.equal(primary.status, 200)
     assert.equal(primary.json.ok, true)
-    assert.equal(primary.json.provider, 'volc')
+    assert.equal(primary.json.provider, 'deepseek')
     assert.equal(primary.json.totalMs, 34)
     assert.equal(typeof primary.json.ms, 'number')
     // index 缺省为 0，并原样交给注入的探针。

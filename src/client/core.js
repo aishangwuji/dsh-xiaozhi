@@ -21,8 +21,16 @@ import { PROVIDERS as BUNDLED_PROVIDERS, STAGE_META as BUNDLED_STAGE_META } from
 
     const providerById = (id) => PROVIDER_INDEX.get(String(id ?? '')) || null;
     const stageDescriptor = (id, stage) => providerById(id)?.stages?.[stage] || null;
-    /** 某一段可选的 provider id（顺序即下拉里的顺序）。 */
-    const stageProviders = (stage) => PROVIDERS.filter((provider) => provider.stages?.[stage]).map((provider) => provider.id);
+    /**
+     * 某一段可选的 provider id（顺序即下拉里的顺序）。
+     *
+     * `hidden: true` 的厂商（当前是 funasr：需本机自部署）**只存不展示**：`GET /providers`
+     * 返回的是全量描述符（存储白名单要用它），控制台必须自己过滤，否则下拉里会冒出
+     * FunASR 这类没装就用不了的选项（2026-11-09 修，截图实测出现过）。
+     */
+    const stageProviders = (stage) => PROVIDERS
+      .filter((provider) => provider.stages?.[stage] && provider.hidden !== true)
+      .map((provider) => provider.id);
     /** 某一段某一家 provider 在界面上的标准名称（允许 stage 级覆盖，如讯飞 TTS/ASR 名字不同）。 */
     const stageProviderLabel = (stage, id) => stageDescriptor(id, stage)?.name || providerById(id)?.name || String(id ?? '');
     const providerLabel = (id) => providerById(id)?.name || String(id ?? '');

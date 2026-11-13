@@ -53,8 +53,11 @@ export const STAGE_META = {
   },
   asr: {
     labelKey: 'step3',
+    // `url` 保留在**存储**白名单里（手写 settings 的端点覆盖仍然生效、不被清掉），
+    // 但**不在 editFields**：控制台不再渲染地址框，保存主用时也就不该把已有 url 覆盖成空串
+    // ——那等于静默删掉别人手配的自建/代理端点还不给提示。
     storageFields: ['url', 'language', 'accent', 'resourceId', 'appId', 'apiKey', 'apiSecret'],
-    editFields: ['url', 'language', 'accent', 'resourceId', 'appId', 'apiKey', 'apiSecret'],
+    editFields: ['language', 'accent', 'resourceId', 'appId', 'apiKey', 'apiSecret'],
   },
 }
 
@@ -93,17 +96,13 @@ export const PROVIDERS = [
     stages: { llm: llmStage('https://api.xiaomimimo.com/v1') },
   },
   {
-    id: 'openai',
-    name: 'OpenAI',
-    group: 'cloud',
-    stages: { llm: llmStage('https://api.openai.com/v1', 'gpt-4o-mini') },
-  },
-  {
+    // LLM 只保留 DeepSeek 与小米 MiMo（2026-11-09 用户要求）：OpenAI / 火山豆包 / 讯飞星火
+    // 从 LLM 下拉移除。火山仍有 TTS + ASR、讯飞仍有 TTS + ASR，见下面各自的 stage。
+    // 注意：这里删的是**描述符里的 llm 段**，不是厂商本身——删厂商会连带把语音段一起弄没。
     id: 'volc',
     name: '火山引擎豆包',
     group: 'cloud',
     stages: {
-      llm: llmStage('https://ark.cn-beijing.volces.com/api/v3', 'doubao-1.5-pro-32k'),
       tts: {
         fields: [
           { ...secret('apiKey'), note: 'volcTtsKeyNote' },
@@ -130,6 +129,8 @@ export const PROVIDERS = [
         probe: { kind: 'tts' },
       },
       asr: {
+        // 端点内置（`src/voice/adapters/volc-asr.js` 的默认 URL），控制台不再暴露地址框：
+        // 端点几乎不变，露出来只会让人以为必须填。手写 settings 里的 url 仍生效。
         fields: [
           { ...secret('apiKey'), note: 'volcAsrKeyNote' },
           {
@@ -140,25 +141,12 @@ export const PROVIDERS = [
             placeholder: 'volc.seedasr.sauc.duration',
             note: 'volcAsrResourceNote',
           },
-          {
-            key: 'url',
-            type: 'url',
-            label: 'asrUrl',
-            placeholder: 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async',
-            note: 'asrUrlNote',
-          },
         ],
-        summary: ['url', 'resourceId'],
+        summary: ['resourceId'],
         secretFields: ['apiKey'],
         probe: { kind: 'asr', labelKey: 'backupTestAsr' },
       },
     },
-  },
-  {
-    id: 'spark',
-    name: '讯飞星火',
-    group: 'cloud',
-    stages: { llm: llmStage('https://spark-api-open.xf-yun.com/v1', 'generalv3.5') },
   },
   {
     id: 'xunfei',

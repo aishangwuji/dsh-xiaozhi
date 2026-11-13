@@ -172,7 +172,6 @@
       volcTtsKeyNote: 'Volcengine new-console API Key (X-Api-Key); synthesis only needs this plus the agent voice',
       volcAsrKeyNote: 'Volcengine new-console API Key (X-Api-Key)',
       volcAsrResourceNote: 'Empty = volc.seedasr.sauc.duration (2.0 hourly)',
-      asrUrlNote: 'Empty = the official bigmodel_async endpoint',
       asrLanguageNote: 'Empty = zh_cn',
       xunfeiAuthNote: 'iFlytek console → App info: APPID / APIKey / APISecret',
       apiKeyKeep: 'configured — blank keeps it',
