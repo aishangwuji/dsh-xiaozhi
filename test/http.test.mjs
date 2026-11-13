@@ -566,9 +566,14 @@ test('GET /providers serves the descriptor catalog to the console', async () => 
     assert.equal(response.status, 200)
     const body = await response.json()
     assert.equal(body.schemaVersion, 1)
-    assert.ok(Array.isArray(body.providers) && body.providers.length >= 8)
+    assert.ok(Array.isArray(body.providers) && body.providers.length >= 9)
     const volc = body.providers.find((provider) => provider.id === 'volc')
-    assert.ok(volc.stages.llm && volc.stages.tts && volc.stages.asr)
+    // 火山仍在（TTS + ASR），但 LLM 段已移除（2026-11-09：LLM 只留 DeepSeek / MiMo / DSH）。
+    assert.ok(volc.stages.tts && volc.stages.asr)
+    assert.equal(volc.stages.llm, undefined)
+    // 2026-11-10：LLM 多了一个免密钥的「复用 DSH」来源。
+    const host = body.providers.find((provider) => provider.id === 'host')
+    assert.equal(host?.stages.llm?.keyless, true)
     assert.ok(body.stages.tts.storageFields.includes('apiSecret'))
     assert.equal(body.stages.asr.labelKey, 'step3')
   } finally {

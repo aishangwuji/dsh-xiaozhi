@@ -211,6 +211,41 @@ export const PROVIDERS = [
     },
   },
   {
+    // 百智云智能语音（`asrmodel.app.baizhi.cloud`）：同一把 API Key 既能做实时识别
+    // （WSS `/realtime`，16k PCM 按真实节奏上行），也能做语音合成（`POST /audio`，24k WAV）。
+    // 描述符只声明「要填什么」；协议差异在 `src/voice/adapters/baizhi-*.js`。
+    id: 'baizhi',
+    name: '百智云语音',
+    group: 'cloud',
+    stages: {
+      tts: {
+        name: '百智云语音合成',
+        // 与其它厂商一样：全局只存凭据，音色/语速按智能体配（音色目录见 src/voice/voices.js）。
+        fields: [{ ...secret('apiKey'), note: 'baizhiKeyNote' }],
+        summary: [],
+        secretFields: ['apiKey'],
+        probe: { kind: 'tts' },
+      },
+      asr: {
+        name: '百智云语音识别',
+        // 端点内置（`baizhi-asr.js` 的默认 wss 地址），控制台不露地址框（同上）。
+        fields: [
+          { ...secret('apiKey'), note: 'baizhiKeyNote' },
+          {
+            key: 'language',
+            type: 'text',
+            label: 'asrLanguage',
+            placeholder: 'zh-CN',
+            note: 'baizhiAsrLanguageNote',
+          },
+        ],
+        summary: ['language'],
+        secretFields: ['apiKey'],
+        probe: { kind: 'asr', labelKey: 'backupTestAsr' },
+      },
+    },
+  },
+  {
     id: 'edge',
     name: '微软 Edge',
     group: 'local',

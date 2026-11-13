@@ -178,6 +178,8 @@
       volcAsrResourceNote: '留空 = volc.seedasr.sauc.duration（2.0 小时版）',
       asrLanguageNote: '留空 = zh_cn',
       xunfeiAuthNote: '讯飞控制台 → 应用信息：APPID / APIKey / APISecret',
+      baizhiKeyNote: '百智云控制台创建的 API Key（请求头 Authorization: Bearer）',
+      baizhiAsrLanguageNote: '留空 = 自动识别；可填 zh-CN / en-US',
       apiKeyKeep: '已配置，留空表示不修改',
       gatewayToken: '网关 Token',
       // 服务商配置（docs/backup-providers.md 第 5 节）：主用卡 + 备用卡 + 统一编辑弹窗。

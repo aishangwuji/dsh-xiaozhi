@@ -700,6 +700,23 @@ export const VOICE_OPTIONS = {
       "languages": "日语、西班牙语",
       "tier": "1.x"
     }
+  ],
+  // 百智云语音（2026-11-09）：音色 id 来自官方 `GET /openapi/v1/voices?type=tts`。
+  // `speed: true` = 官方 `supports_speed_control`，只有这些音色才允许 slow/fast 预设；
+  // 不声明时适配器一律不带 speed（否则服务端会 invalid_request，整句合成失败）。
+  "baizhi": [
+    {
+      "value": "vivi",
+      "label": "微澜（女声）",
+      "languages": "中文、英语",
+      "speed": true
+    },
+    {
+      "value": "xiaohe",
+      "label": "若禾（女声）",
+      "languages": "中文、英语",
+      "speed": true
+    }
   ]
 }
 
@@ -720,7 +737,8 @@ export function voiceOptionsFor(provider) {
 export const DEFAULT_TTS_VOICES = {
   volc: 'zh_female_vv_uranus_bigtts',
   edge: 'zh-CN-XiaoxiaoNeural',
-  xunfei: 'xiaoyan'
+  xunfei: 'xiaoyan',
+  baizhi: 'vivi'
 }
 
 /** 厂商 → 默认音色；未知厂商返回空串（交给适配器自己报缺音色）。 */
@@ -750,6 +768,18 @@ export function resolveTtsVoice(provider, voice) {
     }
   }
   return id
+}
+
+/**
+ * 该音色是否支持 slow/fast 语速预设（目录条目 `speed: true`）。
+ *
+ * 只有百智云用得到：它的 `parameters.speed` 只对官方声明 `supports_speed_control` 的音色有效，
+ * 不支持时服务端在扣费与合成前就回 `invalid_request`，整句直接没声音。所以「不认识/自定义
+ * 音色」一律返回 false，适配器不带 speed（退化成厂商默认语速），而不是赌它支持。
+ */
+export function voiceSupportsSpeed(provider, voice) {
+  const option = voiceOptionsFor(provider).find((item) => item.value === String(voice ?? '').trim())
+  return option?.speed === true
 }
 
 /**

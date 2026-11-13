@@ -14,7 +14,7 @@ import { AgentStoreError } from './agents.js'
 import { DeviceStoreError } from './store.js'
 import { listLanAddresses } from './network.js'
 import { SettingsError } from './settings.js'
-import { voiceOptionsFor } from './voice/voices.js'
+import { VOICE_OPTIONS, voiceOptionsFor } from './voice/voices.js'
 import { normalizeOutputLanguage } from './voice/language.js'
 import { hostProviderIssue } from './voice/host-provider.js'
 import { modelsFor } from './models.js'
@@ -771,10 +771,11 @@ export function createControlHandler({
     if (method === 'GET' && path === '/voices') {
       const provider = String(url.searchParams.get('provider') ?? '').trim()
       const requestedResource = String(url.searchParams.get('resourceId') ?? '').trim()
-      // 不带 provider：保持旧契约，一次返回三段的内置清单（首屏兜底）。
+      // 不带 provider：保持旧契约，一次返回全部厂商的内置清单（首屏兜底）。
+      // 直接遍历目录，避免「加了厂商忘了往这个数组里补名字」的漂移。
       if (!provider) {
         const options = {}
-        for (const item of ['edge', 'xunfei', 'volc']) options[item] = voiceOptionsFor(item)
+        for (const item of Object.keys(VOICE_OPTIONS)) options[item] = voiceOptionsFor(item)
         sendJson(res, 200, { options })
         return
       }

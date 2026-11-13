@@ -179,6 +179,8 @@
       volcAsrResourceNote: 'Empty = volc.seedasr.sauc.duration (2.0 hourly)',
       asrLanguageNote: 'Empty = zh_cn',
       xunfeiAuthNote: 'iFlytek console → App info: APPID / APIKey / APISecret',
+      baizhiKeyNote: 'API Key created in the Baizhi Cloud console (Authorization: Bearer)',
+      baizhiAsrLanguageNote: 'Empty = auto-detect; zh-CN / en-US are accepted',
       apiKeyKeep: 'configured — blank keeps it',
       gatewayToken: 'Gateway token',
       // Provider configuration (docs/backup-providers.md §5): primary card + backup cards + one shared dialog.

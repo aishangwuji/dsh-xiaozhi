@@ -13,6 +13,8 @@
  */
 
 import { createEdgeTts } from './edge-tts.js'
+import { createBaizhiAsr } from './baizhi-asr.js'
+import { createBaizhiTts, baizhiSpeedPreset } from './baizhi-tts.js'
 import { createFailoverAsr, createFailoverLlm, createFailoverTts } from './failover.js'
 import { createFunasrAsr } from './funasr-asr.js'
 import { createMockAsr, createMockLlm, createMockTts } from './mock.js'
@@ -25,7 +27,7 @@ import { createXunfeiAsr } from './xunfei-asr.js'
 import { createXunfeiTts } from './xunfei-tts.js'
 import { IFLYTEK_ENDPOINTS } from './xunfei-auth.js'
 import { hostProviderIssue } from '../host-provider.js'
-import { resolveTtsVoice } from '../voices.js'
+import { resolveTtsVoice, voiceSupportsSpeed } from '../voices.js'
 
 export class AdapterConfigError extends Error {
   constructor(message) {
@@ -182,7 +184,19 @@ export function buildTtsAdapter(spec = {}, { ffmpegPath = 'ffmpeg', sampleRate =
       sampleRate,
     })
   }
-  throw new AdapterConfigError(`unknown TTS provider "${provider}" (expected mock, edge, xunfei or volc)`)
+  if (provider === 'baizhi') {
+    return createBaizhiTts({
+      apiKey: spec.apiKey,
+      url: spec.url || undefined,
+      voice,
+      // 语速只有目录里声明支持 slow/fast 的音色才发：不支持时服务端回 invalid_request，
+      // 整句合成会失败（比"忽略语速"更糟），所以未知/自定义音色一律不带 speed。
+      speed: voiceSupportsSpeed(provider, voice) ? baizhiSpeedPreset(spec.speed) : '',
+      sampleRate,
+      timeoutMs: spec.timeoutMs ?? 20_000,
+    })
+  }
+  throw new AdapterConfigError(`unknown TTS provider "${provider}" (expected mock, edge, xunfei, volc or baizhi)`)
 }
 
 /**
@@ -238,7 +252,16 @@ export function buildAsrAdapter(spec = {}, { sampleRate = 16_000, speechToText, 
       endWindowSize: spec.endWindowSize ?? 800,
     })
   }
-  throw new AdapterConfigError(`unknown ASR provider "${provider}" (expected mock, funasr, xunfei or volc)`)
+  if (provider === 'baizhi') {
+    return createBaizhiAsr({
+      apiKey: spec.apiKey,
+      url: spec.url || undefined,
+      // 留空 = 服务端自动识别（可填 zh-CN / en-US，由适配器归一化）。
+      language: spec.language || '',
+      sampleRate,
+    })
+  }
+  throw new AdapterConfigError(`unknown ASR provider "${provider}" (expected mock, funasr, xunfei, volc or baizhi)`)
 }
 
 /**
