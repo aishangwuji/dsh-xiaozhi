@@ -380,7 +380,7 @@ import { HistoryDialog } from './HistoryDialog.js'
                             }
                           }, t('inject'))
                     ),
-                    h('div', { className: 'xz-devcard-mac', style: { lineHeight: 1.8 } },
+                    h('div', { className: 'xz-devcard-devices' },
                       (agent.devices || []).length === 0
                         ? t('agentNoDevices')
                         : (agent.devices || []).map((device, index) =>
