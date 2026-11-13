@@ -43,8 +43,10 @@ export const STAGES = ['llm', 'tts', 'asr']
 export const STAGE_META = {
   llm: {
     labelKey: 'step4',
-    storageFields: ['model', 'baseUrl', 'appId', 'apiKey'],
-    editFields: ['model', 'baseUrl', 'appId', 'apiKey'],
+    // `hostProvider` = DSH profile 里注册的厂商 id，只有 `provider: 'host'` 的条目才用得上；
+    // 放进存储白名单是为了让**备用条目**也能表达「复用 DSH」（failover 时逐条装配）。
+    storageFields: ['hostProvider', 'model', 'baseUrl', 'appId', 'apiKey'],
+    editFields: ['hostProvider', 'model', 'baseUrl', 'appId', 'apiKey'],
   },
   tts: {
     labelKey: 'step5',
@@ -81,6 +83,36 @@ function llmStage(baseUrlHint, modelHint = '') {
 }
 
 export const PROVIDERS = [
+  {
+    // 「复用 DSH 已配置的厂商」（2026-11-10）：不要求在插件里再填一遍 Key。
+    // 运行时走 `host-llm.js`（`ctx.llm.stream`），`hostProvider` 是 DSH profile 注册的厂商 id；
+    // **模型仍单独选**——语音要短回复/低首字延迟，和 DSH 默认模型未必是同一个。
+    // 放在列表首位：新增备用时默认就是它，符合「DSH 里配过就别再配一遍」的默认预期。
+    id: 'host',
+    name: 'DSH 已配置',
+    group: 'cloud',
+    stages: {
+      llm: {
+        keyless: true,
+        note: 'llmHostNote',
+        fields: [
+          { key: 'hostProvider', type: 'hostProvider', label: 'hostProvider', required: true, note: 'llmHostProviderNote' },
+          {
+            key: 'model',
+            type: 'model',
+            modelKind: 'llm',
+            label: 'model',
+            placeholderKey: 'modelFromApi',
+            required: true,
+            note: 'llmHostModelNote',
+          },
+        ],
+        summary: ['model'],
+        secretFields: [],
+        probe: { kind: 'chat' },
+      },
+    },
+  },
   {
     id: 'deepseek',
     name: 'DeepSeek',

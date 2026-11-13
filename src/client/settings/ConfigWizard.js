@@ -330,6 +330,8 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
           if (stage === 'llm') {
             return {
               ...base,
+              // 「复用 DSH」（provider: 'host'）只提交 hostProvider + model，不带 Key（2026-11-10）。
+              hostProvider: entry.hostProvider || '',
               model: entry.model || '',
               baseUrl: entry.baseUrl || '',
               appId: entry.appId || '',
@@ -385,6 +387,9 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
             silenceMs: snapshot.voice.silenceMs,
             llm: {
               provider: snapshot.voice.llm.provider,
+              // 必须原样带回：服务端只在字段存在时才写，缺了会导致「切回直连后 hostProvider 清不掉」，
+              // 反过来也会让「刚选的 DSH 厂商」在下次任意保存时被忽略。
+              hostProvider: snapshot.voice.llm.hostProvider,
               model: snapshot.voice.llm.model,
               baseUrl: snapshot.voice.llm.baseUrl,
               appId: snapshot.voice.llm.appId,

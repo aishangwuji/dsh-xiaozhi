@@ -2,16 +2,18 @@ import { h } from '../react.js'
 import { t } from '../core.js'
 import { PillSelect } from '../ui/PillSelect.js'
 import { ModelField } from './ModelField.js'
+import { HostProviderField } from './HostProviderField.js'
 
 /**
  * 描述符驱动的表单：字段列表来自 `GET /providers` 的 `fields`，这里只负责把
  * `type` 映射到具体控件。加一个新厂商只要描述符里写字段，**不要在这里加 provider 分支**。
  *
  * 字段类型注册表（未知 type 降级为 text，保证后端先发描述符、前端后升级不会白屏）：
- *   text / url / secret / number / checkbox / select / model
+ *   text / url / secret / number / checkbox / select / model / hostProvider
  *
  * `model` 类型复用 ModelField：LLM 模型清单从厂商 `/v1/models` 拉，ASR 的 Resource ID
- * 走 `kind: 'asrResource'`（同样是后端动态枚举）。`showWhen` 支持同表单字段的条件显示。
+ * 走 `kind: 'asrResource'`（同样是后端动态枚举）。`hostProvider` 走 HostProviderField，
+ * 清单来自 DSH（`ctx.llm.listProviders()`）。`showWhen` 支持同表单字段的条件显示。
  */
 
 const isMasked = (value) => typeof value === 'string' && value.includes('•')
@@ -62,6 +64,8 @@ const FIELD_RENDERERS = {
   model: (field, value, onChange, context) => h(ModelField, {
     kind: field.modelKind || 'llm',
     provider: context.provider,
+    // provider="host" 时模型清单来自 DSH（`/llm/providers?provider=`），要先知道选的是哪家。
+    hostProvider: context.draft.hostProvider || '',
     source: context.mode === 'primary' ? 'primary' : 'backup',
     index: context.mode === 'primary' ? undefined : (Number.isInteger(context.index) ? context.index : undefined),
     value: value || '',
@@ -70,6 +74,11 @@ const FIELD_RENDERERS = {
     placeholder: field.placeholderKey ? (context.modelHint || t(field.placeholderKey)) : (field.placeholder || ''),
     baseUrl: context.draft.baseUrl || context.baseUrlHint || '',
     probeKey: context.draft.apiKey || '',
+    onChange
+  }),
+  hostProvider: (field, value, onChange) => h(HostProviderField, {
+    value: value || '',
+    placeholder: field.placeholder || '',
     onChange
   })
 }

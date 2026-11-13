@@ -135,6 +135,11 @@
       agentModelManual: 'No model list available; type the model id',
       deviceConfigHint: 'Applies when this agent’s devices next connect',
       modelFromApi: 'Fetched from the vendor API (set the key first)',
+      // "Reuse a provider already configured in DSH": no key to fill in here (2026-11-10).
+      hostProvider: 'DSH provider',
+      llmHostNote: 'Reuses a provider already configured in DSH; no key needed here',
+      llmHostProviderNote: 'Comes from the current DSH profile; pick again after switching profiles',
+      llmHostModelNote: 'Pick the model separately: voice needs short, low-latency replies',
       volcAccessKey: 'AccessKey ID (voice list)',
       volcSecretKey: 'SecretAccessKey (voice list)',
       volcAkSkNote: 'Optional: only used to fetch the official voice list; synthesis still uses the API Key above',

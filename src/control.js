@@ -860,6 +860,18 @@ export function createControlHandler({
             return
           }
         }
+        // 备用条目里的 host 同样在保存边界校验：坏值落到磁盘后要到建连才炸，
+        // 表现为「设备一直聆听中」，比 400 难排查得多。
+        if (Array.isArray(llmPatch.backups)) {
+          for (const entry of llmPatch.backups) {
+            if (!entry || typeof entry !== 'object' || entry.provider !== 'host') continue
+            const issue = hostProviderIssue(entry.hostProvider, llm)
+            if (issue) {
+              sendJson(res, 400, { error: { code: 'invalid-host-provider', message: issue } })
+              return
+            }
+          }
+        }
       }
       await settings.update(body)
       onSettingsChanged?.()

@@ -70,10 +70,51 @@ test('stage storage/edit fields cover the settings whitelist', () => {
   }
 })
 
+test('endpoint URLs are built into the adapters and never rendered in the console', () => {
+  // 2026-11-09：厂商端点几乎不变，露在表单里只会让人以为必须填。地址一律内置在适配器里，
+  // 控制台的任何一个 stage/provider 组合都不许出现 `url` 字段。
+  for (const stage of STAGES) {
+    for (const id of providersForStage(stage)) {
+      for (const field of stageDescriptor(id, stage).fields || []) {
+        assert.notEqual(field.key, 'url', `${id}/${stage} 不应暴露端点地址字段`)
+      }
+    }
+  }
+  // 存储白名单仍保留 url（手写 settings 的自建/代理端点继续生效），但主用保存不写它——
+  // 写它就是「把已有端点覆盖成空串」，属于静默删除配置。
+  assert.ok(STAGE_META.asr.storageFields.includes('url'))
+  assert.ok(!STAGE_META.asr.editFields.includes('url'))
+  assert.ok(!STAGE_META.tts.editFields.includes('url'))
+  assert.ok(!STAGE_META.llm.editFields.includes('url'))
+})
+
 test('stage-level display name overrides work (xunfei TTS vs ASR)', () => {
   assert.equal(stageProviderLabel('tts', 'xunfei'), '讯飞语音合成')
   assert.equal(stageProviderLabel('asr', 'xunfei'), '讯飞语音听写')
-  assert.equal(stageProviderLabel('llm', 'volc'), '火山引擎豆包')
+  assert.equal(stageProviderLabel('tts', 'volc'), '火山引擎豆包')
+})
+
+test('the LLM stage offers DSH-hosted plus direct DeepSeek and Xiaomi MiMo', () => {
+  // 2026-11-09 只留 DeepSeek / MiMo；2026-11-10 加入 host（复用 DSH 已配置的厂商）。
+  assert.deepEqual([...providersForStage('llm')].sort(), ['deepseek', 'host', 'mimo'])
+  assert.ok(!allProvidersForStage('llm').includes('openai'))
+  assert.ok(!allProvidersForStage('llm').includes('spark'))
+  assert.ok(providersForStage('tts').includes('volc'), '火山 TTS 仍在')
+  assert.ok(providersForStage('asr').includes('volc'), '火山 ASR 仍在')
+  assert.ok(providersForStage('tts').includes('xunfei'), '讯飞 TTS 仍在')
+  assert.equal(stageDescriptor('volc', 'tts').name, undefined, '火山 TTS 沿用厂商名')
+})
+
+test('the host provider reuses DSH credentials: no secret field, hostProvider + model only', () => {
+  const desc = stageDescriptor('host', 'llm')
+  assert.ok(desc, 'host has an llm stage')
+  assert.equal(desc.keyless, true, 'the LLM card shows 无需密钥 instead of a missing key')
+  assert.deepEqual(desc.secretFields, [], 'nothing secret is stored for host entries')
+  assert.deepEqual(desc.fields.map((field) => field.key), ['hostProvider', 'model'])
+  assert.deepEqual(desc.summary, ['model'])
+  // 备用条目也要能表达 host（failover 逐条装配），所以存储白名单必须包含 hostProvider。
+  assert.ok(BACKUP_SPEC.llm.fields.some(([key]) => key === 'hostProvider'))
+  assert.ok(allProvidersForStage('llm').includes('host'), 'backups accept provider="host"')
 })
 
 test('providersPayload is JSON-serializable and versioned', () => {
@@ -81,9 +122,10 @@ test('providersPayload is JSON-serializable and versioned', () => {
   assert.equal(payload.schemaVersion, 1)
   assert.equal(payload.providers.length, PROVIDERS.length)
   assert.deepEqual(JSON.parse(JSON.stringify(payload)), payload)
-  // 一个 provider 可以同时覆盖多个 stage（火山 = LLM + TTS + ASR）。
+  // 一个 provider 可以同时覆盖多个 stage（火山 = TTS + ASR；LLM 段 2026-11-09 已移除）。
   const volc = payload.providers.find((provider) => provider.id === 'volc')
-  assert.ok(volc.stages.llm && volc.stages.tts && volc.stages.asr)
+  assert.ok(volc.stages.tts && volc.stages.asr)
+  assert.equal(volc.stages.llm, undefined)
   // 免密钥与整段提示是 stage 级声明，不靠前端写死。
   const edge = payload.providers.find((provider) => provider.id === 'edge')
   assert.equal(edge.stages.tts.keyless, true)

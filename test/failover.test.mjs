@@ -705,7 +705,7 @@ test('createVoiceAdapters leaves a single candidate unwrapped', () => {
 test('createVoiceAdapters wraps each stage when it has two or more candidates', () => {
   const voice = {
     sampleRate: { uplink: 16_000, downlink: 24_000 },
-    llm: { provider: 'deepseek', apiKey: 'k', backups: [{ provider: 'volc', apiKey: 'k' }] },
+    llm: { provider: 'deepseek', apiKey: 'k', backups: [{ provider: 'deepseek', apiKey: 'k' }] },
     tts: {
       provider: 'xunfei',
       appId: 'a',
@@ -732,9 +732,9 @@ test('createVoiceAdapters skips unusable candidates and explains the primary fai
     sampleRate: { uplink: 16_000, downlink: 24_000 },
     llm: {
       // 主用缺 Key → 构建失败；备用一条能起来、一条未知 provider、一条 mock。
-      provider: 'volc',
+      provider: 'deepseek',
       backups: [
-        { provider: 'deepseek', apiKey: 'k' },
+        { provider: 'mimo', model: 'mimo-v2', apiKey: 'k' },
         { provider: 'unknown-vendor', apiKey: 'k' },
         { provider: 'mock' },
       ],
@@ -759,10 +759,10 @@ test('createVoiceAdapters wraps when the primary fails but two backups build', (
   const voice = {
     sampleRate: { uplink: 16_000, downlink: 24_000 },
     llm: {
-      provider: 'volc', // 缺 Key
+      provider: 'deepseek', // 缺 Key
       backups: [
         { provider: 'deepseek', apiKey: 'k' },
-        { provider: 'openai', apiKey: 'k' },
+        { provider: 'mimo', model: 'mimo-v2', apiKey: 'k' },
       ],
     },
     tts: { provider: 'mock' },
@@ -778,13 +778,13 @@ test('createVoiceAdapters throws the primary original error when nothing builds'
   const logger = makeLogger()
   const voice = {
     sampleRate: { uplink: 16_000, downlink: 24_000 },
-    llm: { provider: 'volc', backups: [{ provider: 'xunfei', appId: 'a' }] },
+    llm: { provider: 'deepseek', backups: [{ provider: 'xunfei', appId: 'a' }] },
     tts: { provider: 'mock' },
     asr: { provider: 'mock' },
   }
   assert.throws(
     () => createVoiceAdapters(voice, { ffmpegPath: 'ffmpeg', logger }),
-    (error) => error instanceof AdapterConfigError && /apiKey is required for the volc provider/.test(error.message),
+    (error) => error instanceof AdapterConfigError && /apiKey is required for the deepseek provider/.test(error.message),
   )
 })
 
@@ -820,6 +820,38 @@ test('the build helpers surface missing host services as configuration errors', 
   assert.throws(() => buildAsrAdapter({ provider: 'local' }, {}), /speechToText/)
   assert.equal(buildLlmAdapter({ provider: 'mock' }).name, 'mock')
   assert.equal(buildAsrAdapter({ provider: 'mock' }).name, 'mock')
+})
+
+test('DSH-hosted LLM entries join the candidate chain like any other provider', () => {
+  // 2026-11-10：主用/备用都可以是「复用 DSH 已配置的厂商」，failover 不应特殊对待。
+  const llm = {
+    listProviders: () => [{ id: 'deepseek' }, { id: 'mimo' }],
+    stream: async function* () {},
+  }
+  const voice = {
+    sampleRate: { uplink: 16_000, downlink: 24_000 },
+    llm: {
+      provider: 'host',
+      hostProvider: 'deepseek',
+      model: 'deepseek-chat',
+      backups: [{ provider: 'host', hostProvider: 'mimo', model: 'mimo-v2' }],
+    },
+    tts: { provider: 'mock' },
+    asr: { provider: 'mock' },
+  }
+  const adapters = createVoiceAdapters(voice, { ffmpegPath: 'ffmpeg', llm })
+  assert.equal(adapters.llm.name, 'failover')
+  assert.equal(adapters.llm.candidateCount, 2)
+
+  // hostProvider 不在当前 profile 注册：构建期就明确失败（错误信息列出可用厂商），
+  // 而不是等到用户说完第一句话才抛 NO_ADAPTER（设备会停在「聆听中」）。
+  assert.throws(
+    () => createVoiceAdapters(
+      { ...voice, llm: { provider: 'host', hostProvider: 'gone', model: 'x' } },
+      { ffmpegPath: 'ffmpeg', llm, logger: makeLogger() },
+    ),
+    /未在当前 DSH profile 注册/,
+  )
 })
 
 // ---------------------------------------------------------------- ASR 失败形态

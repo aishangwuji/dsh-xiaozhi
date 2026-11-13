@@ -47,8 +47,9 @@ function mask(value) {
  * 备用服务商条目（`docs/backup-providers.md` 第 1/2 节）。
  *
  * 每个环节能填的字段和 provider 白名单都不同，集中放一张表：保存时按表校验裁剪，
- * 读取时按表出掩码，两处不会各写一套。`mock` 与 LLM 的 `host` 都故意不在白名单里：
- * 备用必须是真实服务商，且不能在设备链路里消耗 Harness 自己的额度。
+ * 读取时按表出掩码，两处不会各写一套。`mock` 故意不在白名单里（备用必须是真实服务商）；
+ * LLM 的 `host` **在**白名单里（2026-11-10）：它表示「复用 DSH 已配置的厂商」，
+ * 是用户显式选择，不算偷偷消耗 Harness 额度。
  */
 export const BACKUP_SPEC = {
   llm: {
@@ -57,6 +58,7 @@ export const BACKUP_SPEC = {
     // 这里自动跟上，不会出现「控制台能选、保存被拒」。
     providers: allProvidersForStage('llm'),
     fields: [
+      ['hostProvider', 64],
       ['model', 80],
       ['baseUrl', 300],
       ['appId', 64],

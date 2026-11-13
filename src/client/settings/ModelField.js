@@ -14,12 +14,29 @@ import { PillSelect } from '../ui/PillSelect.js'
      * - 接口不可达 / 没 Key → 空列表，退回文本框手填（不猜、不硬编码）。
      */
     function ModelField({
-      kind, provider, source = 'primary', index, value, onChange, placeholder, baseUrl, probeKey
+      kind, provider, hostProvider = '', source = 'primary', index, value, onChange, placeholder, baseUrl, probeKey
     }) {
       const [options, setOptions] = useState([]);
       useEffect(() => {
         let alive = true;
         setOptions([]);
+        // provider="host"：模型清单来自 DSH（`GET /llm/providers?provider=<hostProvider>`），
+        // 不走厂商接口、也不需要 Key；还没选 DSH 厂商时就是空清单（退回手填）。
+        if (provider === 'host') {
+          if (!hostProvider) return () => {
+            alive = false;
+          };
+          fetch(`dsh-xiaozhi-7c3a/llm/providers?provider=${encodeURIComponent(hostProvider)}`)
+            .then((response) => (response.ok ? response.json() : null))
+            .then((data) => {
+              const list = Array.isArray(data?.models) ? data.models : [];
+              if (alive) setOptions(list.map((item) => ({ value: item.value ?? item.id, label: item.label ?? item.name ?? item.id })).filter((item) => item.value));
+            })
+            .catch(() => {});
+          return () => {
+            alive = false;
+          };
+        }
         const rawKey = typeof probeKey === 'string' ? probeKey.trim() : '';
         const unsavedKey = rawKey && !rawKey.includes('•') && rawKey.length >= 8 ? rawKey : '';
         const timer = setTimeout(() => {
@@ -44,7 +61,7 @@ import { PillSelect } from '../ui/PillSelect.js'
           alive = false;
           clearTimeout(timer);
         };
-      }, [kind, provider, source, index, baseUrl, probeKey]);
+      }, [kind, provider, hostProvider, source, index, baseUrl, probeKey]);
 
       if (options.length === 0) {
         return h('input', { className: 'xz-input', value, placeholder, onChange: (e) => onChange(e.target.value) });

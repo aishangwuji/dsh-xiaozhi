@@ -134,6 +134,11 @@
       agentModelManual: '未拉到模型清单，可直接手填模型名',
       deviceConfigHint: '保存后在该智能体的设备下次连接生效',
       modelFromApi: '从厂商接口拉取（先填 Key）',
+      // 「复用 DSH 已配置的厂商」：不要求在插件里再配一遍 Key（2026-11-10）。
+      hostProvider: 'DSH 厂商',
+      llmHostNote: '复用 DSH 里已配置的厂商，不需要在这里再填 Key',
+      llmHostProviderNote: '来自 DSH 当前 profile；换 profile 后要重新选',
+      llmHostModelNote: '模型单独选：语音场景用短回复、低延迟的模型更合适',
       volcAccessKey: 'AccessKey ID（拉音色用）',
       volcSecretKey: 'SecretAccessKey（拉音色用）',
       volcAkSkNote: '可选：只用于拉取火山官方音色列表，合成仍用上面的 API Key',
