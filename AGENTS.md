@@ -43,8 +43,9 @@
 | 项 | 值 |
 |---|---|
 | GitHub | `aishangwuji/dsh-xiaozhi-server`（public，默认分支 `main`） |
-| 包名 | `dsh-xiaozhi-server`（2026-11-17 从 `@aishangwuji/dsh-xiaozhi` 改来）。不用 `dsh-xiaozhi`：npm 上那个名字已被一个无关项目（「旗驭小智 AI 网关」）占用，装错会得到别人的插件。目录仍叫 `dsh-xiaozhi`，数据目录仍是 `~/.dsh-xiaozhi/` |
-| 别人怎么装 | `dsh plugin --profile <p> add github:aishangwuji/dsh-xiaozhi-server`，或 Plugins → Add plugin 贴仓库地址；装完刷新页面 |
+| 包名 | `dsh-xiaozhi-server`（2026-11-17 从 `@aishangwuji/dsh-xiaozhi` 改来，同日发布 npm 0.2.0）。不用 `dsh-xiaozhi`：npm 上那个名字已被一个无关项目（「旗驭小智 AI 网关」）占用，装错会得到别人的插件。目录仍叫 `dsh-xiaozhi`，数据目录仍是 `~/.dsh-xiaozhi/` |
+| 别人怎么装 | `dsh plugin --profile <p> add dsh-xiaozhi-server`（走 npm，2026-11-17 已发布 0.2.0）；或 Plugins → Add plugin 填包名/仓库地址；或退回 Git：`add github:aishangwuji/dsh-xiaozhi-server`。装完刷新页面 |
+| npm 发布 | `npm publish --registry https://registry.npmjs.org/ --access public`（本机默认 registry 是 npmmirror，**必须显式指 npmjs**）。发布必须用 **granular access token 并勾 Allow bypass 2FA**——普通 `npm_` token 会 403 `granular access token with bypass 2fa enabled is required`。首次发布时 npm 会自动建一条 `0.0.0-stage` 占位版本（`"Temporary package placeholder for staged publishing"`），正常，`latest` 仍指向真版本；npmmirror 同步初期解析 `latest` 可能报 `ERR_PNPM_TARBALL_IO_ERROR`，固定版本号或 `--registry=https://registry.npmjs.org/` 可绕过 |
 | 本机 | profile `desktop` 里是 `link:D:/Demo/esp-xiaozhi/dsh-xiaozhi`（开发用）。改完 `npm run build` 再重启 DSH；**只改 cordis.patch.yml 的默认值不重装也生效，改 index.js/src 必须重启** |
 | 发布注意 | push 前扫密钥；2026-11-17 首次推送被 GitHub 拦下——历史里 `test/volc-sign.test.mjs`（已删）带着 Volcengine **官方文档示例**的 AK/SK，被 push protection 当真实密钥。已用 `git filter-repo --replace-text` 把这几个历史 blob 换成 `EXAMPLE_*` 占位值；真机 MAC 也换成了 `02:DE:AD:BE:EF:xx` 例示值。**不要把任何「看起来像真 Key」的串写进测试文件**，哪怕是文档抄来的 |
 | 推送网络 | 本机直连 `github.com:443` 会间歇 `Recv failure: Connection was reset` / 超时（`gh` API 不受影响）。重试通常能过；实在不行走 Clash SOCKS：`git -c http.proxy=socks5h://127.0.0.1:10808 push origin main`（端口随 Clash 变动，先 `Get-NetTCPConnection -State Listen` 确认） |

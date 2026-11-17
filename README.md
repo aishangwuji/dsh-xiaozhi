@@ -15,14 +15,28 @@
 Node 20 以上，pnpm 在 `PATH` 里（DSH 自带）。插件运行在 DSH 主进程内，**没有独立安装包，
 也没有构建步骤**——`client.js` 已随仓库提交，装完重启 DSH 即生效。
 
-### 方式一：Plugins 页面（推荐）
+### 方式一：npm（推荐，一条命令）
+
+```powershell
+dsh plugin --profile <你的 profile> add dsh-xiaozhi-server
+```
+
+装完刷新页面，插件出现在 **Plugins → Installed plugins**，把 `dsh-xiaozhi-server` 的开关打开；
+侧边栏出现「小智设备接入」入口，点开就是控制台。
+
+- **升级**：`add dsh-xiaozhi-server@<版本>`；registry 安装的 bundle 在 Plugins 详情页有 **Versions**
+  区，可以直接看新版本并 Update。
+- **国内镜像注意**：npmmirror 刚同步新包时偶尔解析失败（报 `ERR_PNPM_TARBALL_IO_ERROR` /
+  `numeric field was not a number`）。固定版本即可绕过：
+  `dsh plugin --profile <p> add dsh-xiaozhi-server@0.2.0`，或临时加 `--registry=https://registry.npmjs.org/`。
+
+### 方式二：Plugins 页面
 
 1. 侧边栏 → **Plugins** → **Add plugin**；
-2. 在包名输入框粘贴仓库地址 `https://github.com/aishangwuji/dsh-xiaozhi-server`；
-3. **Install**，装完在 **Installed plugins** 里把 `dsh-xiaozhi-server` 打开；
-4. 侧边栏出现「小智设备接入」入口，点开就是控制台。
+2. 包名输入框填 `dsh-xiaozhi-server`（也可以直接贴仓库地址 `https://github.com/aishangwuji/dsh-xiaozhi-server`）；
+3. **Install**，装完在 **Installed plugins** 里打开它。
 
-### 方式二：命令行
+### 方式三：GitHub（不经过 npm）
 
 ```powershell
 dsh plugin --profile <你的 profile> add github:aishangwuji/dsh-xiaozhi-server
@@ -30,12 +44,9 @@ dsh plugin --profile <你的 profile> add github:aishangwuji/dsh-xiaozhi-server
 
 `dsh plugin add` 会把包装进 profile 并选中 bundle；装完刷新页面，若 **Plugins** 列表里没出现，去该页面确认它的开关。
 
-- **升级**：在 Plugins 页面卸载后重装，或再跑一次上面的 `add`（Git 安装按默认分支打包，
-  没有版本列表；要固定版本就用 `github:aishangwuji/dsh-xiaozhi-server#<commit>`）。
 - **卸载**：Plugins 页面 → 该 bundle → **Remove**。设备面 8989 会随之停止监听。
-- **npm 上还没有发布**：包名 `dsh-xiaozhi-server` 目前空着，本插件只从 GitHub 分发，
-  用上面的 git 地址安装。注意别和 npm 上另一个叫 `dsh-xiaozhi` 的项目（「旗驭小智 AI 网关」）
-  搞混——`dsh plugin add dsh-xiaozhi` 装到的是它，不是本插件。
+- **别和 `dsh-xiaozhi` 搞混**：npm 上另一个叫 `dsh-xiaozhi` 的项目是「旗驭小智 AI 网关」，
+  与本插件无关；`dsh plugin add dsh-xiaozhi` 装到的是它。
 
 ### 装好之后
 
