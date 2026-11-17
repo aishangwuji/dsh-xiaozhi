@@ -318,7 +318,9 @@ test('device mode: an empty ASR turn is closed and the next spoken turn still wo
     client.ws.sendJson({ type: 'listen', state: 'start', mode: 'auto' })
     for (let index = 0; index < 5; index += 1) client.ws.sendBinary(SILENCE)
     client.ws.sendJson({ type: 'listen', state: 'stop' })
-    await new Promise((resolve) => setTimeout(resolve, 120))
+    // 2026-11-15 起 listen stop 后有一个续话窗口（默认 300ms）才真正收口，
+    // 这里要等窗口过完再看「有没有补第二段 tts」，不能只看 120ms。
+    await new Promise((resolve) => setTimeout(resolve, 450))
     assert.equal(
       client.messages.filter((message) => message.type === 'tts' && message.state === 'stop').length,
       1,

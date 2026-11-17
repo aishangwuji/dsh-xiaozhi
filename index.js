@@ -24,6 +24,7 @@ import { createControlHandler } from './src/control.js'
 import { installCrashGuard } from './src/crash-guard.js'
 import { createHistoryStore } from './src/history.js'
 import { createMemoryStore } from './src/memory.js'
+import { createFirmwareStore } from './src/firmware.js'
 import { AgentStore, adoptLegacyDevices, nextAgentName } from './src/agents.js'
 import { createToolRegistry } from './src/tools.js'
 import { createMcpManager } from './src/mcp/manager.js'
@@ -35,11 +36,12 @@ import { mergeDeviceConfig } from './src/device-config.js'
 import { SettingsStore } from './src/settings.js'
 import { DeviceStore } from './src/store.js'
 import { PendingStore } from './src/pending.js'
-import { buildLlmAdapter, buildTtsAdapter, buildAsrAdapter, createVoiceAdapters } from './src/voice/adapters/index.js'
+import { buildLlmAdapter, buildTtsAdapter, buildAsrAdapter, createVoiceAdapters, prioritizeTtsProvider } from './src/voice/adapters/index.js'
 import { probeAsr } from './src/voice/asr-probe.js'
 import { hostProviderIssue } from './src/voice/host-provider.js'
-import { encodePcmToOpus, probeFfmpeg, UplinkDecoder } from './src/voice/codec.js'
+import { createOpusStreamEncoder, encodePcmToOpus, probeFfmpeg, UplinkDecoder } from './src/voice/codec.js'
 import { normalizeOutputLanguage, withOutputLanguage } from './src/voice/language.js'
+import { EMOTION_EMOJI } from './src/voice/emotion.js'
 import { resolveTtsVoice, resourceTierOf, voiceTierOf } from './src/voice/voices.js'
 import { initTrace, trace } from './src/voice/trace.js'
 
@@ -67,7 +69,11 @@ const DEFAULT_LAN_CIDRS = ['192.168.0.0/16', '10.0.0.0/8', '172.16.0.0/12', '127
 const SHORT_REPLY_RULE =
   '\n\n<voice_reply_limits>\n' +
   '你正在和用户做实时语音对话，回答必须短：默认 1 句，最多 2 句、不超过 60 个汉字；' +
-  '先直接回答，不寒暄、不铺垫、不复述用户的问题；不要使用 Markdown、列表、代码块或表情符号；' +
+  '先直接回答，不寒暄、不铺垫、不复述用户的问题；' +
+  '每条回复的第一个字符必须是表达当前情绪的表情符号，只能从这 21 个里选：' +
+  Object.values(EMOTION_EMOJI).join('') +
+  '；表情符号后面必须跟正文（不能只回一个表情）；正文里不要再出现其他表情符号；' +
+  '不要使用 Markdown、列表或代码块；' +
   '只有用户明确要求「详细说说 / 展开讲」时才允许更长。\n' +
   '</voice_reply_limits>'
 
@@ -420,6 +426,9 @@ export function apply(ctx, config = {}) {
   initTrace(join(resolved.dataRoot, 'voice.log'))
 
   const memory = createMemoryStore({ dir: join(resolved.dataRoot, 'memory') })
+  // 固件升级通道：控制台上传的 .bin 落在这里，设备从设备面的 /firmware/<name> 下载。
+  const firmware = createFirmwareStore({ dir: join(resolved.dataRoot, 'firmware'), logger })
+  firmware.load()
   const history = createHistoryStore({
     dir: join(resolved.dataRoot, 'history'),
     maxMessages: resolved.voice.historyMaxMessages,
@@ -631,13 +640,20 @@ export function apply(ctx, config = {}) {
             tts: { ...resolved.voice.tts, ...effective.config.tts },
             asr: { ...resolved.voice.asr, ...effective.config.asr },
           }
+          // 智能体级 TTS 服务商（2026-11-14）：在该智能体已配置的主用/备用里挑一条作为首选，
+          // 其余条目继续当它的降级链。**必须在条目层重排**——凭据跟着条目走，只改 provider
+          // 字段会变成「厂商对、Key 是别家的」。智能体音色/语种/语速由 prioritize 保留。
+          const pinnedTts = String(agentOf(device)?.overrides?.ttsProvider ?? '').trim()
+          if (pinnedTts) merged.tts = prioritizeTtsProvider(merged.tts, pinnedTts)
           // 输出语种是全局/设备级的一份设置，不是某家 TTS 的私有字段；备用条目在设置里
           // 不存 language，这里统一继承生效语种，免得主用坏掉切到备用后语种指令丢了。
-          if (Array.isArray(resolved.voice.tts.backups) && resolved.voice.tts.backups.length > 0) {
+          // 用 `merged.tts.backups`（而不是重新读 resolved 的列表）：上面可能已经按智能体
+          // 指定的服务商重排过，重新读会把重排结果覆盖掉。
+          if (Array.isArray(merged.tts.backups) && merged.tts.backups.length > 0) {
             const language = merged.tts.language ?? ''
             merged.tts = {
               ...merged.tts,
-              backups: resolved.voice.tts.backups.map((entry) => ({ language, ...entry })),
+              backups: merged.tts.backups.map((entry) => ({ language, ...entry })),
             }
           }
           const adapters = createVoiceAdapters(merged, {
@@ -766,6 +782,9 @@ export function apply(ctx, config = {}) {
           })
         voice.encodeSpeech = (pcm, options) =>
           encodePcmToOpus(pcm, { ...options, ffmpegPath: resolved.voice.ffmpegPath })
+        // 流式下发（2026-11-16）：TTS 边合成边编码，首包不再等整句。
+        voice.createStreamEncoder = (options) =>
+          createOpusStreamEncoder({ ...options, ffmpegPath: resolved.voice.ffmpegPath })
         voice.enabled = true
         logger.info?.(
           `dsh-xiaozhi: voice pipeline ready (ffmpeg ${probe.version || 'unknown'}, ` +
@@ -791,12 +810,14 @@ export function apply(ctx, config = {}) {
     logger,
     inboundMcp,
     pending,
+    firmware,
   })
   const control = createControlHandler({
     store,
     agents,
     hub,
     config: resolved,
+    firmware,
     voice,
     crashGuard,
     pending,

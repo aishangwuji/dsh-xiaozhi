@@ -5,8 +5,9 @@
  *
  *   - LLM：**只在还没吐出任何事件之前**可换。已经出字再重试会把同一句话念两遍、
  *     还会错乱分句，所以直接抛给会话层的 `llm_failed` 路径。
- *   - TTS：每句话内部都可以换。候选音频先整句收进内存，失败换下一家从零重来，
- *     不产生半句幽灵音频（会话本来就是整句编码）。
+ *   - TTS：**只在还没吐出任何音频之前**可换。每个 chunk 一到手就往下游放（流式下发，
+ *     首包不再等整句合成完）；已经出过音频再换家会把前半句重念一遍，所以直接抛给
+ *     会话层收尾（与 LLM 的 `dshNoSwitch` 契约一致）。
  *   - ASR：整段 utterance 结束时换。写入的 PCM 记一份（上限 60s 上行音频），
  *     `finish()` 失败时把缓存回放给下一家；回放不推 partial（避免重复气泡）。
  *
@@ -244,22 +245,35 @@ export function createFailoverTts(candidates, options = {}) {
     for (let position = 0; position < order.length; position += 1) {
       const index = order[position]
       const startedAt = clock()
-      const chunks = []
+      let emitted = 0
       try {
         for await (const chunk of candidates[index].synthesize(text, request)) {
           if (request?.signal?.aborted) return
-          if (chunk?.length) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+          if (!chunk?.length) continue
+          emitted += 1
+          // 流式：第一个 chunk 立刻放行，不再整句缓冲（2026-11-16，首包延迟优化）。
+          yield Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
         }
         sticky.success(index)
-        // 整句收齐后才放行：换家时旧候选的半个句子不会漏进播放队列。
-        for (const chunk of chunks) {
-          if (request?.signal?.aborted) return
-          yield chunk
-        }
         return
       } catch (error) {
         lastError = error
         if (request?.signal?.aborted) return
+        // 已经出过音频：换家会把前半句重念一遍，而且那部分已经进了播放队列，
+        // 直接抛给会话层（会话会补 sentence_end，下一句继续）。
+        if (emitted > 0) {
+          if (error && typeof error === 'object') error.dshNoSwitch = true
+          trace('tts.stream_error', {
+            device: deviceId,
+            provider: labels?.[index] ?? String(index),
+            chunk: emitted,
+            message: errorText(error),
+          })
+          logger?.warn?.(
+            `dsh-xiaozhi: voice.tts 候选 #${index}（${labels?.[index] ?? index}）已出 ${emitted} 段音频后失败，不再换家: ${errorText(error)}`,
+          )
+          throw error
+        }
         report(index, order[position + 1], error, startedAt)
       }
     }

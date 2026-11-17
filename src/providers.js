@@ -114,10 +114,34 @@ export const PROVIDERS = [
     },
   },
   {
+    // DeepSeek：除了 LLM，2026-11-14 起也提供**语音识别与合成**（`/v1/tools/asr`、`/v1/tools/tts`），
+    // 三段共用同一把 API Key。识别是整段上传（16-bit PCM WAV / Ogg Opus，≤8 MiB、≤120s），
+    // 合成整段返回 WAV；端点在适配器里内置，描述符只声明要填什么。
+    // 两段都**没有语种参数**（按内容自动识别），所以这里不出现 language 字段。
     id: 'deepseek',
     name: 'DeepSeek',
     group: 'cloud',
-    stages: { llm: llmStage('https://api.deepseek.com/v1', 'deepseek-chat') },
+    stages: {
+      llm: llmStage('https://api.deepseek.com/v1', 'deepseek-chat'),
+      tts: {
+        name: 'DeepSeek 语音合成',
+        note: 'deepseekTtsNote',
+        // 音色（stella / tide）与其它厂商一样只在「智能体 → 配置 → 角色」里选。
+        fields: [{ ...secret('apiKey'), note: 'deepseekKeyNote' }],
+        summary: [],
+        secretFields: ['apiKey'],
+        probe: { kind: 'tts' },
+      },
+      asr: {
+        name: 'DeepSeek 语音识别',
+        note: 'deepseekAsrNote',
+        // 没有语种参数：语种由服务端按音频自动识别，控制台因此不提供「识别语种」。
+        fields: [{ ...secret('apiKey'), note: 'deepseekKeyNote' }],
+        summary: [],
+        secretFields: ['apiKey'],
+        probe: { kind: 'asr', labelKey: 'backupTestAsr' },
+      },
+    },
   },
   {
     // 小米 MiMo：OpenAI Chat Completions 兼容，但鉴权是 `api-key` 头而不是 Bearer。
@@ -138,23 +162,9 @@ export const PROVIDERS = [
       tts: {
         fields: [
           { ...secret('apiKey'), note: 'volcTtsKeyNote' },
-          // 火山 OpenAPI 的 AK/SK：只用于拉官方音色列表（ListSpeakers），不参与合成。
-          // 复用 appId/apiSecret 两个通用槽位，避免再动 settings 的字段/掩码契约。
-          {
-            key: 'appId',
-            type: 'text',
-            label: 'volcAccessKey',
-            placeholder: 'AKLT…',
-            primaryOnly: true,
-            note: 'volcAkSkNote',
-          },
-          {
-            key: 'apiSecret',
-            type: 'secret',
-            label: 'volcSecretKey',
-            primaryOnly: true,
-            note: 'volcAkSkNote',
-          },
+          // 不再要 AccessKey/SecretKey（2026-11-13 用户决定）：音色列表固定用内置清单，
+          // 官方 ListSpeakers 需要 AK/SK，而 AK 与语音 AppID 是两套东西，填错只会得到
+          // `InvalidClientTokenId / security token` —— 少一个必填坑。
         ],
         summary: [],
         secretFields: ['apiKey'],

@@ -12,7 +12,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { demuxOggOpus, OggOpusMuxer } from './ogg.js'
+import { createOggOpusStreamDemuxer, demuxOggOpus, OggOpusMuxer } from './ogg.js'
 
 const DECODE_ARGS = [
   '-hide_banner',
@@ -54,6 +54,16 @@ function resolveFrameArgs({ sampleRate, frameMs, bitrate, application }) {
     frameDuration,
     '-application',
     application,
+    // Without this the Ogg muxer buffers whole pages (several KB) before writing
+    // to stdout, which defeats streaming: the first packet would only arrive at
+    // the end of the sentence. Harmless for the batch encoder.
+    // Ogg pages default to ~1s of audio; for a streaming encoder that would hold
+    // the first packet until the sentence ends. 60ms pages keep latency low at a
+    // negligible framing overhead.
+    '-page_duration',
+    '60000',
+    '-flush_packets',
+    '1',
     '-f',
     'ogg',
     'pipe:1',
@@ -169,9 +179,117 @@ export class UplinkDecoder {
   }
 }
 
-/** Encode PCM (int16 LE mono) into Opus packets using ffmpeg, then unwrap them. */
-export function encodePcmToOpus(pcm, options = {}) {
+/**
+ * Streaming Opus encoder: one long-lived ffmpeg per sentence, packets emitted as
+ * soon as the encoder produces them.
+ *
+ * The batch `encodePcmToOpus` waits for the whole sentence, which is why the
+ * first audio used to arrive only after the TTS provider had finished. Here the
+ * session writes PCM chunks into ffmpeg as they come from the provider and pushes
+ * each demuxed Opus packet straight into the paced player.
+ *
+ * A fresh ffmpeg (fresh encoder state) per sentence is intentional: sentence
+ * boundaries are natural pauses, and keeping one encoder per session would make
+ * interruption cleanup much harder.
+ *
+ * @param {object} options
+ * @param {string} [options.ffmpegPath]
+ * @param {number} [options.sampleRate]
+ * @param {number} [options.frameMs]
+ * @param {string} [options.bitrate]
+ * @param {string} [options.application]
+ * @param {(packet: Buffer) => void} [options.onPacket]
+ * @param {(error: Error) => void} [options.onError]
+ * @returns {{ frameMs: number, write: (pcm: Buffer) => void, end: () => Promise<void>, close: () => void }}
+ */
+export function createOpusStreamEncoder(options = {}) {
   const {
+    ffmpegPath = 'ffmpeg',
+    sampleRate = 24_000,
+    frameMs = 20,
+    bitrate = '32k',
+    application = 'voip',
+    onPacket,
+    onError,
+  } = options
+  const demuxer = createOggOpusStreamDemuxer()
+  let stderr = ''
+  let aborted = false
+  let ended = false
+  let resolveExit
+  const exited = new Promise((resolve) => {
+    resolveExit = resolve
+  })
+  const fail = (error) => {
+    if (aborted) return
+    onError?.(error)
+  }
+  const child = spawn(ffmpegPath, resolveFrameArgs({ sampleRate, frameMs, bitrate, application }), {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  child.stdout.on('data', (chunk) => {
+    let packets
+    try {
+      packets = demuxer.push(chunk)
+    } catch (error) {
+      fail(error)
+      return
+    }
+    for (const packet of packets) {
+      if (aborted) return
+      onPacket?.(packet)
+    }
+  })
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk.toString('utf8')
+  })
+  child.on('error', (error) => {
+    fail(error)
+    resolveExit()
+  })
+  child.on('close', (code) => {
+    if (code !== 0) fail(new Error(`ffmpeg encode failed (${code}): ${stderr.trim().slice(0, 200)}`))
+    resolveExit()
+  })
+  child.stdin.on('error', () => {})
+
+  return {
+    frameMs,
+    write(pcm) {
+      if (!ended && !aborted && pcm?.length) child.stdin.write(pcm)
+    },
+    async end() {
+      if (ended || aborted) return
+      ended = true
+      try {
+        child.stdin.end()
+      } catch {
+        // ffmpeg already gone.
+      }
+      await exited
+    },
+    close() {
+      if (ended || aborted) return
+      aborted = true
+      try {
+        child.stdin.end()
+      } catch {
+        // Already closed.
+      }
+      const timer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL')
+        } catch {
+          // Gone.
+        }
+      }, 500)
+      timer.unref?.()
+    },
+  }
+}
+
+/** Encode PCM (int16 LE mono) into Opus packets using ffmpeg, then unwrap them. */
+export function encodePcmToOpus(pcm, options = {}) {  const {
     ffmpegPath = 'ffmpeg',
     sampleRate = 24_000,
     frameMs = 20,

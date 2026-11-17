@@ -15,6 +15,8 @@
 import { createEdgeTts } from './edge-tts.js'
 import { createBaizhiAsr } from './baizhi-asr.js'
 import { createBaizhiTts, baizhiSpeedPreset } from './baizhi-tts.js'
+import { createDeepseekAsr } from './deepseek-asr.js'
+import { createDeepseekTts } from './deepseek-tts.js'
 import { createFailoverAsr, createFailoverLlm, createFailoverTts } from './failover.js'
 import { createFunasrAsr } from './funasr-asr.js'
 import { createMockAsr, createMockLlm, createMockTts } from './mock.js'
@@ -130,6 +132,45 @@ export function buildLlmAdapter(spec = {}, { systemPrompt = '', llm, deviceId = 
 }
 
 /**
+ * 智能体级「TTS 服务商」：把已配置的主用/备用条目重排成「指定厂商优先」的候选链。
+ *
+ * **凭据跟着条目走**，所以不能只改 `provider` 字段——必须把该条目的整套凭据提为主用、
+ * 原主用整套降为备用（否则会出现「provider=火山、Key 却是 DeepSeek 的」）。
+ *
+ * 会话级字段（音色 / 语种 / 语速）仍以传入的 `ttsSpec` 为准（智能体覆盖 > 全局），
+ * 不被备用条目上的历史残留盖掉。指定厂商没配置时原样返回（构建期会在候选链里报错）。
+ *
+ * @param {object} ttsSpec 合并后的 `voice.tts`（含 backups）
+ * @param {string} provider 智能体指定的厂商 id；空 = 不干预
+ * @returns {object} 新的 tts spec（不修改入参）
+ */
+export function prioritizeTtsProvider(ttsSpec = {}, provider = '') {
+  const spec = ttsSpec && typeof ttsSpec === 'object' ? ttsSpec : {}
+  const wanted = String(provider ?? '').trim()
+  if (!wanted || spec.provider === wanted) return spec
+  const backups = Array.isArray(spec.backups) ? spec.backups : []
+  const index = backups.findIndex((entry) => entry && typeof entry === 'object' && entry.provider === wanted)
+  if (index < 0) return spec
+
+  const { id: _chosenId, backups: _chosenBackups, ...chosen } = backups[index]
+  // 原主用整条降为备用（摘掉 `id` / `backups`，备用条目不带这两个键）。
+  const { id: _primaryId, backups: _primaryBackups, ...demoted } = spec
+  const chain = []
+  if (spec.provider) chain.push(demoted)
+  chain.push(...backups.filter((_, at) => at !== index))
+
+  return {
+    ...chosen,
+    // 会话级字段沿用合并后的值：智能体音色/语种/语速优先，空串 = 厂商默认。
+    voice: spec.voice ?? '',
+    language: spec.language ?? '',
+    speed: spec.speed ?? '',
+    rate: spec.rate ?? '',
+    backups: chain,
+  }
+}
+
+/**
  * 构建一个 TTS 适配器。
  *
  * @param {object} spec 一条 TTS 配置（provider/voice/rate/speed/model/resourceId/url/appId/apiKey/apiSecret…）
@@ -196,7 +237,20 @@ export function buildTtsAdapter(spec = {}, { ffmpegPath = 'ffmpeg', sampleRate =
       timeoutMs: spec.timeoutMs ?? 20_000,
     })
   }
-  throw new AdapterConfigError(`unknown TTS provider "${provider}" (expected mock, edge, xunfei, volc or baizhi)`)
+  if (provider === 'deepseek') {
+    // 同一把 DeepSeek Key 也用于 LLM（`OPENAI_COMPATIBLE.deepseek`）与联网工具；语音段
+    // 只是多两个端点。**不支持语速**，`spec.speed` / `spec.rate` 故意不下发。
+    return createDeepseekTts({
+      apiKey: spec.apiKey,
+      url: spec.url || undefined,
+      voice,
+      sampleRate,
+      timeoutMs: spec.timeoutMs ?? 30_000,
+    })
+  }
+  throw new AdapterConfigError(
+    `unknown TTS provider "${provider}" (expected mock, edge, xunfei, volc, baizhi or deepseek)`,
+  )
 }
 
 /**
@@ -261,7 +315,19 @@ export function buildAsrAdapter(spec = {}, { sampleRate = 16_000, speechToText, 
       sampleRate,
     })
   }
-  throw new AdapterConfigError(`unknown ASR provider "${provider}" (expected mock, funasr, xunfei, volc or baizhi)`)
+  if (provider === 'deepseek') {
+    // 整段批处理（缓存 PCM，finish() 时一次上传）；没有语种参数，`spec.language` 被忽略。
+    return createDeepseekAsr({
+      apiKey: spec.apiKey,
+      url: spec.url || undefined,
+      language: spec.language || '',
+      sampleRate,
+      timeoutMs: spec.timeoutMs ?? undefined,
+    })
+  }
+  throw new AdapterConfigError(
+    `unknown ASR provider "${provider}" (expected mock, funasr, xunfei, volc, baizhi or deepseek)`,
+  )
 }
 
 /**

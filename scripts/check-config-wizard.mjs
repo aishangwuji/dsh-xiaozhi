@@ -45,11 +45,19 @@ globalThis.fetch = async (url, options = {}) => {
   if (options.body) callBodies.push(String(options.body))
   if (path.endsWith('/settings') && method === 'GET') return json({ settings, defaults: { systemPrompt: '', silenceMs: 400 } })
   if (path.endsWith('/settings') && method === 'POST') return json({ settings, defaults: { systemPrompt: '', silenceMs: 400 } })
+  // 「设为主用」：服务端整段互换主用/备用（密钥不过 HTTP），前端拿回新快照。
+  if (path.includes('/settings/provider/promote') && method === 'POST') {
+    return json({ settings, defaults: { systemPrompt: '', silenceMs: 400 } })
+  }
   if (path.includes('/voices')) return json({ options: {} })
   // 模型清单故意**不包含**已保存的 gpt-4o-mini：验证「当前值不在清单里」时仍能回显，
   // 而不是显示「未选择」。
   if (path.includes('/models')) return json({ options: [{ value: 'some-other-model', label: 'some-other-model' }] })
   if (path.includes('/test/')) return json({ ok: true, totalMs: 100, firstTokenMs: 30, text: '你好小智' })
+  // 2026-11-14：TTS 服务商池的删除（走服务端，主用位由下一条顶上）。
+  if (path.includes('/settings/provider/remove') && method === 'POST') {
+    return json({ settings, defaults: { systemPrompt: '', silenceMs: 400 } })
+  }
   return json({})
 }
 
@@ -88,6 +96,17 @@ const deleteButton = [...document.querySelectorAll('.xz-provider-row-menu .xz-pr
 deleteButton.click()
 await new Promise((resolve) => setTimeout(resolve, 100))
 console.log('delete confirm text:', deleteButton.textContent)
+
+// 2026-11-14：主用/备用可随时互换——备用行 ⋯ 的第一项是「设为主用」，
+// 点击应 POST /settings/provider/promote（服务端整段互换，密钥不过浏览器）。
+const menuButtons = [...document.querySelectorAll('.xz-provider-row-menu .xz-provider-menu-item')]
+console.log('menu items:', menuButtons.map((button) => button.textContent.trim()))
+const promoteButton = menuButtons.find((button) => button.textContent.trim() === '设为主用')
+promoteButton?.click()
+await new Promise((resolve) => setTimeout(resolve, 300))
+const promoteCall = [...calls].reverse().find((call) => call.includes('/settings/provider/promote')) || ''
+const promoteBody = [...callBodies].reverse().find((body) => body.includes('"kind":"llm"') && body.includes('"index":0')) || ''
+console.log('promote call:', promoteCall || 'MISSING')
 
 const add = document.querySelector('.xz-backup-add-row')
 add.click()
@@ -183,7 +202,42 @@ const asrResult = asrPrimary.querySelector('.xz-backup-test')?.textContent || ''
 const lastTestBody = [...callBodies].reverse().find((body) => body.includes('"source":"primary"') && body.includes('"kind":"asr"')) || ''
 console.log('asr test result:', asrResult)
 
+// TTS = 服务商池（2026-11-14）：全局不再分主用/备用、不排序；用哪家去智能体页选。
+document.querySelectorAll('.xz-stage-modal .xz-modal-foot .xz-btn')
+  .forEach((button) => { if (button.textContent.includes('关闭')) button.click() })
+await new Promise((resolve) => setTimeout(resolve, 150))
+document.querySelectorAll('.xz-stage-card')[2].click()
+await new Promise((resolve) => setTimeout(resolve, 200))
+const ttsModal = document.querySelector('.xz-stage-modal')
+const poolRows = ttsModal.querySelectorAll('.xz-pool-row').length
+const poolHasPrimaryCard = Boolean(ttsModal.querySelector('.xz-primary-card'))
+const poolHasPromote = ttsModal.textContent.includes('设为主用')
+const poolHasMove = ttsModal.textContent.includes('上移') || ttsModal.textContent.includes('下移')
+const poolHasHint = Boolean(ttsModal.querySelector('.xz-pool-hint')) && ttsModal.querySelector('.xz-pool-hint').textContent.includes('智能体')
+const poolAdd = [...ttsModal.querySelectorAll('.xz-pool-add')].some((node) => node.textContent.includes('添加服务商'))
+console.log('tts pool rows:', poolRows, 'primaryCard:', poolHasPrimaryCard, 'promote:', poolHasPromote, 'hint:', poolHasHint)
+const poolDelete = [...ttsModal.querySelectorAll('.xz-pool-link.danger')]
+  .filter((button) => button.textContent.trim() === '删除')[0]
+poolDelete?.click()
+await new Promise((resolve) => setTimeout(resolve, 100))
+const poolConfirmText = poolDelete?.textContent.trim() || ''
+poolDelete?.click()
+await new Promise((resolve) => setTimeout(resolve, 300))
+const poolRemoveCalls = calls.filter((call) => call.includes('/settings/provider/remove')).length
+console.log('tts pool delete confirm:', poolConfirmText, 'remove calls:', poolRemoveCalls)
+
 const failures = []
+if (poolRows !== 1) failures.push('TTS 服务商池行数应为 1，实际 ' + poolRows)
+if (poolHasPrimaryCard) failures.push('TTS 池里仍渲染主用卡')
+if (poolHasPromote) failures.push('TTS 池里仍有「设为主用」')
+if (poolHasMove) failures.push('TTS 池里仍有上移/下移')
+if (!poolHasHint) failures.push('TTS 池缺少「只管理服务商与凭据」提示')
+if (!poolAdd) failures.push('TTS 池缺少「添加服务商」入口')
+if (poolConfirmText !== '再次点击删除') failures.push('TTS 删除没有二次确认（' + poolConfirmText + '）')
+if (poolRemoveCalls === 0) failures.push('TTS 删除没有调用 /settings/provider/remove')
+if (!promoteButton) failures.push('缺少「设为主用」入口')
+if (!promoteCall) failures.push('「设为主用」没有 POST /settings/provider/promote')
+if (!promoteBody) failures.push('「设为主用」的请求体不是 {kind:"llm", index:0}')
 if (backupHasModel) failures.push('backup add dialog still asks for a model')
 if (editHasModel) failures.push('backup edit dialog still asks for a model')
 if (!requiredBlocked) failures.push('required-field validation did not block the empty API Key')

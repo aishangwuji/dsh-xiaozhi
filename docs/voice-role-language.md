@@ -316,7 +316,7 @@ CREATE TABLE `ai_tts_voice` (
 
 | 改动 | 文件 | 说明 |
 |---|---|---|
-| 音色语种 | `src/voice/voices.js` | 105 条 volc 音色；38 条补上官方 `languages`，末尾新增 4 条 `multi_*` 日语音色 |
+| 音色语种 | `src/voice/voices.js` | 105 条 volc 音色；38 条补上官方 `languages`，末尾新增 4 条 `multi_*` 日语音色（**2026-11-14 已按官方 2.0 表重建为 241 条，见附录 H**） |
 | 语种白名单/指令 | `src/voice/language.js`（新增） | 普通话/英语/日语/粤语/韩语；`<output_language_directive>`；非白名单值退化为空 |
 | 提示词注入 | `index.js` | `withOutputLanguage(withClock(prompt), tts.language)`；adapter 缓存 key 补进 provider/voice/language |
 | 运行时配置 | `src/settings.js` | 全局 `voice.tts.language` 已删除（2026-11-08）；语种只在智能体 `overrides.language`，`src/settings.js` 不再存 TTS language |
@@ -366,6 +366,68 @@ Service=`speech_saas_prod`，Region=`cn-beijing`）——已核对官方文档�
 | 讯飞 | ASR | APPID + APIKey + APISecret | `language` 默认 `zh_cn` | [语音听写大模型 API](https://www.xfyun.cn/doc/spark/spark_zh_iat.html) |
 | 微软 Edge | TTS | 无（免密钥） | — | edge-tts 公共端点 |
 | 本地 SenseVoice | ASR | 无（Harness 内置） | `language` 默认 `zh_cn` | 本机服务 |
+| DeepSeek | TTS | `Authorization: Bearer <API Key>` | 音色 `stella`（默认）/ `tide`（智能体级选）；**无语种参数**、不支持语速 | [语音合成](https://api-docs.deepseek.com/zh-cn/api/tts) |
+| DeepSeek | ASR | 同一把 API Key（Bearer） | **无语种参数**（按音频自动识别）；整段上传 ≤120s / 8 MiB | [语音识别](https://api-docs.deepseek.com/zh-cn/api/asr) |
 
-**注意**：火山 TTS 主用里的 `AccessKey ID` / `SecretAccessKey` **不是**合成必填项，只用于拉官方音色列表；
-表单里标为「可选」，不填也能正常合成。表单用红色 `*` 标必填，`commitEditor` 会拦下缺失的必填项并提示。
+**注意**：火山 TTS 主用里的 `AccessKey ID` / `SecretAccessKey` **已于 2026-11-13 从表单移除**
+（音色列表改为内置清单，不再调 `ListSpeakers`；AK 与语音 AppID/API Key 是三套不同凭据）。现在火山
+TTS/ASR 都只需 `X-Api-Key`。表单用红色 `*` 标必填，`commitEditor` 会拦下缺失的必填项并提示。
+
+## 音色下拉的取值链路（2026-11-13，定稿：只内置清单）
+
+1. 控制台「智能体 → 配置 → 角色 → 音色」请求 `GET /voices?provider=<全局 TTS 厂商>&resourceId=<全局资源族>`。
+2. `src/control.js` 不再调任何外部接口：直接回 `src/voice/voices.js` 的 `VOICE_OPTIONS`，`source:'catalog'`。
+   内置目录逐条来自自建 Go 服务端 `voice_constants.go` 的 `{Value, Label}`，每条带 `tier`（1.x / 2.0）。
+3. **资源族过滤是硬约束**：火山 `seed-tts-2.0` 只认 `*_uranus_bigtts` / `saturn_*_tob`，
+   选 1.x（`*_moon/mars/jupiter_bigtts`）会回 `55000000`，表现是「有字没声」。
+   前端一律走 `voicesForResource(catalog, resourceId)`；回归 `npm run check:role` 断言 2.0 下没有「湾湾小何」。
+4. 为什么不接官方 `ListSpeakers`：它要 **AccessKey / SecretAccessKey**（AK 形如 `AKLT…`），
+   而语音控制台给的是 10 位数字 **AppID** 与 API Key，三者不是一回事。把 AppID 填进 AK 字段会得到
+   网关错误 `InvalidClientTokenId 100009 / The security token[9800410205] included in the request is invalid`。
+   2026-11-13 用户决定不实现，改成纯内置清单；`volc-sign.js` / `volc-speakers.js` 及两个测试文件已删除。
+5. 已保存的音色若不属于当前厂商，运行时 `resolveTtsVoice()` 回落到本厂商默认音色并写 `warn`。
+
+## 附录 H：官方音色清单重建（2026-11-14）
+
+用户要求「所有服务商的音色都能在智能体页面直接下拉选」，且**不许凭记忆补**。这一版逐家回到官方来源：
+
+| 厂商 | 官方来源（抓取日期 2026-11-14） | 收录 |
+|---|---|---|
+| 火山（2.0） | https://docs.volcengine.com/docs/doubao-voice/tone-list-3（官方标注 2026.11.06 更新） | 146 条 `zh/en *_uranus_bigtts`，`languages`/方言取官方「语种/方言」列 |
+| 火山（1.x） | 自建 Go 服务端 `voice_constants.go`（与官方 1.0 表一致） | 95 条，保留作 legacy（需 `seed-tts-1.0`） |
+| 微软 Edge | 官方 readaloud `voices/list` 接口实时抓取 | 14 条中文（东北话/陕西话/粤语/台湾国语各 1–3 条） |
+| 讯飞 | 官方在线语音合成发音人（vcn）；**官方无「列发音人」接口** | 11 条；每个发音人都要在控制台开通，否则 11200 |
+| 百智云 | 官方 `GET https://asrmodel.app.baizhi.cloud/openapi/v1/voices?type=tts` 实时查询 | 10 条，全部 `supports_speed_control` |
+| DeepSeek | https://api-docs.deepseek.com/zh-cn/guides/tts/ | 2 条（stella / tide，无语种/语速参数） |
+
+**删除**：官方 2.0 表里没有的旧条目（`saturn_zh_female_cancan_tob`）——没有官方依据的 id 选中就是
+55000000「有字没声」。**保留兜底**：`voiceTierOf()` 对目录外自定义 id 按命名规则判资源族
+（uranus/saturn → 2.0，moon/mars/jupiter/multi → 1.x），只用于过滤，不代表该 id 有效。
+
+### 全局 TTS = 服务商池（2026-11-14 定稿）
+
+用户反馈：全局配置页不要决定「主启用哪家、备用哪家」，只做服务商添加（API Key 等）；轮转放到智能体页。
+所以全局 TTS 页变成平铺列表（添加/编辑/删除，没有主用/备用/上移/下移/设为主用），用哪家在
+「智能体 → 配置 → 角色」选；智能体没选时用列表第一家，其余按列表顺序自动降级。
+
+### 智能体级「TTS 服务商」（同一次改动）
+
+「智能体 → 配置 → 角色」在原「音色」下拉前新增「TTS 服务商」：
+
+- 选项 = 全局 `voice.tts` 的主用 + 各备用（按厂商去重，空 = 跟随全局主用）；没配置凭据的厂商不列出。
+- 换服务商时前端把音色重置为「默认音色」，音色清单按所选厂商的 `/voices` 重新拉取并按资源族过滤。
+- 保存写 `overrides.ttsProvider`；服务端在 `/agents/update` 校验它确实已配置（400 `invalid-tts-provider`）。
+- 运行时 `prioritizeTtsProvider()` 在**条目层**重排 TTS 候选链：被指定厂商条目连同凭据提为主用、
+  原主用整条降为第一备用、其余备用顺序不变；会话级字段（音色/语种/语速）仍取智能体/全局那份。
+- 生效时机：保存后设备**下一次连接**生效；插件代码本身改动需重启 DSH。
+
+### 验收（本次实测）
+
+```powershell
+node --test "test/*.test.mjs"   # 275 项全绿（tts-provider-pin 5 项 + http 1 项 + TTS 池删除 2 项）
+npm run build                   # client.js 重建
+npm run smoke                   # 通过
+npm run check:ui                # 通过（无 React 报错）
+npm run check:role              # 通过（音色列表 147 项，无 1.x 混入）
+npm run check:voice             # 通过（4 家服务商、官方清单、换服务商重置、保存带 ttsProvider）
+```

@@ -1,91 +1,83 @@
 /**
- * 音色目录 —— 与 Go 服务端 manager/backend/controllers/voice_constants.go 同源。
+ * 音色目录 —— 全部来自各厂商**官方**清单（2026-11-14 逐家核对，不靠记忆）。
  *
- * 只搬运本插件真正支持的厂商：edge、xunfei(讯飞)、volc(豆包/火山)。
- * 生成方式：解析 voice_constants.go 的 {Value, Label} 列表，逐条原样保留，
- * 不做改名、不做裁剪，这样控制台里选出来的值就是服务端认识的发音人 ID。
+ * | 厂商 | 来源 |
+ * |---|---|
+ * | volc（豆包 2.0） | 官方音色列表 https://docs.volcengine.com/docs/doubao-voice/tone-list-3（2026.11.06 更新） |
+ * | volc（豆包 1.x） | 自建 Go 服务端 `voice_constants.go`（与官方 1.0 表一致，资源族 seed-tts-1.0） |
+ * | edge | 官方 readaloud `voices/list`（实时抓取，中文 14 个） |
+ * | xunfei | 官方在线语音合成发音人（vcn）；账号需在控制台添加/购买，否则报 11200 |
+ * | baizhi | 官方 `GET /openapi/v1/voices?type=tts`（实时查询，10 个，全部 `supports_speed_control`） |
+ * | deepseek | 官方文档 stella / tide（仅两个） |
  *
- * `languages` 不是 Go 那边带的，来自 Java 分支 `ai_tts_voice.languages`
- * （manager-api 的 db/changelog 种子）：语种是音色自己的属性。没有对应官方行的
- * 音色直接省略该字段 —— 宁可不显示，也不猜。末尾 4 条 `multi_*` 是官方音色表里
- * 唯一能说日语的豆包 1.0 音色（中文表里它们另有中文名），资源族需要 seed-tts-1.0。
+ * **只写官方确实存在的音色**：填错 id 的代价是合成失败（火山 55000000、讯飞 11200），
+ * 表现是「有字没声」。加音色前先找到官方表里的那一行，不要凭印象补。
+ *
+ * `languages` 是音色自带属性；没有官方依据时省略该字段——宁可不显示，也不猜。
+ * `tier` 只对火山有意义：`seed-tts-2.0` 只认 `*_uranus_bigtts` 与 `saturn_*_tob`。
  */
 
 export const VOICE_OPTIONS = {
   "edge": [
     {
+      "value": "zh-HK-HiuGaaiNeural",
+      "label": "曉佳（女声，粤语）"
+    },
+    {
+      "value": "zh-HK-HiuMaanNeural",
+      "label": "曉曼（女声，粤语）"
+    },
+    {
+      "value": "zh-HK-WanLungNeural",
+      "label": "雲龍（男声，粤语）"
+    },
+    {
       "value": "zh-CN-XiaoxiaoNeural",
-      "label": "晓晓（女声）"
-    },
-    {
-      "value": "zh-CN-YunxiNeural",
-      "label": "云希（男声）"
-    },
-    {
-      "value": "zh-CN-YunyangNeural",
-      "label": "云扬（男声）"
+      "label": "晓晓（女声，普通话）"
     },
     {
       "value": "zh-CN-XiaoyiNeural",
-      "label": "晓伊（女声）"
+      "label": "晓伊（女声，普通话）"
     },
     {
       "value": "zh-CN-YunjianNeural",
-      "label": "云健（男声）"
+      "label": "云健（男声，普通话/体育解说）"
+    },
+    {
+      "value": "zh-CN-YunxiNeural",
+      "label": "云希（男声，普通话）"
     },
     {
       "value": "zh-CN-YunxiaNeural",
-      "label": "云夏（男声）"
+      "label": "云夏（男声，普通话/少年）"
     },
     {
-      "value": "zh-CN-YunhaoNeural",
-      "label": "云皓（男声）"
+      "value": "zh-CN-YunyangNeural",
+      "label": "云扬（男声，普通话/新闻播报）"
     },
     {
-      "value": "zh-CN-XiaohanNeural",
-      "label": "晓涵（女声）"
+      "value": "zh-CN-liaoning-XiaobeiNeural",
+      "label": "晓北（女声，东北话）"
     },
     {
-      "value": "zh-CN-XiaomoNeural",
-      "label": "晓墨（女声）"
+      "value": "zh-TW-HsiaoChenNeural",
+      "label": "曉臻（女声，台湾国语）"
     },
     {
-      "value": "zh-CN-XiaoxuanNeural",
-      "label": "晓萱（女声）"
+      "value": "zh-TW-YunJheNeural",
+      "label": "雲哲（男声，台湾国语）"
     },
     {
-      "value": "zh-CN-XiaoruiNeural",
-      "label": "晓睿（女声）"
+      "value": "zh-TW-HsiaoYuNeural",
+      "label": "曉雨（女声，台湾国语）"
     },
     {
-      "value": "zh-CN-XiaoshuangNeural",
-      "label": "晓双（女声）"
-    },
-    {
-      "value": "zh-CN-XiaoyanNeural",
-      "label": "晓颜（女声）"
-    },
-    {
-      "value": "zh-CN-XiaoyouNeural",
-      "label": "晓悠（女声）"
-    },
-    {
-      "value": "zh-CN-XiaozhenNeural",
-      "label": "晓甄（女声）"
-    },
-    {
-      "value": "zh-CN-YunfengNeural",
-      "label": "云枫（男声）"
-    },
-    {
-      "value": "zh-CN-YunyeNeural",
-      "label": "云野（男声）"
-    },
-    {
-      "value": "zh-CN-YunzeNeural",
-      "label": "云泽（男声）"
+      "value": "zh-CN-shaanxi-XiaoniNeural",
+      "label": "晓妮（女声，陕西话）"
     }
   ],
+  // 讯飞（2026-11-14 核对）：vcn 取自官方在线语音合成发音人表；官方没有「列发音人」
+  // 的公开接口，**每个发音人都要在控制台添加/购买**，没开通时服务端回 11200（授权错误）。
   "xunfei": [
     {
       "value": "xiaoyan",
@@ -132,18 +124,890 @@ export const VOICE_OPTIONS = {
       "label": "Catherine（英文女声）"
     }
   ],
+  // 火山：2.0（官方 zh/en `*_uranus_bigtts` 全表）在前，1.x（legacy，需 seed-tts-1.0）在后。
+  // 控制台按资源族过滤（`voicesForResource`），默认 seed-tts-2.0 只会显示 2.0 那一段。
   "volc": [
+    {
+      "value": "zh_female_tuanzi_uranus_bigtts",
+      "label": "团子 2.0",
+      "languages": "中文",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_vv_uranus_bigtts",
+      "label": "Vivi 2.0",
+      "languages": "中文、日文、印尼、墨西哥西班牙语、支持30+语种识别；方言：粤语、上海、河南、北京、天津、四川、陕西、东北",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_xiaohe_uranus_bigtts",
+      "label": "小何 2.0",
+      "languages": "中文、支持30+语种识别；方言：粤语、上海、河南、北京、天津、四川、陕西、东北",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_m191_uranus_bigtts",
+      "label": "云舟 2.0",
+      "languages": "中文、支持30+语种识别；方言：粤语、上海、河南、北京、天津、四川、陕西、东北",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_taocheng_uranus_bigtts",
+      "label": "小天 2.0",
+      "languages": "中文、支持30+语种识别；方言：粤语、上海、河南、北京、天津、四川、陕西、东北",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_liufei_uranus_bigtts",
+      "label": "刘飞 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_sophie_uranus_bigtts",
+      "label": "魅力苏菲 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_qingxinnvsheng_uranus_bigtts",
+      "label": "清新女声 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_cancan_uranus_bigtts",
+      "label": "知性灿灿 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_sajiaoxuemei_uranus_bigtts",
+      "label": "撒娇学妹 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_tianmeixiaoyuan_uranus_bigtts",
+      "label": "甜美小源 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_tianmeitaozi_uranus_bigtts",
+      "label": "甜美桃子 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_shuangkuaisisi_uranus_bigtts",
+      "label": "爽快思思 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_peiqi_uranus_bigtts",
+      "label": "佩奇猪 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_linjianvhai_uranus_bigtts",
+      "label": "邻家女孩 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_shaonianzixin_uranus_bigtts",
+      "label": "少年梓辛 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_sunwukong_uranus_bigtts",
+      "label": "猴哥 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_yingyujiaoxue_uranus_bigtts",
+      "label": "Tina老师 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_kefunvsheng_uranus_bigtts",
+      "label": "暖阳女声 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_xiaoxue_uranus_bigtts",
+      "label": "儿童绘本 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_dayi_uranus_bigtts",
+      "label": "大壹 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_mizai_uranus_bigtts",
+      "label": "黑猫侦探社咪仔 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_jitangnv_uranus_bigtts",
+      "label": "鸡汤女 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_meilinvyou_uranus_bigtts",
+      "label": "魅力女友 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_liuchangnv_uranus_bigtts",
+      "label": "流畅女声 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_ruyayichen_uranus_bigtts",
+      "label": "儒雅逸辰 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_tim_uranus_bigtts",
+      "label": "Tim",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_dacey_uranus_bigtts",
+      "label": "Dacey",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_stokie_uranus_bigtts",
+      "label": "Stokie",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_wenroumama_uranus_bigtts",
+      "label": "温柔妈妈 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_jieshuoxiaoming_uranus_bigtts",
+      "label": "解说小明 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_tvbnv_uranus_bigtts",
+      "label": "TVB女声 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_yizhipiannan_uranus_bigtts",
+      "label": "译制片男 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_qiaopinv_uranus_bigtts",
+      "label": "俏皮女声 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_zhishuaiyingzi_uranus_bigtts",
+      "label": "直率英子 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_linjiananhai_uranus_bigtts",
+      "label": "邻家男孩 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_silang_uranus_bigtts",
+      "label": "四郎 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_ruyaqingnian_uranus_bigtts",
+      "label": "儒雅青年 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_qingcang_uranus_bigtts",
+      "label": "擎苍 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_xionger_uranus_bigtts",
+      "label": "熊二 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_yingtaowanzi_uranus_bigtts",
+      "label": "樱桃丸子 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_wennuanahu_uranus_bigtts",
+      "label": "温暖阿虎 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_naiqimengwa_uranus_bigtts",
+      "label": "奶气萌娃 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_popo_uranus_bigtts",
+      "label": "婆婆 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_gaolengyujie_uranus_bigtts",
+      "label": "高冷御姐 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_aojiaobazong_uranus_bigtts",
+      "label": "傲娇霸总 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_lanyinmianbao_uranus_bigtts",
+      "label": "懒音绵宝 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_fanjuanqingnian_uranus_bigtts",
+      "label": "反卷青年 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_wenroushunv_uranus_bigtts",
+      "label": "温柔淑女 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_gufengshaoyu_uranus_bigtts",
+      "label": "古风少御 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_huolixiaoge_uranus_bigtts",
+      "label": "活力小哥 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_baqiqingshu_uranus_bigtts",
+      "label": "霸气青叔 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_xuanyijieshuo_uranus_bigtts",
+      "label": "悬疑解说 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_mengyatou_uranus_bigtts",
+      "label": "萌丫头 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_tiexinnvsheng_uranus_bigtts",
+      "label": "贴心女声 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_jitangmei_uranus_bigtts",
+      "label": "鸡汤妹妹 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_cixingjieshuonan_uranus_bigtts",
+      "label": "磁性解说男声 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_liangsangmengzai_uranus_bigtts",
+      "label": "亮嗓萌仔 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_kailangjiejie_uranus_bigtts",
+      "label": "开朗姐姐 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_gaolengchenwen_uranus_bigtts",
+      "label": "高冷沉稳 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_shenyeboke_uranus_bigtts",
+      "label": "深夜播客 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_lubanqihao_uranus_bigtts",
+      "label": "鲁班七号 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_jiaochuannv_uranus_bigtts",
+      "label": "娇喘女声 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_linxiao_uranus_bigtts",
+      "label": "林潇 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_lingling_uranus_bigtts",
+      "label": "玲玲姐姐 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_chunribu_uranus_bigtts",
+      "label": "春日部姐姐 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_tangseng_uranus_bigtts",
+      "label": "唐僧 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_zhuangzhou_uranus_bigtts",
+      "label": "庄周 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_kailangdidi_uranus_bigtts",
+      "label": "开朗弟弟 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_zhubajie_uranus_bigtts",
+      "label": "猪八戒 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_ganmaodianyin_uranus_bigtts",
+      "label": "感冒电音姐姐 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_chanmeinv_uranus_bigtts",
+      "label": "谄媚女声 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_nvleishen_uranus_bigtts",
+      "label": "女雷神 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_qinqienv_uranus_bigtts",
+      "label": "亲切女声 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_kuailexiaodong_uranus_bigtts",
+      "label": "快乐小东 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_kailangxuezhang_uranus_bigtts",
+      "label": "开朗学长 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_youyoujunzi_uranus_bigtts",
+      "label": "悠悠君子 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_wenjingmaomao_uranus_bigtts",
+      "label": "文静毛毛 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_zhixingnv_uranus_bigtts",
+      "label": "知性女声 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_qingshuangnanda_uranus_bigtts",
+      "label": "清爽男大 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_yuanboxiaoshu_uranus_bigtts",
+      "label": "渊博小叔 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_yangguangqingnian_uranus_bigtts",
+      "label": "阳光青年 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_qingchezizi_uranus_bigtts",
+      "label": "清澈梓梓 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_tianmeiyueyue_uranus_bigtts",
+      "label": "甜美悦悦 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_xinlingjitang_uranus_bigtts",
+      "label": "心灵鸡汤 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_wenrouxiaoge_uranus_bigtts",
+      "label": "温柔小哥 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_roumeinvyou_uranus_bigtts",
+      "label": "柔美女友 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_dongfanghaoran_uranus_bigtts",
+      "label": "东方浩然 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_wenrouxiaoya_uranus_bigtts",
+      "label": "温柔小雅 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_tiancaitongsheng_uranus_bigtts",
+      "label": "天才童声 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_wuzetian_uranus_bigtts",
+      "label": "武则天 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_gujie_uranus_bigtts",
+      "label": "顾姐 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_male_guanggaojieshuo_uranus_bigtts",
+      "label": "广告解说 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "zh_female_shaoergushi_uranus_bigtts",
+      "label": "少儿故事 2.0",
+      "languages": "中文、支持30+语种识别",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_ryan_uranus_bigtts",
+      "label": "Ryan",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_alberto_uranus_bigtts",
+      "label": "Alberto",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_alex_uranus_bigtts",
+      "label": "Alex",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_allison_uranus_bigtts",
+      "label": "Allison",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_bill_jones_corey_uranus_bigtts",
+      "label": "Bill",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_brad_pitt_p1_uranus_bigtts",
+      "label": "Brad_Pitt",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_brittney_uranus_bigtts",
+      "label": "Brittney",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_brittney_pimintel_uranus_bigtts",
+      "label": "Zoe",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_bruce_uranus_bigtts",
+      "label": "Adrian",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_chandler_p1_uranus_bigtts",
+      "label": "Leo",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_cowboy_john_b_uranus_bigtts",
+      "label": "John",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_david_uranus_bigtts",
+      "label": "David",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_diyuwenrounan_uranus_bigtts",
+      "label": "Julian",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_godfather_uranus_bigtts",
+      "label": "Godfather",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_gollum_uranus_bigtts",
+      "label": "Gollum",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_hades_uranus_bigtts",
+      "label": "Beau",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_hayley_uranus_bigtts",
+      "label": "Hayley",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_jamie_uranus_bigtts",
+      "label": "Jamie",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_jane_uranus_bigtts",
+      "label": "Jane",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_jenny_uranus_bigtts",
+      "label": "Jenny",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_jidongchuanjiaoshi_uranus_bigtts",
+      "label": "Blaze",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_jimmy_uranus_bigtts",
+      "label": "Jimmy",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_joanne_uranus_bigtts",
+      "label": "Joanne",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_joker_uranus_bigtts",
+      "label": "Joker",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_josh_uranus_bigtts",
+      "label": "Josh",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_josh_coery_uranus_bigtts",
+      "label": "Josiah",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_kevin_uranus_bigtts",
+      "label": "Kevin",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_knightley_uranus_bigtts",
+      "label": "Knightley",
+      "languages": "英语（美式）",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_lana_del_rey_kelley_d_p1_uranus_bigtts",
+      "label": "Lynn",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_lana_del_rey_parky_s_p1_uranus_bigtts",
+      "label": "Ivy",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_marcus_uranus_bigtts",
+      "label": "Marcus",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_mel_uranus_bigtts",
+      "label": "Mel",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_michael_uranus_bigtts",
+      "label": "Hank",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_michael_kevin_uranus_bigtts",
+      "label": "Michael_Kevin",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_myra_uranus_bigtts",
+      "label": "Myra",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_myra_cmb_uranus_bigtts",
+      "label": "Sunny",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_nadia_uranus_bigtts",
+      "label": "Blair",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_natasha_uranus_bigtts",
+      "label": "Natasha",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_rachel_p1_uranus_bigtts",
+      "label": "Rachel",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_ronald_uranus_bigtts",
+      "label": "Ronald",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_russell_uranus_bigtts",
+      "label": "Russell",
+      "languages": "英语（美式）",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_scarlet_p1_uranus_bigtts",
+      "label": "Scarlet",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_sharron_uranus_bigtts",
+      "label": "Sharron",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_simba_p1_uranus_bigtts",
+      "label": "Simba",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_skye_uranus_bigtts",
+      "label": "Skye",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_tom_hiddleston_p1_uranus_bigtts",
+      "label": "Tom",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_valentino_uranus_bigtts",
+      "label": "Valentino",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_valentino_corey_uranus_bigtts",
+      "label": "Clark",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_wenrouzhishijieshuonv_uranus_bigtts",
+      "label": "Megan",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_xinwenjieshuonv_uranus_bigtts",
+      "label": "Kayla",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_male_yangguangjieshuonan_uranus_bigtts",
+      "label": "Dylan",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
+    {
+      "value": "en_female_zendaya_p1_uranus_bigtts",
+      "label": "Zendaya",
+      "languages": "美式英语",
+      "tier": "2.0"
+    },
     {
       "value": "zh_female_cancan_mars_bigtts",
       "label": "灿灿 / Shiny（女声）",
       "languages": "中文、美式英语",
       "tier": "1.x"
-    },
-    {
-      "value": "zh_female_vv_uranus_bigtts",
-      "label": "vivi 2.0（女声）",
-      "languages": "普通话、日语、印尼语、墨西哥西班牙语",
-      "tier": "2.0"
     },
     {
       "value": "zh_female_vv_jupiter_bigtts",
@@ -154,29 +1018,6 @@ export const VOICE_OPTIONS = {
       "value": "zh_female_xiaohe_jupiter_bigtts",
       "label": "小何 O版（女声）",
       "tier": "1.x"
-    },
-    {
-      "value": "saturn_zh_female_cancan_tob",
-      "label": "知性灿灿（女声）",
-      "tier": "2.0"
-    },
-    {
-      "value": "saturn_zh_female_keainvsheng_tob",
-      "label": "可爱女生（女声）",
-      "languages": "普通话、英语",
-      "tier": "2.0"
-    },
-    {
-      "value": "saturn_zh_female_tiaopigongzhu_tob",
-      "label": "调皮公主（女声）",
-      "languages": "普通话、英语",
-      "tier": "2.0"
-    },
-    {
-      "value": "zh_female_xiaohe_uranus_bigtts",
-      "label": "小何（女声）",
-      "languages": "普通话、英语",
-      "tier": "2.0"
     },
     {
       "value": "zh_female_tianmeitaozi_mars_bigtts",
@@ -348,18 +1189,6 @@ export const VOICE_OPTIONS = {
       "tier": "1.x"
     },
     {
-      "value": "saturn_zh_male_shuanglangshaonian_tob",
-      "label": "爽朗少年（男声）",
-      "languages": "普通话、英语",
-      "tier": "2.0"
-    },
-    {
-      "value": "saturn_zh_male_tiancaitongzhuo_tob",
-      "label": "天才同桌（男声）",
-      "languages": "普通话、英语",
-      "tier": "2.0"
-    },
-    {
       "value": "zh_male_yunzhou_jupiter_bigtts",
       "label": "云舟 O版（男声）",
       "tier": "1.x"
@@ -368,24 +1197,6 @@ export const VOICE_OPTIONS = {
       "value": "zh_male_xiaotian_jupiter_bigtts",
       "label": "小天 O版（男声）",
       "tier": "1.x"
-    },
-    {
-      "value": "zh_male_m191_uranus_bigtts",
-      "label": "云舟（男声）",
-      "languages": "普通话、英语",
-      "tier": "2.0"
-    },
-    {
-      "value": "zh_male_taocheng_uranus_bigtts",
-      "label": "小天（男声）",
-      "languages": "普通话、英语",
-      "tier": "2.0"
-    },
-    {
-      "value": "en_male_tim_uranus_bigtts",
-      "label": "Tim（英文男声）",
-      "languages": "英语",
-      "tier": "2.0"
     },
     {
       "value": "zh_male_yangguangqingnian_moon_bigtts",
@@ -707,15 +1518,77 @@ export const VOICE_OPTIONS = {
   "baizhi": [
     {
       "value": "vivi",
-      "label": "微澜（女声）",
+      "label": "微澜",
       "languages": "中文、英语",
       "speed": true
     },
     {
       "value": "xiaohe",
-      "label": "若禾（女声）",
+      "label": "若禾",
       "languages": "中文、英语",
       "speed": true
+    },
+    {
+      "value": "cancan",
+      "label": "知夏",
+      "languages": "中文、英语",
+      "speed": true
+    },
+    {
+      "value": "liufei",
+      "label": "逸飞",
+      "languages": "中文、英语",
+      "speed": true
+    },
+    {
+      "value": "qingxin",
+      "label": "清歌",
+      "languages": "中文、英语",
+      "speed": true
+    },
+    {
+      "value": "sophie",
+      "label": "苏晴",
+      "languages": "中文、英语",
+      "speed": true
+    },
+    {
+      "value": "xiaotian",
+      "label": "朗天",
+      "languages": "中文、英语",
+      "speed": true
+    },
+    {
+      "value": "yichen",
+      "label": "砚舟",
+      "languages": "中文、英语",
+      "speed": true
+    },
+    {
+      "value": "yunzhou",
+      "label": "景舟",
+      "languages": "中文、英语",
+      "speed": true
+    },
+    {
+      "value": "zixin",
+      "label": "梓辰",
+      "languages": "中文、英语",
+      "speed": true
+    }
+  ],
+  // DeepSeek 语音合成（2026-11-14）：官方只有两个音色，没有语种参数（按文本自动识别），
+  // 也不支持调节语速（因此不声明 `speed`）。语种覆盖见官方「语音合成指南」。
+  "deepseek": [
+    {
+      "value": "stella",
+      "label": "海星（女声）",
+      "languages": "中文、粤语、英语、日语、韩语等（自动识别）"
+    },
+    {
+      "value": "tide",
+      "label": "暗潮（男声）",
+      "languages": "中文、粤语、英语、日语、韩语等（自动识别）"
     }
   ]
 }
@@ -738,7 +1611,8 @@ export const DEFAULT_TTS_VOICES = {
   volc: 'zh_female_vv_uranus_bigtts',
   edge: 'zh-CN-XiaoxiaoNeural',
   xunfei: 'xiaoyan',
-  baizhi: 'vivi'
+  baizhi: 'vivi',
+  deepseek: 'stella'
 }
 
 /** 厂商 → 默认音色；未知厂商返回空串（交给适配器自己报缺音色）。 */
@@ -791,7 +1665,14 @@ export function voiceSupportsSpeed(provider, voice) {
  */
 export function voiceTierOf(code) {
   const voice = VOICE_OPTIONS.volc.find((item) => item.value === code)
-  return voice?.tier ?? ''
+  if (voice) return voice.tier
+  // 目录外的自定义 id（手写 settings、官方新增音色）：按命名规则判断。只认实测过的两族——
+  // `seed-tts-2.0` 接受 `*_uranus_bigtts` / `*_saturn_bigtts` / `saturn_*_tob`，其余按 1.x 处理。
+  // 注意：这只是**给资源族过滤**用的兜底，不代表该 id 一定有效；真正的验证只能靠一次合成。
+  const id = String(code ?? '').trim()
+  if (/_uranus_bigtts$/.test(id) || /_saturn_bigtts$/.test(id) || /^saturn_.*_tob$/.test(id)) return '2.0'
+  if (/_moon_bigtts$|_mars_bigtts$|_jupiter_bigtts$/.test(id) || /^multi_/.test(id)) return '1.x'
+  return ''
 }
 
 /** 资源 ID → 资源族。空串按插件默认的 seed-tts-2.0 处理。 */

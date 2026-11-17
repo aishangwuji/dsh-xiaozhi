@@ -1,6 +1,6 @@
 import { h, useState, useEffect, useRef } from '../react.js'
 import {
-  t, callApi, stageProviders, stageProviderLabel, stageDescriptor, blankBackup, withBackups,
+  t, callApi, API, stageProviders, stageProviderLabel, stageDescriptor, blankBackup, withBackups,
   backupKeyState, backupTestText, primaryEditFields
 } from '../core.js'
 import { ProviderSection } from './ProviderSection.js'
@@ -19,6 +19,11 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
       const [saving, setSaving] = useState(false);
       // 一级页是三个概览卡；点「管理」打开这个环节的二级弹窗（null | 'asr' | 'llm' | 'tts'）。
       const [openStage, setOpenStage] = useState(null);
+      // 固件升级：上传的 .bin 存在服务端 dataRoot/firmware，设备从 /firmware/<name> 下载。
+      const [firmwareFile, setFirmwareFile] = useState(null);
+      const [firmwareInfo, setFirmwareInfo] = useState(state?.firmware?.info ?? null);
+      const [firmwareBusy, setFirmwareBusy] = useState(false);
+      const [firmwareNote, setFirmwareNote] = useState('');
       // 服务商列表：编辑弹窗、逐条测试结果（按 id 存，上移/下移后不会错位）、删除二次确认。
       // dirty 时不再禁用测试：按钮变「保存并测试」，runBackupTest / runPrimaryTest 会先保存
       // 再按服务端顺序测（契约仍是「只测已保存的配置」，只是把两步合成一次点击）。
@@ -66,6 +71,11 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
           .catch((err) => setError(err.message));
       }, []);
 
+      // 固件文件信息随 /state 轮询刷新（上传后本地也会先更新一次）。
+      useEffect(() => {
+        setFirmwareInfo(state?.firmware?.info ?? null);
+      }, [state?.firmware?.info?.fileName, state?.firmware?.info?.size, state?.firmware?.info?.uploadedAt]);
+
       // 本地改动 → 标记 dirty + 防抖自动保存。服务端回写（applyingServerRef）直接跳过。
       useEffect(() => {
         if (!settings) return;
@@ -95,6 +105,51 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
       const patch = (group, values) => setSettings({ ...settings, [group]: { ...settings[group], ...values } });
       const nested = (group, key, values) =>
         setSettings({ ...settings, [group]: { ...settings[group], [key]: { ...settings[group][key], ...values } } });
+
+      // 固件上传：原始二进制体 + CSRF 头；版本号跟设置里的「固件版本」一起送，
+      // 服务端上传成功后直接写进设置，不用用户再点保存。
+      const uploadFirmware = async () => {
+        if (!firmwareFile) return;
+        setFirmwareBusy(true);
+        setFirmwareNote('');
+        try {
+          const headers = {
+            'x-dsh-xiaozhi': '1',
+            'content-type': 'application/octet-stream',
+            'x-firmware-name': firmwareFile.name,
+          };
+          if (settings.firmware.version) headers['x-firmware-version'] = settings.firmware.version;
+          const response = await fetch(`${API}/firmware/upload`, { method: 'POST', headers, body: firmwareFile });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+          setFirmwareInfo(payload.info || null);
+          setFirmwareNote(t('firmwareUploaded'));
+          notify?.(t('firmwareUploaded'));
+        } catch (err) {
+          setFirmwareNote(`${t('firmwareUploadFailed')}：${err.message}`);
+        } finally {
+          setFirmwareBusy(false);
+        }
+      };
+
+      const removeFirmware = async () => {
+        setFirmwareBusy(true);
+        setFirmwareNote('');
+        try {
+          const response = await fetch(`${API}/firmware/remove`, {
+            method: 'POST',
+            headers: { 'x-dsh-xiaozhi': '1' },
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+          setFirmwareInfo(null);
+          setFirmwareNote(t('firmwareRemoved'));
+        } catch (err) {
+          setFirmwareNote(`${t('firmwareUploadFailed')}：${err.message}`);
+        } finally {
+          setFirmwareBusy(false);
+        }
+      };
 
       // ------------------------------------------------------------ 服务商（主用 + 备用）
       const backupsOf = (stage) => {
@@ -134,6 +189,8 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
         primary: settings.voice?.[stage] || {},
         entries: backupsOf(stage),
         providersDirty,
+        // 2026-11-14：TTS 走「服务商池」——不分主备、不排序；用哪家在智能体页选。
+        pool: stage === 'tts',
         primaryTest: primaryTests[stage],
         testingPrimary,
         testResults,
@@ -143,9 +200,10 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
         onAdd: () => openAddBackup(stage),
         onEdit: (index) => openEditBackup(stage, index),
         onMove: (index, delta) => moveBackup(stage, index, delta),
-        onDelete: (index, key) => removeBackup(stage, index, key),
+        onDelete: (index, key) => (stage === 'tts' ? removePoolEntry(stage, index, key) : removeBackup(stage, index, key)),
         onTest: (index) => runBackupTest(stage, index),
-        onTestPrimary: () => runPrimaryTest(stage)
+        onTestPrimary: () => runPrimaryTest(stage),
+        onPromote: (index) => promoteBackup(stage, index)
       });
 
       const setBackups = (stage, next) => {
@@ -237,6 +295,37 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
         [list[index], list[target]] = [list[target], list[index]];
         setBackups(stage, list);
       };
+      /**
+       * 主用 ⇄ 备用互换（「随时替换」）：把第 index 条备用设为主用，旧主用落到该位置。
+       *
+       * 由服务端整段互换（`POST /settings/provider/promote`）：备用条目在浏览器里是**掩码**，
+       * 走普通保存会把 `sk-••••12` 写成密钥；服务端互换则密钥不过 HTTP。
+       * 本地有未落盘改动时先保存——否则换的是磁盘上那份旧配置。
+       */
+      const promoteBackup = async (stage, index) => {
+        if (providersDirty) {
+          const saved = await save();
+          if (!saved) return;
+        }
+        try {
+          const result = await callApi('/settings/provider/promote', {
+            method: 'POST',
+            body: { kind: stage, index }
+          });
+          applyingServerRef.current = true;
+          setSettings(withBackups(result.settings));
+          setProvidersDirty(false);
+          setPrimaryClear({});
+          setConfirmDelete('');
+          // 主用换了厂商：旧的主用测试结果不再代表当前主用。
+          setPrimaryTests((previous) => ({ ...previous, [stage]: null }));
+          notify(t('promoteOk'), 'ok');
+        } catch (err) {
+          // 混合状态（页面已是新 client.js、服务端还是旧进程）时明确告诉用户为什么失败。
+          const hint = err.status === 404 ? '（服务端还没加载这个接口，重启 DSH 后生效）' : '';
+          notify(`${t('actionFailed')}${err.message}${hint}`, 'bad');
+        }
+      };
       const removeBackup = (stage, index, cardKey) => {
         if (confirmDelete !== cardKey) {
           setConfirmDelete(cardKey);
@@ -247,6 +336,48 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
         }
         setConfirmDelete('');
         setBackups(stage, backupsOf(stage).filter((_, position) => position !== index));
+      };
+      /**
+       * 删掉 TTS 服务商池里的「第一家」：服务端把下一条（连同凭据）顶上、其余顺延；
+       * 只剩一家时清空该段。走服务端的原因同 promote——备用条目在浏览器里只有掩码。
+       */
+      const removePrimary = async (stage) => {
+        if (providersDirty) {
+          const saved = await save();
+          if (!saved) return;
+        }
+        try {
+          const result = await callApi('/settings/provider/remove', {
+            method: 'POST',
+            body: { kind: stage, index: 0 }
+          });
+          applyingServerRef.current = true;
+          setSettings(withBackups(result.settings));
+          setProvidersDirty(false);
+          setPrimaryClear({});
+          setConfirmDelete('');
+          setPrimaryTests((previous) => ({ ...previous, [stage]: null }));
+          notify(t('providerRemoved'), 'ok');
+        } catch (err) {
+          const hint = err.status === 404 ? '（服务端还没加载这个接口，重启 DSH 后生效）' : '';
+          notify(`${t('actionFailed')}${err.message}${hint}`, 'bad');
+        }
+      };
+      /** 服务商池里的删除：第一行走服务端（要顶上），其余只改本地列表（防抖自动保存）。 */
+      const removePoolEntry = (stage, index, cardKey) => {
+        if (confirmDelete !== cardKey) {
+          setConfirmDelete(cardKey);
+          window.setTimeout(() => {
+            setConfirmDelete((current) => (current === cardKey ? '' : current));
+          }, 4000);
+          return;
+        }
+        setConfirmDelete('');
+        if (index === 0) {
+          void removePrimary(stage);
+          return;
+        }
+        setBackups(stage, backupsOf(stage).filter((_, position) => position !== index - 1));
       };
       const runBackupTest = async (stage, index) => {
         // 能不能测由描述符的 probe.kind 决定（ASR = none），不在前端写 `stage === 'asr'`。
@@ -490,6 +621,9 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
         const detail = stageDetail(stage);
         const chain = stageChain(stage);
         const key = backupKeyState(stage, primary);
+        // TTS 是「服务商池」：概览卡显示家数而不是主用厂商，也不显示降级链——用哪家在智能体页选。
+        const pool = stage === 'tts';
+        const poolCount = (primary.provider ? 1 : 0) + backups.length;
         return h('button', {
           key: stage,
           type: 'button',
@@ -505,13 +639,17 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
             h('span', { className: `xz-dot ${health.kind === 'ok' ? 'on' : ''}` })
           ),
           h('div', { className: 'xz-stage-card-primary' },
-            h('strong', null, stageProviderLabel(stage, primary.provider)),
+            h('strong', null, pool
+              ? (poolCount > 0 ? t('ttsProviderCount').replace('{n}', String(poolCount)) : t('ttsPoolEmpty'))
+              : stageProviderLabel(stage, primary.provider)),
             detail ? h('span', { className: 'xz-stage-card-detail', title: detail }, detail) : null
           ),
           h('div', { className: 'xz-stage-card-facts' },
             h('span', null, `${t('backupSecret')}: ${key.text}`),
-            h('span', null, t('configBackupCount').replace('{n}', String(backups.length))),
-            chain ? h('span', { className: 'xz-stage-card-chain', title: chain }, `${t('backupChain')}: ${chain}`) : null
+            pool
+              ? h('span', null, t('ttsProviderCount').replace('{n}', String(poolCount)))
+              : h('span', null, t('configBackupCount').replace('{n}', String(backups.length))),
+            !pool && chain ? h('span', { className: 'xz-stage-card-chain', title: chain }, `${t('backupChain')}: ${chain}`) : null
           ),
           h('div', { className: 'xz-stage-card-foot' },
             h('span', { className: `xz-stage-card-health ${health.kind}` }, health.text),
@@ -524,7 +662,7 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
       const stageModal = openStage
         ? h('div', { className: 'xz-modal-mask', onClick: () => setOpenStage(null) },
             h('div', {
-              className: 'xz-modal xz-stage-modal',
+              className: `xz-modal xz-stage-modal${openStage === 'tts' ? ' is-pool' : ''}`,
               role: 'dialog',
               'aria-modal': 'true',
               onClick: (event) => event.stopPropagation()
@@ -539,10 +677,8 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
                 h('p', { className: 'xz-hint', style: { margin: '6px 0 0' } }, t(DESC_KEY[openStage]))
               ),
               h('div', { className: 'xz-modal-body' },
-                h(ProviderSection, providerSectionProps(openStage)),
-                openStage === 'tts'
-                  ? h('p', { className: 'xz-hint', style: { margin: '10px 0 0' } }, t('ttsVoicePerDevice'))
-                  : null
+                // TTS 的说明已经收在服务商池的顶部提示里，这里不再重复第二行灰字。
+                h(ProviderSection, providerSectionProps(openStage))
               ),
               h('div', { className: 'xz-modal-foot' },
                 h('span', { className: 'xz-hint', style: { marginRight: 'auto' } },
@@ -640,6 +776,31 @@ const ICON_TEXT = { asr: 'A', llm: 'L', tts: 'T' }
             h('div', { className: 'xz-field' },
               h('label', null, t('firmwareUrl')),
               h('input', { className: 'xz-input', value: settings.firmware.url, onChange: (e) => patch('firmware', { url: e.target.value }) })
+            ),
+            h('div', { className: 'xz-field' },
+              h('label', null, t('firmwareFile')),
+              h('input', {
+                className: 'xz-input',
+                type: 'file',
+                accept: '.bin,application/octet-stream',
+                onChange: (e) => setFirmwareFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)
+              }),
+              h('div', { className: 'xz-row', style: { gap: 8, marginTop: 6 } },
+                h('button', {
+                  type: 'button',
+                  className: 'xz-btn',
+                  disabled: !firmwareFile || firmwareBusy,
+                  onClick: uploadFirmware
+                }, firmwareBusy ? t('firmwareUploading') : t('firmwareUpload')),
+                firmwareInfo
+                  ? h('button', { type: 'button', className: 'xz-btn', disabled: firmwareBusy, onClick: removeFirmware }, t('firmwareRemove'))
+                  : null
+              ),
+              h('span', { className: 'note' },
+                firmwareInfo
+                  ? `${firmwareInfo.fileName} · ${(firmwareInfo.size / 1024 / 1024).toFixed(2)} MB · sha256 ${String(firmwareInfo.sha256 || '').slice(0, 12)}…`
+                  : t('firmwareNone')),
+              firmwareNote ? h('span', { className: 'note' }, firmwareNote) : null
             ),
             h('div', { className: 'xz-field' },
               h('label', null, t('gatewayToken')),

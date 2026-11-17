@@ -298,21 +298,27 @@ export async function startMdns({ name = 'xiaozhi', port = 8989, path = '/xiaozh
     }
 
     const send = (packet, rinfo) => {
-      // 先直接单播回给查询方：Windows 上 multicast egress 由路由表决定，
-      // setMulticastInterface 不生效时回答会从 VMware 虚拟网卡出去，设备永远收不到
-      // （2026-11-07 实测：查询 21ms 内有回答，但源地址是 192.168.10.1）。
-      // mDNS 客户端（esp-idf）对单播回答照收，单播最可靠。
+      // **永远先单播回查询方**（2026-11-14 实测修）。
+      //
+      // esp-idf 的 `mdns_query_ptr` 发出的查询 `QU=0`（在手表上抓包可见 qu=false）。
+      // 旧逻辑只在 QU=1 时单播，其余只发 multicast；而这台机器有 VMware / Clash TUN
+      // 等多块虚拟网卡，Windows 上 multicast egress 由路由表决定，`setMulticastInterface`
+      // 未必生效，回答会从 192.168.10.1 之类的虚拟网卡出去——手表永远收不到，于是
+      // 每次开机都报 `mDNS: no _xiaozhi._tcp service on this LAN`，再落到官方云。
+      // esp-idf 的 mDNS 客户端对**单播应答照收**，所以单播是最可靠的路径。
       if (rinfo) {
         try {
           bound.send(packet, rinfo.port, rinfo.address)
         } catch (error) {
           logger?.warn?.(`dsh-xiaozhi: mDNS unicast reply failed: ${error.message}`)
         }
+        // 同网段再补一包 multicast（标准 mDNS 行为，其他 mDNS 客户端也能看到）。
+        const sameNet = lanAddresses().find((address) => sameSubnet(address, rinfo.address))
+        if (sameNet) sendVia(packet, sameNet)
+        return
       }
-      // 再从查询方所在网段补一包 multicast（正常 mDNS 行为）。
-      const addresses = lanAddresses()
-      const sameNet = rinfo ? addresses.find((address) => sameSubnet(address, rinfo.address)) : null
-      sendVia(packet, sameNet ?? addresses[0])
+      // 没有来源（本机探测或异常报文）才按所有 LAN 网卡逐个发。
+      for (const address of lanAddresses()) sendVia(packet, address)
     }
 
     bound.on('message', (packet, rinfo) => {
@@ -340,7 +346,8 @@ export async function startMdns({ name = 'xiaozhi', port = 8989, path = '/xiaozh
         addresses: sameNetAddresses.length > 0 ? sameNetAddresses : allAddresses,
       })
       logger?.debug?.(`dsh-xiaozhi: mDNS answer ${response ? `${response.length} bytes` : 'none'}`)
-      if (response) send(response, message.questions.some((question) => question.unicastResponse) ? rinfo : null)
+      // 不再看 QU 位：见 `send()` 里的说明，esp-idf 发的就是 QU=0，单播才收得到。
+      if (response) send(response, rinfo)
     })
     bound.on('error', (error) => logger?.warn?.(`dsh-xiaozhi: mDNS socket error: ${error.message}`))
 

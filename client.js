@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: '@local/dsh-xiaozhi',
+  id: '@aishangwuji/dsh-xiaozhi',
   factory(require) {
 var DshXiaozhi = (() => {
   var __create = Object.create;
@@ -114,10 +114,34 @@ var DshXiaozhi = (() => {
       }
     },
     {
+      // DeepSeek：除了 LLM，2026-11-14 起也提供**语音识别与合成**（`/v1/tools/asr`、`/v1/tools/tts`），
+      // 三段共用同一把 API Key。识别是整段上传（16-bit PCM WAV / Ogg Opus，≤8 MiB、≤120s），
+      // 合成整段返回 WAV；端点在适配器里内置，描述符只声明要填什么。
+      // 两段都**没有语种参数**（按内容自动识别），所以这里不出现 language 字段。
       id: "deepseek",
       name: "DeepSeek",
       group: "cloud",
-      stages: { llm: llmStage("https://api.deepseek.com/v1", "deepseek-chat") }
+      stages: {
+        llm: llmStage("https://api.deepseek.com/v1", "deepseek-chat"),
+        tts: {
+          name: "DeepSeek \u8BED\u97F3\u5408\u6210",
+          note: "deepseekTtsNote",
+          // 音色（stella / tide）与其它厂商一样只在「智能体 → 配置 → 角色」里选。
+          fields: [{ ...secret("apiKey"), note: "deepseekKeyNote" }],
+          summary: [],
+          secretFields: ["apiKey"],
+          probe: { kind: "tts" }
+        },
+        asr: {
+          name: "DeepSeek \u8BED\u97F3\u8BC6\u522B",
+          note: "deepseekAsrNote",
+          // 没有语种参数：语种由服务端按音频自动识别，控制台因此不提供「识别语种」。
+          fields: [{ ...secret("apiKey"), note: "deepseekKeyNote" }],
+          summary: [],
+          secretFields: ["apiKey"],
+          probe: { kind: "asr", labelKey: "backupTestAsr" }
+        }
+      }
     },
     {
       // 小米 MiMo：OpenAI Chat Completions 兼容，但鉴权是 `api-key` 头而不是 Bearer。
@@ -137,24 +161,10 @@ var DshXiaozhi = (() => {
       stages: {
         tts: {
           fields: [
-            { ...secret("apiKey"), note: "volcTtsKeyNote" },
-            // 火山 OpenAPI 的 AK/SK：只用于拉官方音色列表（ListSpeakers），不参与合成。
-            // 复用 appId/apiSecret 两个通用槽位，避免再动 settings 的字段/掩码契约。
-            {
-              key: "appId",
-              type: "text",
-              label: "volcAccessKey",
-              placeholder: "AKLT\u2026",
-              primaryOnly: true,
-              note: "volcAkSkNote"
-            },
-            {
-              key: "apiSecret",
-              type: "secret",
-              label: "volcSecretKey",
-              primaryOnly: true,
-              note: "volcAkSkNote"
-            }
+            { ...secret("apiKey"), note: "volcTtsKeyNote" }
+            // 不再要 AccessKey/SecretKey（2026-11-13 用户决定）：音色列表固定用内置清单，
+            // 官方 ListSpeakers 需要 AK/SK，而 AK 与语音 AppID 是两套东西，填错只会得到
+            // `InvalidClientTokenId / security token` —— 少一个必填坑。
           ],
           summary: [],
           secretFields: ["apiKey"],
@@ -567,18 +577,22 @@ var DshXiaozhi = (() => {
     pendingReject: "\u62D2\u7EDD",
     pendingApproved: "\u8BBE\u5907\u5DF2\u6279\u51C6",
     pendingRejected: "\u5DF2\u62D2\u7EDD\u8BE5\u8BBE\u5907",
-    agentDeleteConfirm: "\u518D\u6B21\u70B9\u51FB\u5220\u9664",
+    agentDeleteTitle: "\u5220\u9664\u667A\u80FD\u4F53",
+    agentDeleteBody: "\u786E\u5B9A\u5220\u9664\u201C{name}\u201D\u5417\uFF1F\u4E0E\u8BE5\u667A\u80FD\u4F53\u6709\u5173\u7684\u8BB0\u5FC6\u548C\u5BF9\u8BDD\u8BB0\u5F55\u4E5F\u4F1A\u6C38\u4E45\u5220\u9664\uFF0C\u6B64\u64CD\u4F5C\u65E0\u6CD5\u64A4\u9500\u3002",
     agentDeleteHint: "\u5220\u9664\u667A\u80FD\u4F53\u4F1A\u540C\u65F6\u5220\u9664\u5B83\u7ED1\u5B9A\u7684\u8BBE\u5907\u4E0E\u5386\u53F2",
     agentBindTitle: "\u7BA1\u7406\u8BBE\u5907",
     agentBindHint: "\u4E00\u53F0\u667A\u80FD\u4F53\u53EF\u4EE5\u7ED1\u5B9A\u591A\u53F0\u8BBE\u5907\uFF08\u4E0D\u540C\u533A\u57DF\u7684\u9EA6\u514B\u98CE/\u626C\u58F0\u5668\uFF09\uFF1B\u4E00\u53F0\u8BBE\u5907\u540C\u4E00\u65F6\u523B\u53EA\u5C5E\u4E8E\u4E00\u4E2A\u667A\u80FD\u4F53\uFF0C\u4ECE\u522B\u7684\u667A\u80FD\u4F53\u79FB\u5165\u4F1A\u6539\u53D8\u5F52\u5C5E\u3002",
     agentOtherTitle: "\u5176\u4ED6\u8BBE\u5907\uFF08\u53EF\u79FB\u5165\u672C\u667A\u80FD\u4F53\uFF09",
     agentCurrentOwner: "\u5F53\u524D\uFF1A",
     agentMoveHere: "\u79FB\u5165\u672C\u667A\u80FD\u4F53",
+    agentMoveTitle: "\u79FB\u5165\u672C\u667A\u80FD\u4F53",
+    agentMoveBody: "\u786E\u5B9A\u628A\u201C{name}\u201D\u4ECE\u300C{from}\u300D\u79FB\u5165\u300C{to}\u300D\u5417\uFF1F\u4E00\u53F0\u8BBE\u5907\u540C\u4E00\u65F6\u523B\u53EA\u5C5E\u4E8E\u4E00\u4E2A\u667A\u80FD\u4F53\uFF0C\u79FB\u5165\u540E\u539F\u667A\u80FD\u4F53\u5C06\u4E0D\u518D\u4F7F\u7528\u5B83\u3002",
+    agentBindBody: "\u786E\u5B9A\u628A\u201C{name}\u201D\u7ED1\u5B9A\u5230\u300C{to}\u300D\u5417\uFF1F\u7ED1\u5B9A\u540E\u8FD9\u53F0\u8BBE\u5907\u4F1A\u7528\u8BE5\u667A\u80FD\u4F53\u7684\u4EBA\u8BBE\u3001\u97F3\u8272\u4E0E\u5DE5\u5177\u3002",
+    agentMoveAction: "\u79FB\u5165",
     agentUnbound: "\u672A\u7ED1\u5B9A",
     agentBoundTitle: "\u5DF2\u7ED1\u5B9A\u5230\u672C\u667A\u80FD\u4F53",
     agentNoUnbound: "\u6CA1\u6709\u5176\u4ED6\u8BBE\u5907",
     agentUnbind: "\u89E3\u7ED1",
-    agentRemoveDevice: "\u5220\u9664\u8BBE\u5907",
     agentOffline: "\u8FD9\u4E2A\u667A\u80FD\u4F53\u6CA1\u6709\u5728\u7EBF\u8BBE\u5907",
     agentNamePlaceholder: "\u667A\u80FD\u4F53\u540D\u79F0",
     agentDefaultName: "\u667A\u80FD\u4F53 {n}",
@@ -619,6 +633,14 @@ var DshXiaozhi = (() => {
     model: "\u6A21\u578B",
     agentModelLabel: "\u5BF9\u8BDD\u6A21\u578B\uFF08LLM\uFF09",
     agentModelDefault: "\u9ED8\u8BA4\uFF08\u7528\u5168\u5C40\u6A21\u578B\uFF09",
+    // 智能体卡片（2026-11-13 改版）：徽标 + 状态 + 三格信息 + 三按钮
+    agentMenu: "\u64CD\u4F5C",
+    agentMenuRename: "\u91CD\u547D\u540D",
+    agentMenuDelete: "\u5220\u9664\u667A\u80FD\u4F53",
+    agentRole: "\u89D2\u8272",
+    agentRoleCustom: "\u81EA\u5B9A\u4E49",
+    agentModel: "\u6A21\u578B",
+    agentRecentChat: "\u6700\u8FD1\u5BF9\u8BDD",
     agentModelPlaceholder: "\u7559\u7A7A = \u7528\u5168\u5C40\u9ED8\u8BA4",
     agentModelHint: "\u53EA\u8986\u76D6\u6A21\u578B\u540D\uFF1B\u5382\u5546 / Key / \u7AEF\u70B9\u4ECD\u7528\u5168\u5C40\u8BBE\u7F6E",
     agentModelManual: "\u672A\u62C9\u5230\u6A21\u578B\u6E05\u5355\uFF0C\u53EF\u76F4\u63A5\u624B\u586B\u6A21\u578B\u540D",
@@ -629,13 +651,13 @@ var DshXiaozhi = (() => {
     llmHostNote: "\u590D\u7528 DSH \u91CC\u5DF2\u914D\u7F6E\u7684\u5382\u5546\uFF0C\u4E0D\u9700\u8981\u5728\u8FD9\u91CC\u518D\u586B Key",
     llmHostProviderNote: "\u6765\u81EA DSH \u5F53\u524D profile\uFF1B\u6362 profile \u540E\u8981\u91CD\u65B0\u9009",
     llmHostModelNote: "\u6A21\u578B\u5355\u72EC\u9009\uFF1A\u8BED\u97F3\u573A\u666F\u7528\u77ED\u56DE\u590D\u3001\u4F4E\u5EF6\u8FDF\u7684\u6A21\u578B\u66F4\u5408\u9002",
-    volcAccessKey: "AccessKey ID\uFF08\u62C9\u97F3\u8272\u7528\uFF09",
-    volcSecretKey: "SecretAccessKey\uFF08\u62C9\u97F3\u8272\u7528\uFF09",
-    volcAkSkNote: "\u53EF\u9009\uFF1A\u53EA\u7528\u4E8E\u62C9\u53D6\u706B\u5C71\u5B98\u65B9\u97F3\u8272\u5217\u8868\uFF0C\u5408\u6210\u4ECD\u7528\u4E0A\u9762\u7684 API Key",
-    voiceCatalogApi: "\u97F3\u8272\u6765\u81EA\u706B\u5C71\u5B98\u65B9\u63A5\u53E3\uFF08\u6309\u5F53\u524D\u8D44\u6E90\u65CF\uFF09",
-    voiceCatalogFallback: "\u672A\u914D\u7F6E\u706B\u5C71 AccessKey/SecretKey\uFF0C\u5F53\u524D\u4E3A\u5185\u7F6E\u6E05\u5355\uFF0C\u53EF\u80FD\u542B\u672A\u5F00\u901A\u97F3\u8272",
     voice: "\u97F3\u8272",
     voiceDefault: "\u9ED8\u8BA4\u97F3\u8272",
+    // 智能体级 TTS 服务商（2026-11-14）：只列全局已配置的主用/备用，空 = 跟随全局主用。
+    ttsProvider: "TTS \u670D\u52A1\u5546",
+    ttsFollowGlobal: "\u8DDF\u968F\u5168\u5C40\u4E3B\u7528",
+    ttsProviderHint: "\u9009\u4E2D\u8FD9\u5BB6\u4F5C\u4E3A\u8BE5\u667A\u80FD\u4F53\u7684 TTS \u670D\u52A1\u5546\uFF1B\u5176\u4F59\u5DF2\u914D\u7F6E\u670D\u52A1\u5546\u81EA\u52A8\u6309\u5168\u5C40\u5217\u8868\u987A\u5E8F\u964D\u7EA7\u3002\u6362\u670D\u52A1\u5546\u4F1A\u628A\u97F3\u8272\u91CD\u7F6E\u4E3A\u9ED8\u8BA4",
+    voiceCatalogBuiltin: "\u5185\u7F6E\u97F3\u8272\u6E05\u5355\uFF08\u6309\u5F53\u524D\u8D44\u6E90\u65CF\u8FC7\u6EE4\uFF0C\u4E0D\u4EE3\u8868\u8D26\u53F7\u5DF2\u5F00\u901A\uFF09",
     outputLanguage: "\u8F93\u51FA\u8BED\u79CD",
     languageFollow: "\u8DDF\u968F\u97F3\u8272",
     asrProvider: "ASR",
@@ -653,6 +675,20 @@ var DshXiaozhi = (() => {
     otaToken: "WS token",
     firmwareVersion: "\u56FA\u4EF6\u7248\u672C",
     firmwareUrl: "\u56FA\u4EF6\u5730\u5740",
+    firmwareFile: "\u56FA\u4EF6\u6587\u4EF6\uFF08.bin\uFF09",
+    firmwareUpload: "\u4E0A\u4F20\u56FA\u4EF6",
+    firmwareUploading: "\u4E0A\u4F20\u4E2D\u2026",
+    firmwareUploaded: "\u56FA\u4EF6\u5DF2\u4E0A\u4F20",
+    firmwareUploadFailed: "\u4E0A\u4F20\u5931\u8D25",
+    firmwareRemove: "\u5220\u9664\u56FA\u4EF6",
+    firmwareRemoved: "\u56FA\u4EF6\u5DF2\u5220\u9664",
+    firmwareNone: "\u8FD8\u6CA1\u6709\u4E0A\u4F20\u5347\u7EA7\u5305",
+    deviceTools: "\u8BBE\u5907\u5DE5\u5177",
+    deviceToolsLoading: "\u6B63\u5728\u8BFB\u53D6\u8BBE\u5907\u5DE5\u5177\u2026",
+    deviceToolsFailed: "\u8BFB\u53D6\u5931\u8D25",
+    deviceToolsOffline: "\u8BBE\u5907\u4E0D\u5728\u7EBF\uFF0C\u8FDE\u4E0A\u540E\u624D\u80FD\u770B\u5230\u5B83\u4E0A\u62A5\u7684\u5DE5\u5177",
+    deviceToolsWait: "\u8BBE\u5907\u5DF2\u8FDE\u63A5\uFF0C\u6B63\u5728\u7B49\u5F85 MCP \u5DE5\u5177\u4E0A\u62A5",
+    deviceToolsEmpty: "\u8BBE\u5907\u6CA1\u6709\u4E0A\u62A5\u4EFB\u4F55\u5DE5\u5177",
     forceUpdate: "\u5F3A\u5236\u5347\u7EA7",
     tokenKeep: "\u7559\u7A7A\u8868\u793A\u4E0D\u4FEE\u6539",
     provider: "\u63D0\u4F9B\u5546",
@@ -671,6 +707,10 @@ var DshXiaozhi = (() => {
     xunfeiAuthNote: "\u8BAF\u98DE\u63A7\u5236\u53F0 \u2192 \u5E94\u7528\u4FE1\u606F\uFF1AAPPID / APIKey / APISecret",
     baizhiKeyNote: "\u767E\u667A\u4E91\u63A7\u5236\u53F0\u521B\u5EFA\u7684 API Key\uFF08\u8BF7\u6C42\u5934 Authorization: Bearer\uFF09",
     baizhiAsrLanguageNote: "\u7559\u7A7A = \u81EA\u52A8\u8BC6\u522B\uFF1B\u53EF\u586B zh-CN / en-US",
+    // DeepSeek 语音（2026-11-14）：识别与合成共用一把 API Key（也能给 LLM 用）。
+    deepseekKeyNote: "DeepSeek \u63A7\u5236\u53F0\u7684 API Key\uFF08\u8BC6\u522B / \u5408\u6210\u4E0E LLM \u5171\u7528\u540C\u4E00\u628A\uFF09",
+    deepseekTtsNote: "\u97F3\u8272\uFF08\u6D77\u661F / \u6697\u6F6E\uFF09\u5728\u300C\u667A\u80FD\u4F53 \u2192 \u914D\u7F6E \u2192 \u89D2\u8272\u300D\u91CC\u9009\uFF1B\u6CA1\u6709\u8BED\u79CD\u53C2\u6570\uFF0C\u6309\u6587\u672C\u81EA\u52A8\u8BC6\u522B\uFF1B\u4E0D\u652F\u6301\u8C03\u8282\u8BED\u901F",
+    deepseekAsrNote: "\u6574\u6BB5\u4E0A\u4F20\u8BC6\u522B\uFF08\u2264120 \u79D2\u3001\u22648 MiB\uFF0C16-bit PCM WAV\uFF09\uFF1B\u6CA1\u6709\u8BED\u79CD\u53C2\u6570\uFF0C\u8BED\u79CD\u6309\u97F3\u9891\u81EA\u52A8\u8BC6\u522B",
     apiKeyKeep: "\u5DF2\u914D\u7F6E\uFF0C\u7559\u7A7A\u8868\u793A\u4E0D\u4FEE\u6539",
     gatewayToken: "\u7F51\u5173 Token",
     // 服务商配置（docs/backup-providers.md 第 5 节）：主用卡 + 备用卡 + 统一编辑弹窗。
@@ -682,6 +722,11 @@ var DshXiaozhi = (() => {
     backupEdit: "\u7F16\u8F91",
     backupMoveUp: "\u4E0A\u79FB",
     backupMoveDown: "\u4E0B\u79FB",
+    // 主用/备用随时互换（2026-11-14 用户要求「我可以随时替换」）。
+    promoteToPrimary: "\u8BBE\u4E3A\u4E3B\u7528",
+    promoteToPrimaryHint: "\u4E0E\u5F53\u524D\u4E3B\u7528\u4E92\u6362\uFF1A\u8FD9\u6761\u6210\u4E3A\u4E3B\u7528\uFF0C\u539F\u4E3B\u7528\u6309\u539F\u4F4D\u7F6E\u964D\u4E3A\u5907\u7528",
+    promoteHint: "\u4E3B\u7528 / \u5907\u7528\u53EF\u968F\u65F6\u4E92\u6362\uFF1A\u70B9\u5907\u7528\u884C\u7684 \u22EF \u2192 \u300C\u8BBE\u4E3A\u4E3B\u7528\u300D\u5373\u53EF",
+    promoteOk: "\u5DF2\u5207\u6362\u4E3B\u7528\u670D\u52A1\u5546",
     backupTest: "\u6D4B\u8BD5",
     backupTestAsr: "\u6D4B\u8BD5\u8BC6\u522B",
     backupTesting: "\u6D4B\u8BD5\u4E2D\u2026",
@@ -700,6 +745,12 @@ var DshXiaozhi = (() => {
     backupGroupCloud: "\u4E91\u7AEF\u670D\u52A1",
     providerSectionTitle: "\u670D\u52A1\u5546\u914D\u7F6E",
     providerPrimary: "\u4E3B\u7528",
+    // 2026-11-14：全局 TTS 改成「服务商池」——只添加/编辑/删除，不排主备；轮转在智能体页选。
+    ttsPoolHint: "\u6DFB\u52A0\u670D\u52A1\u5546\u4E0E\u51ED\u636E\u5373\u53EF\uFF1B\u7528\u54EA\u5BB6\u3001\u54EA\u4E2A\u97F3\u8272\u5728\u300C\u667A\u80FD\u4F53 \u2192 \u914D\u7F6E \u2192 \u89D2\u8272\u300D\u9009\uFF0C\u5176\u4F59\u670D\u52A1\u5546\u6309\u5217\u8868\u987A\u5E8F\u81EA\u52A8\u964D\u7EA7\u3002",
+    providerPoolAdd: "\u6DFB\u52A0\u670D\u52A1\u5546",
+    ttsProviderCount: "{n} \u5BB6\u670D\u52A1\u5546",
+    ttsPoolEmpty: "\u8FD8\u6CA1\u6DFB\u52A0\u670D\u52A1\u5546",
+    providerRemoved: "\u5DF2\u5220\u9664\u670D\u52A1\u5546",
     providerEditPrimary: "\u7F16\u8F91\u4E3B\u7528\u670D\u52A1\u5546",
     localAsrNote: "\u4F7F\u7528 Harness \u5185\u7F6E\u8BED\u97F3\u8BC6\u522B\u670D\u52A1\uFF0C\u65E0\u9700\u586B\u5199\u5730\u5740\u6216\u5BC6\u94A5\u3002",
     ttsEdgeKeyless: "\u514D\u5BC6\u94A5\uFF0C\u65E0\u9700\u914D\u7F6E",
@@ -734,7 +785,7 @@ var DshXiaozhi = (() => {
     saveAndTest: "\u4FDD\u5B58\u5E76\u6D4B\u8BD5",
     providerUnsupported: "\u8FD9\u4E2A\u670D\u52A1\u5546\u8FD8\u4E0D\u652F\u6301\u5F53\u524D\u73AF\u8282",
     probeUnsupported: "\u8FD9\u4E2A\u73AF\u8282\u4E0D\u652F\u6301\u5728\u7EBF\u6D4B\u8BD5",
-    ttsVoicePerDevice: "\u97F3\u8272\u5728\u300C\u667A\u80FD\u4F53 \u2192 \u914D\u7F6E\u300D\u91CC\u6309\u667A\u80FD\u4F53\u9009\u62E9",
+    ttsVoicePerDevice: "\u97F3\u8272\u5728\u300C\u667A\u80FD\u4F53 \u2192 \u914D\u7F6E \u2192 \u89D2\u8272\u300D\u6309\u667A\u80FD\u4F53\u9009\u62E9\uFF1B\u8FD9\u91CC\u53EA\u7BA1\u7406\u670D\u52A1\u5546\u4E0E\u51ED\u636E",
     // 历史对话弹窗（设备卡片「历史」）：左会话列表 + 右消息气泡。
     history: "\u5386\u53F2",
     historyTitleSuffix: " \xB7 \u5386\u53F2\u5BF9\u8BDD",
@@ -843,18 +894,22 @@ var DshXiaozhi = (() => {
     pendingReject: "Reject",
     pendingApproved: "Device approved",
     pendingRejected: "Device rejected",
-    agentDeleteConfirm: "Click again to delete",
+    agentDeleteTitle: "Delete agent",
+    agentDeleteBody: "Delete \u201C{name}\u201D? Its memory and conversation history will be permanently removed. This cannot be undone.",
     agentDeleteHint: "Deleting an agent also deletes its bound devices and history",
     agentBindTitle: "Manage devices",
     agentBindHint: "One agent can bind several devices (mics/speakers in different areas). A device belongs to exactly one agent at a time; moving it here changes ownership.",
     agentOtherTitle: "Other devices (can move here)",
     agentCurrentOwner: "Owner:",
     agentMoveHere: "Move here",
+    agentMoveTitle: "Move to this agent",
+    agentMoveBody: "Move \u201C{name}\u201D from \u201C{from}\u201D to \u201C{to}\u201D? A device belongs to one agent at a time; the previous agent will stop using it.",
+    agentBindBody: "Bind \u201C{name}\u201D to \u201C{to}\u201D? It will then use this agent\u2019s persona, voice and tools.",
+    agentMoveAction: "Move",
     agentUnbound: "Unbound",
     agentBoundTitle: "Bound to this agent",
     agentNoUnbound: "No other devices",
     agentUnbind: "Unbind",
-    agentRemoveDevice: "Delete device",
     agentOffline: "No device of this agent is online",
     agentNamePlaceholder: "Agent name",
     agentDefaultName: "Agent {n}",
@@ -895,6 +950,14 @@ var DshXiaozhi = (() => {
     model: "Model",
     agentModelLabel: "Chat model (LLM)",
     agentModelDefault: "Default (global model)",
+    // Agent card (redesigned 2026-11-13): avatar + status + 3 info cells + 3 buttons
+    agentMenu: "Actions",
+    agentMenuRename: "Rename",
+    agentMenuDelete: "Delete agent",
+    agentRole: "Role",
+    agentRoleCustom: "Custom",
+    agentModel: "Model",
+    agentRecentChat: "Last chat",
     agentModelPlaceholder: "Empty = global default",
     agentModelHint: "Only overrides the model name; provider / key / endpoint stay global",
     agentModelManual: "No model list available; type the model id",
@@ -905,13 +968,13 @@ var DshXiaozhi = (() => {
     llmHostNote: "Reuses a provider already configured in DSH; no key needed here",
     llmHostProviderNote: "Comes from the current DSH profile; pick again after switching profiles",
     llmHostModelNote: "Pick the model separately: voice needs short, low-latency replies",
-    volcAccessKey: "AccessKey ID (voice list)",
-    volcSecretKey: "SecretAccessKey (voice list)",
-    volcAkSkNote: "Optional: only used to fetch the official voice list; synthesis still uses the API Key above",
-    voiceCatalogApi: "Voices come from the official Volcengine API (current resource tier)",
-    voiceCatalogFallback: "Volcengine AccessKey/SecretKey not set; showing the built-in catalog, which may include unprovisioned voices",
     voice: "Voice",
     voiceDefault: "Default voice",
+    // Per-agent TTS provider (2026-11-14): only globally configured entries; empty = follow primary.
+    ttsProvider: "TTS provider",
+    ttsFollowGlobal: "Follow global primary",
+    ttsProviderHint: "Picks which configured TTS provider this agent speaks with; the rest fall back in global list order. Switching resets the voice to its default",
+    voiceCatalogBuiltin: "Built-in voice list (filtered by resource family; not your enabled voices)",
     outputLanguage: "Output language",
     languageFollow: "Follow the voice",
     asrProvider: "ASR",
@@ -929,6 +992,20 @@ var DshXiaozhi = (() => {
     otaToken: "WS token",
     firmwareVersion: "Firmware version",
     firmwareUrl: "Firmware URL",
+    firmwareFile: "Firmware file (.bin)",
+    firmwareUpload: "Upload firmware",
+    firmwareUploading: "Uploading\u2026",
+    firmwareUploaded: "Firmware uploaded",
+    firmwareUploadFailed: "Upload failed",
+    firmwareRemove: "Remove firmware",
+    firmwareRemoved: "Firmware removed",
+    firmwareNone: "No update package uploaded yet",
+    deviceTools: "Device tools",
+    deviceToolsLoading: "Loading device tools\u2026",
+    deviceToolsFailed: "Failed to load",
+    deviceToolsOffline: "Device is offline; its tools appear once it connects",
+    deviceToolsWait: "Connected, waiting for the MCP tool list",
+    deviceToolsEmpty: "The device reported no tools",
     forceUpdate: "Force update",
     tokenKeep: "blank keeps current",
     provider: "Provider",
@@ -947,6 +1024,10 @@ var DshXiaozhi = (() => {
     xunfeiAuthNote: "iFlytek console \u2192 App info: APPID / APIKey / APISecret",
     baizhiKeyNote: "API Key created in the Baizhi Cloud console (Authorization: Bearer)",
     baizhiAsrLanguageNote: "Empty = auto-detect; zh-CN / en-US are accepted",
+    // DeepSeek voice (2026-11-14): ASR and TTS share one API Key (the same one works for the LLM).
+    deepseekKeyNote: "DeepSeek console API Key (shared by ASR / TTS and the LLM)",
+    deepseekTtsNote: "Voice (stella / tide) is chosen per agent under Config \u2192 Role; no language parameter (auto-detected from the text); speech rate cannot be adjusted",
+    deepseekAsrNote: "Whole-file recognition (\u2264120 s, \u22648 MiB, 16-bit PCM WAV); no language parameter \u2014 the language is detected from the audio",
     apiKeyKeep: "configured \u2014 blank keeps it",
     gatewayToken: "Gateway token",
     // Provider configuration (docs/backup-providers.md §5): primary card + backup cards + one shared dialog.
@@ -958,6 +1039,11 @@ var DshXiaozhi = (() => {
     backupEdit: "Edit",
     backupMoveUp: "Move up",
     backupMoveDown: "Move down",
+    // Swap primary and backups at any time (2026-11-14).
+    promoteToPrimary: "Make primary",
+    promoteToPrimaryHint: "Swaps with the current primary: this entry becomes primary, the old one drops to this position",
+    promoteHint: "Primary and backups swap at any time: open \u22EF on a backup row and pick \u201CMake primary\u201D",
+    promoteOk: "Primary provider switched",
     backupTest: "Test",
     backupTestAsr: "Test ASR",
     backupTesting: "Testing\u2026",
@@ -976,6 +1062,12 @@ var DshXiaozhi = (() => {
     backupGroupCloud: "Cloud service",
     providerSectionTitle: "Provider configuration",
     providerPrimary: "Primary",
+    // 2026-11-14: global TTS is a provider pool (add/edit/remove only); rotation is chosen per agent.
+    ttsPoolHint: "Add providers and credentials here. Pick one and its voice under Agent \u2192 Config \u2192 Role; the rest fall back in list order.",
+    providerPoolAdd: "Add provider",
+    ttsProviderCount: "{n} provider(s)",
+    ttsPoolEmpty: "No providers yet",
+    providerRemoved: "Provider removed",
     providerEditPrimary: "Edit primary provider",
     localAsrNote: "Uses the built-in speech recognition service; no URL or key required.",
     ttsEdgeKeyless: "No key required",
@@ -1116,6 +1208,31 @@ var DshXiaozhi = (() => {
 .xz-devcard-config{border-top:1px solid var(--xz-line);padding-top:10px}
 .xz-devcard-config .xz-capability{padding:6px 8px;font-size:12px}
 .xz-devcard-foot{display:flex;gap:6px;flex-wrap:wrap}
+/* \u667A\u80FD\u4F53\u5361\u7247\uFF082026-11-13 \u6539\u7248\uFF09\uFF1A\u5FBD\u6807 + \u540D\u5B57/\u72B6\u6001 + \u22EF \u83DC\u5355\uFF0C\u4E09\u683C\u4FE1\u606F\uFF0C\u4E09\u6309\u94AE\u64CD\u4F5C\u6761\u3002
+   \u53D6\u820D\uFF1A\u539F\u5361\u7247\u7684\u8BBE\u5907\u660E\u7EC6\u632A\u8FDB\u300C\u8BBE\u5907 (N)\u300D\u5F39\u7A97\uFF1B\u64AD\u62A5\u4ECE\u5E38\u9A7B\u6309\u94AE\u632A\u8FDB \u22EF \u83DC\u5355\uFF0C\u64CD\u4F5C\u6761\u4FDD\u6301\u4E09\u4E2A\u3002 */
+.xz-agent-card{position:relative;display:flex;flex-direction:column;border:1px solid var(--xz-line);border-radius:14px;background:var(--xz-surface-strong);transition:border-color .18s ease,box-shadow .18s ease}
+.xz-agent-card:hover{border-color:rgba(0,122,255,.28);box-shadow:0 6px 18px rgba(15,23,42,.07)}
+.xz-agent-head{display:flex;align-items:center;gap:10px;padding:14px 14px 0}
+.xz-agent-avatar{width:44px;height:44px;flex:none;border-radius:12px;display:grid;place-items:center;font-size:18px;font-weight:700;line-height:1;color:#0f766e;background:linear-gradient(135deg,rgba(16,185,129,.22),rgba(45,212,191,.12) 45%,rgba(34,211,238,.22));box-shadow:inset 0 0 0 1px rgba(16,185,129,.25)}
+.xz-agent-titlebar{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
+.xz-agent-name{margin:0;font-size:15px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border-bottom:1px dashed transparent}
+.xz-agent-name:hover{border-bottom-color:var(--xz-line)}
+.xz-agent-rename{height:28px;padding:0 9px;font-size:13px;line-height:1.2;border-radius:9px;max-width:220px;box-sizing:border-box}
+.xz-agent-chip{flex:none;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:500;line-height:18px;background:rgba(0,0,0,.04);color:var(--xz-text-2);box-shadow:inset 0 0 0 1px var(--xz-line);white-space:nowrap}
+.xz-agent-chip.warn{background:rgba(245,158,11,.12);color:#b45309;box-shadow:inset 0 0 0 1px rgba(245,158,11,.32)}
+.xz-agent-chip.ok{background:rgba(16,185,129,.12);color:#047857;box-shadow:inset 0 0 0 1px rgba(16,185,129,.32)}
+.xz-agent-menu-btn{width:32px;height:32px;flex:none;border:0;border-radius:9px;background:transparent;color:var(--xz-text-2);font-size:17px;line-height:1;cursor:pointer}
+.xz-agent-menu-btn:hover,.xz-agent-menu-btn[aria-expanded="true"]{background:rgba(0,0,0,.05);color:var(--xz-text)}
+.xz-agent-menu{position:absolute;z-index:40;min-width:160px;max-height:none;overflow:visible}
+.xz-agent-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 14px 14px;padding:10px 0;border:1px solid var(--xz-line);border-radius:10px;background:var(--xz-surface)}
+.xz-agent-cell{min-width:0;padding:0 10px}
+.xz-agent-cell + .xz-agent-cell{border-left:1px solid var(--xz-line)}
+.xz-agent-cell-label{font-size:10.5px;color:var(--xz-text-3);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.xz-agent-cell-value{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.xz-agent-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:10px;border-top:1px solid var(--xz-line);border-radius:0 0 14px 14px;background:rgba(0,0,0,.015)}
+.xz-agent-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:34px;min-width:0;padding:0 8px;border-radius:9px;border:1px solid var(--xz-line);background:var(--xz-surface-strong);color:var(--xz-text-2);font:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:border-color .15s ease,background-color .15s ease,color .15s ease}
+.xz-agent-action:hover{border-color:rgba(0,122,255,.35);background:var(--xz-primary-soft);color:var(--xz-primary)}
+.xz-agent-action-icon{flex:none;opacity:.85}
 .xz-switch{position:relative;width:38px;height:22px;border-radius:999px;border:none;background:rgba(0,0,0,.16);cursor:pointer;padding:0;transition:background .18s ease}
 .xz-switch span{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.22);transition:transform .18s ease}
 .xz-switch.on{background:#0a84ff}
@@ -1183,6 +1300,11 @@ var DshXiaozhi = (() => {
 .xz-devcard-name:hover{border-bottom-color:var(--xz-line)}
 
 .xz-modal{width:min(520px,92vw);background:var(--xz-surface-strong);border-radius:var(--xz-radius-lg);box-shadow:var(--xz-shadow-lg);padding:22px;box-sizing:border-box}
+.xz-confirm-modal{width:min(440px,92vw)}
+.xz-confirm-modal .xz-confirm-text{margin:6px 0 18px;font-size:12.5px;line-height:1.6;color:var(--xz-text-2)}
+.xz-confirm-foot{justify-content:flex-end;gap:8px}
+.xz-btn.danger-confirm{border-color:rgba(255,59,48,.4);background:var(--xz-danger);color:#fff}
+.xz-btn.danger-confirm:hover:not(:disabled){background:#e0342a}
 .xz-modal h3{margin:0 0 6px;font-size:15px}
 .xz-modal p{margin:0 0 14px;font-size:12px;color:var(--xz-text-2)}
 .xz-toast{position:fixed;right:24px;bottom:24px;z-index:50;background:rgba(29,29,31,.92);color:#fff;padding:11px 16px;border-radius:14px;font-size:12px;box-shadow:var(--xz-shadow-md);max-width:360px}
@@ -1226,6 +1348,7 @@ var DshXiaozhi = (() => {
 .xz-chip.primary{background:var(--xz-primary-soft);color:var(--xz-primary);font-weight:600}
 .xz-devcard-ord{width:24px;height:24px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;background:var(--xz-primary-soft);color:var(--xz-primary)}
 .xz-backup-facts{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--xz-text-2)}
+.xz-provider-swap-hint{margin:6px 0 0;font-size:12px;color:var(--xz-text-2);line-height:1.5}
 .xz-backup-fact{display:flex;gap:8px;min-width:0}
 .xz-backup-fact .k{flex:none;width:62px;color:var(--xz-text-3);font-size:10.5px;line-height:17px}
 .xz-backup-fact .v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1355,6 +1478,34 @@ var DshXiaozhi = (() => {
 /* \u6DFB\u52A0\u5907\u7528\uFF1A\u5217\u8868\u5E95\u90E8\u4E00\u6574\u884C\uFF0C\u4E0D\u518D\u662F\u540C\u5C3A\u5BF8 dashed \u65B9\u5757 */
 .xz-backup-add-row{display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;margin-top:8px;padding:10px 12px;border:1px dashed var(--xz-line);border-radius:12px;background:transparent;color:var(--xz-primary);font:inherit;font-size:12.5px;cursor:pointer}
 .xz-backup-add-row:hover:not(:disabled){background:var(--xz-primary-soft);border-color:rgba(0,122,255,.4)}
+/* \u670D\u52A1\u5546\u6C60\uFF08TTS\uFF0C2026-11-14\uFF09\uFF1A\u4E00\u5F20\u767D\u5361\u91CC\u6392\u300C\u9996\u5B57\u5FBD\u6807 + \u540D\u79F0/\u5BC6\u94A5 + \u6587\u5B57\u64CD\u4F5C\u300D\uFF0C
+   \u4E0D\u518D\u6BCF\u884C\u4E09\u9897\u63CF\u8FB9\u6309\u94AE\uFF1B\u5F39\u7A97\u9AD8\u5EA6\u968F\u5185\u5BB9\u6536\u7F29\uFF08is-pool\uFF09\uFF0C\u907F\u514D\u51E0\u884C\u4E0B\u9762\u4E00\u5927\u7247\u7A7A\u767D\u3002 */
+.xz-stage-modal.is-pool{height:auto;max-height:min(640px,88vh)}
+.xz-provider-pool{display:flex;flex-direction:column;gap:12px}
+.xz-pool-hint{margin:0;font-size:12px;color:var(--xz-text-2);line-height:1.55}
+.xz-pool-list{border:1px solid var(--xz-line);border-radius:14px;background:var(--xz-surface-strong);overflow:hidden}
+.xz-pool-empty{margin:0;padding:26px 16px;text-align:center;font-size:12px;color:var(--xz-text-3)}
+.xz-pool-row{display:flex;align-items:center;gap:12px;padding:11px 14px;min-width:0}
+.xz-pool-row + .xz-pool-row{border-top:1px solid var(--xz-line)}
+.xz-pool-row:hover{background:var(--xz-surface-muted)}
+.xz-pool-avatar{flex:none;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;font-size:13px;font-weight:600;color:var(--xz-text-2);background:linear-gradient(135deg,#f1f6ff,#e8f0ff);border:1px solid rgba(0,122,255,.14)}
+.xz-pool-title{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.xz-pool-name{display:flex;align-items:center;gap:7px;min-width:0}
+.xz-pool-name strong{min-width:0;font-size:13.5px;font-weight:600;color:var(--xz-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-pool-meta{display:flex;align-items:center;gap:7px;min-width:0;font-size:11.5px;color:var(--xz-text-3);white-space:nowrap;overflow:hidden}
+.xz-pool-key{font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
+.xz-pool-meta-sep{flex:none;width:3px;height:3px;border-radius:50%;background:var(--xz-text-3);opacity:.55}
+.xz-pool-test{overflow:hidden;text-overflow:ellipsis}
+.xz-pool-actions{flex:none;display:flex;align-items:center;gap:2px;margin-left:auto}
+.xz-pool-link{border:none;background:transparent;padding:4px 7px;border-radius:7px;font:inherit;font-size:12px;line-height:1.5;color:var(--xz-text-2);cursor:pointer}
+.xz-pool-link:hover:not(:disabled){background:rgba(15,23,42,.05);color:var(--xz-text)}
+.xz-pool-link:disabled{opacity:.5;cursor:default}
+.xz-pool-link.danger{color:var(--xz-danger)}
+.xz-pool-link.danger:hover:not(:disabled){background:rgba(255,59,48,.08)}
+.xz-pool-link.danger.is-confirm{background:var(--xz-danger);color:#fff;font-weight:600}
+.xz-pool-add{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:42px;border:1px dashed var(--xz-line);border-radius:12px;background:transparent;color:var(--xz-text-2);font:inherit;font-size:12.5px;cursor:pointer;transition:background-color .12s ease,color .12s ease,border-color .12s ease}
+.xz-pool-add:hover{color:var(--xz-primary);border-color:rgba(0,122,255,.4);background:var(--xz-primary-soft)}
+.xz-pool-add-plus{font-size:15px;line-height:1;color:inherit}
 /* \u63A5\u5165\u4E0E\u7F51\u5173\uFF1A\u53EF\u6298\u53E0\u3001\u9ED8\u8BA4\u6536\u8D77\uFF0C\u9875\u9762\u7684\u89C6\u89C9\u91CD\u70B9\u7559\u7ED9\u670D\u52A1\u5546 */
 .xz-config-access>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:650}
 .xz-config-access>summary::-webkit-details-marker{display:none}
@@ -1407,6 +1558,11 @@ var DshXiaozhi = (() => {
 .xz-device-row-mac{font-family:var(--xz-font-mono);font-size:11px;color:var(--xz-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xz-device-row-actions{display:flex;gap:6px;flex-wrap:wrap}
 .xz-device-row-actions .xz-btn{padding:4px 9px;font-size:11.5px;border-radius:9px}
+.xz-device-tools{padding:8px 10px;background:var(--xz-surface-muted);border-radius:9px}
+.xz-device-tool-list{display:flex;flex-direction:column;gap:6px}
+.xz-device-tool{display:flex;align-items:baseline;gap:8px;font-size:12px;min-width:0}
+.xz-device-tool code{font-family:var(--xz-font-mono);color:var(--xz-text);white-space:nowrap}
+.xz-device-tool span{color:var(--xz-text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:768px){.xz-config-modal{width:94vw;height:min(620px,90vh)}.xz-config-modal-body{padding:12px 14px}.xz-config-modal-foot{flex-wrap:wrap}}
 `;
 
@@ -1949,13 +2105,13 @@ var DshXiaozhi = (() => {
     ];
     const [draftPrompt, setDraftPrompt] = useState2(agent.overrides?.systemPrompt ?? "");
     const [draftVoice, setDraftVoice] = useState2(agent.overrides?.voice ?? "");
+    const [draftTtsProvider, setDraftTtsProvider] = useState2(agent.overrides?.ttsProvider ?? "");
     const [draftLanguage, setDraftLanguage] = useState2(agent.overrides?.language ?? "");
     const [saving, setSaving] = useState2(false);
     const [draftModel, setDraftModel] = useState2(agent.overrides?.model ?? "");
     const [ttsGlobal, setTtsGlobal] = useState2({ provider: "volc", resourceId: "" });
+    const [ttsEntries, setTtsEntries] = useState2([]);
     const [voiceCatalog, setVoiceCatalog] = useState2(null);
-    const [voiceSource, setVoiceSource] = useState2("");
-    const [voiceError, setVoiceError] = useState2("");
     const [llmGlobal, setLlmGlobal] = useState2({ provider: "", model: "" });
     const [modelOptions, setModelOptions] = useState2(null);
     useEffect2(() => {
@@ -1964,22 +2120,25 @@ var DshXiaozhi = (() => {
         if (!alive) return;
         const globalTts = data?.settings?.voice?.tts || {};
         const globalLlm = data?.settings?.voice?.llm || {};
-        const provider = globalTts.provider || "volc";
-        const resourceId = globalTts.resourceId || "";
-        setTtsGlobal({ provider, resourceId });
+        setTtsGlobal({
+          provider: globalTts.provider || "volc",
+          resourceId: globalTts.resourceId || ""
+        });
+        const entries = [globalTts, ...Array.isArray(globalTts.backups) ? globalTts.backups : []].filter((entryItem) => entryItem && entryItem.provider).map((entryItem) => ({
+          provider: String(entryItem.provider),
+          resourceId: String(entryItem.resourceId || "")
+        }));
+        const seen = /* @__PURE__ */ new Set();
+        const unique = [];
+        for (const entryItem of entries) {
+          if (seen.has(entryItem.provider)) continue;
+          seen.add(entryItem.provider);
+          unique.push(entryItem);
+        }
+        setTtsEntries(unique);
         setLlmGlobal({ provider: globalLlm.provider || "", model: globalLlm.model || "" });
         callApi("/models?kind=llm&source=primary").then((models) => {
           if (alive) setModelOptions(Array.isArray(models?.options) ? models.options : []);
-        }).catch(() => {
-        });
-        return callApi(
-          `/voices?provider=${encodeURIComponent(provider)}&resourceId=${encodeURIComponent(resourceId)}`
-        ).then((voices2) => {
-          if (!alive) return;
-          const list = voices2?.options?.[provider];
-          setVoiceCatalog(Array.isArray(list) ? list : null);
-          setVoiceSource(voices2?.source || "");
-          setVoiceError(voices2?.error || "");
         }).catch(() => {
         });
       }).catch(() => {
@@ -1988,6 +2147,28 @@ var DshXiaozhi = (() => {
         alive = false;
       };
     }, []);
+    const activeTtsProvider = draftTtsProvider || ttsGlobal.provider || "";
+    const activeEntry = ttsEntries.find((item) => item.provider === activeTtsProvider);
+    const activeResourceId = activeEntry ? activeEntry.resourceId : activeTtsProvider === ttsGlobal.provider ? ttsGlobal.resourceId : "";
+    useEffect2(() => {
+      if (!activeTtsProvider) {
+        setVoiceCatalog(null);
+        return void 0;
+      }
+      let alive = true;
+      setVoiceCatalog(null);
+      callApi(
+        `/voices?provider=${encodeURIComponent(activeTtsProvider)}&resourceId=${encodeURIComponent(activeResourceId)}`
+      ).then((voices2) => {
+        if (!alive) return;
+        const list = voices2?.options?.[activeTtsProvider];
+        setVoiceCatalog(Array.isArray(list) ? list : null);
+      }).catch(() => {
+      });
+      return () => {
+        alive = false;
+      };
+    }, [activeTtsProvider, activeResourceId]);
     const saveAll = async () => {
       setSaving(true);
       try {
@@ -1997,6 +2178,8 @@ var DshXiaozhi = (() => {
             agentId: agent.id,
             systemPrompt: draftPrompt,
             voice: draftVoice,
+            // 空 = 跟随全局主用；非空 = 从全局已配置的主用/备用里挑一条（服务端校验）。
+            ttsProvider: draftTtsProvider,
             language: draftLanguage,
             model: draftModel
           }
@@ -2006,16 +2189,25 @@ var DshXiaozhi = (() => {
         setSaving(false);
       }
     };
-    const catalog = voiceCatalog ?? (VOICES[ttsGlobal.provider] || []);
-    const voices = voiceCatalog ? catalog : voicesForResource(catalog, ttsGlobal.resourceId);
+    const catalog = voiceCatalog ?? (VOICES[activeTtsProvider] || []);
+    const voices = voicesForResource(catalog, activeResourceId);
     const voiceOptions = [{ value: "", label: t("voiceDefault") }].concat(
       voices.map((voice) => ({ value: voice.value, label: voice.label }))
     );
     if (draftVoice && !voiceOptions.some((option) => option.value === draftVoice)) {
       const known = voices.find((voice) => voice.value === draftVoice);
-      voiceOptions.push({ value: draftVoice, label: known?.label || voiceLabel(draftVoice, ttsGlobal.provider) });
+      voiceOptions.push({ value: draftVoice, label: known?.label || voiceLabel(draftVoice, activeTtsProvider) });
     }
-    const voiceHint = !voiceSource ? "" : voiceSource === "api" ? t("voiceCatalogApi") : ttsGlobal.provider === "volc" ? voiceError ? `${t("voiceCatalogFallback")}\uFF1A${voiceError}` : t("voiceCatalogFallback") : "";
+    const providerOptions = [{ value: "", label: t("ttsFollowGlobal") }].concat(
+      ttsEntries.map((entryItem) => ({
+        value: entryItem.provider,
+        label: stageProviderLabel("tts", entryItem.provider)
+      }))
+    );
+    if (draftTtsProvider && !providerOptions.some((option) => option.value === draftTtsProvider)) {
+      providerOptions.push({ value: draftTtsProvider, label: stageProviderLabel("tts", draftTtsProvider) });
+    }
+    const voiceHint = activeTtsProvider === "volc" ? t("voiceCatalogBuiltin") : "";
     const languageSelect = h(PillSelect, {
       value: draftLanguage,
       ariaLabel: t("outputLanguage"),
@@ -2030,6 +2222,21 @@ var DshXiaozhi = (() => {
       h(
         "div",
         { className: "xz-grid" },
+        h(
+          "div",
+          { className: "xz-field" },
+          h("label", null, t("ttsProvider")),
+          h(PillSelect, {
+            value: draftTtsProvider,
+            ariaLabel: t("ttsProvider"),
+            options: providerOptions,
+            onChange: (value) => {
+              setDraftTtsProvider(value);
+              setDraftVoice("");
+            }
+          }),
+          h("span", { className: "note" }, t("ttsProviderHint"))
+        ),
         h(
           "div",
           { className: "xz-field" },
@@ -2226,6 +2433,50 @@ var DshXiaozhi = (() => {
     const unbound = devices.filter((device) => !boundIds.has(device.deviceId));
     const agentName = (id) => agents.find((item) => item.id === id)?.name || t("unnamed");
     const renameWidth = (name) => Math.min(180, Math.max(88, String(name || "").length * 13 + 28));
+    const [pendingMove, setPendingMove] = useState2(null);
+    const [toolViews, setToolViews] = useState2({});
+    const viewOf = (id) => toolViews[id] || {};
+    const toggleTools = (device) => {
+      const id = device.deviceId;
+      const current = toolViews[id] || {};
+      if (current.open) {
+        setToolViews((prev) => ({ ...prev, [id]: { ...prev[id] || {}, open: false } }));
+        return;
+      }
+      setToolViews((prev) => ({ ...prev, [id]: { open: true, loading: true, error: "", data: null } }));
+      callApi(`/devices/tools?deviceId=${encodeURIComponent(id)}`).then(
+        (data) => setToolViews((prev) => ({ ...prev, [id]: { open: true, loading: false, error: "", data } }))
+      ).catch(
+        (error) => setToolViews((prev) => ({ ...prev, [id]: { open: true, loading: false, error: error.message, data: null } }))
+      );
+    };
+    const toolsPanel = (device) => {
+      const view = viewOf(device.deviceId);
+      if (!view.open) return null;
+      let body;
+      if (view.loading) body = h("div", { className: "xz-hint" }, t("deviceToolsLoading"));
+      else if (view.error) body = h("div", { className: "xz-hint" }, `${t("deviceToolsFailed")}\uFF1A${view.error}`);
+      else if (!view.data.online) body = h("div", { className: "xz-hint" }, t("deviceToolsOffline"));
+      else if (!view.data.ready) body = h("div", { className: "xz-hint" }, t("deviceToolsWait"));
+      else if (!view.data.tools || view.data.tools.length === 0) {
+        body = h("div", { className: "xz-hint" }, t("deviceToolsEmpty"));
+      } else {
+        body = h(
+          "div",
+          { className: "xz-device-tool-list" },
+          view.data.tools.map(
+            (tool) => h(
+              "div",
+              { key: tool.name, className: "xz-device-tool" },
+              h("code", null, tool.name),
+              tool.description ? h("span", null, tool.description) : null
+            )
+          )
+        );
+      }
+      return h("div", { className: "xz-device-tools" }, body);
+    };
+    const targetName = agent.name || t("unnamed");
     return h(
       "div",
       { className: "xz-modal-mask", onClick: onClose },
@@ -2274,6 +2525,11 @@ var DshXiaozhi = (() => {
                   onBlur: (event) => onDeviceAction("rename", device, event.target.value)
                 }),
                 h("span", { className: "xz-device-row-mac" }, device.deviceId),
+                h(
+                  "span",
+                  { className: "xz-hint", style: { marginLeft: 8 } },
+                  `${t("firmwareVersion")} ${device.firmwareVersion || "\u2014"}`
+                ),
                 h("span", { className: `xz-dot ${device.online ? "on" : ""}` }),
                 h("span", { className: "xz-devcard-state" }, device.online ? t("online") : t("offline"))
               ),
@@ -2294,14 +2550,15 @@ var DshXiaozhi = (() => {
                 h("button", {
                   type: "button",
                   className: "xz-btn",
-                  onClick: () => onUnbind(device)
-                }, t("agentUnbind")),
+                  onClick: () => toggleTools(device)
+                }, `${t("deviceTools")} ${viewOf(device.deviceId).open ? "\u25B2" : "\u25BC"}`),
                 h("button", {
                   type: "button",
-                  className: "xz-btn danger",
-                  onClick: () => onDeviceAction("remove", device)
-                }, t("agentRemoveDevice"))
-              )
+                  className: "xz-btn",
+                  onClick: () => onUnbind(device)
+                }, t("agentUnbind"))
+              ),
+              toolsPanel(device)
             )
           ),
           h("div", { className: "xz-device-section-title", style: { marginTop: 16 } }, `${t("agentOtherTitle")}\uFF08${unbound.length}\uFF09`),
@@ -2326,12 +2583,59 @@ var DshXiaozhi = (() => {
                 h("button", {
                   type: "button",
                   className: "xz-btn primary",
-                  onClick: () => onBind(device)
+                  disabled: busyId === device.deviceId,
+                  onClick: () => setPendingMove(device)
                 }, t("agentMoveHere"))
               )
             )
           )
-        )
+        ),
+        pendingMove ? h(
+          "div",
+          {
+            className: "xz-modal-mask",
+            style: { zIndex: 60 },
+            onClick: (event) => {
+              event.stopPropagation();
+              setPendingMove(null);
+            }
+          },
+          h(
+            "div",
+            {
+              className: "xz-modal xz-confirm-modal",
+              role: "dialog",
+              "aria-modal": "true",
+              "aria-label": t("agentMoveTitle"),
+              onClick: (event) => event.stopPropagation()
+            },
+            h("h3", null, t("agentMoveTitle")),
+            h(
+              "p",
+              { className: "xz-confirm-text" },
+              (pendingMove.agentId ? t("agentMoveBody") : t("agentBindBody")).replace("{name}", pendingMove.nickName || pendingMove.deviceId).replace("{from}", pendingMove.agentId ? agentName(pendingMove.agentId) : "").replace("{to}", targetName)
+            ),
+            h(
+              "div",
+              { className: "xz-row xz-confirm-foot" },
+              h("button", {
+                type: "button",
+                className: "xz-btn",
+                onClick: () => setPendingMove(null)
+              }, t("cancel")),
+              h("button", {
+                type: "button",
+                className: "xz-btn primary",
+                disabled: busyId === pendingMove.deviceId,
+                onClick: () => {
+                  const device = pendingMove;
+                  setPendingMove(null);
+                  onBind(device);
+                }
+              }, t("agentMoveAction"))
+            )
+          )
+        ) : null
       )
     );
   }
@@ -2620,13 +2924,30 @@ var DshXiaozhi = (() => {
   }
 
   // src/client/agents/AgentsView.js
+  var ACTION_PATHS = {
+    config: ["M4 7h10", "M18 7h2", "M4 17h2", "M10 17h10", "M16 7a2 2 0 1 0 0-.1z", "M8 17a2 2 0 1 0 0-.1z"],
+    history: ["M3.5 12a8.5 8.5 0 1 0 2.6-6.1", "M3.5 5.5v4h4", "M12 7.5V12l3 1.8"],
+    devices: ["M8 3.5h8a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 19V5A1.5 1.5 0 0 1 8 3.5z", "M11 17.5h2"]
+  };
+  var agentActionIcon = (name) => h("svg", {
+    width: 14,
+    height: 14,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": "true",
+    className: "xz-agent-action-icon"
+  }, (ACTION_PATHS[name] || []).map((d, index) => h("path", { key: index, d })));
   function AgentsView({ state, notify, onChanged }) {
     const [injecting, setInjecting] = useState2(null);
     const [text, setText] = useState2("");
     const [busyId, setBusyId] = useState2("");
     const [configuring, setConfiguring] = useState2("");
     const [managing, setManaging] = useState2("");
-    const [confirmDelete, setConfirmDelete] = useState2("");
+    const [confirmAgent, setConfirmAgent] = useState2("");
     const renameCancelled = useRef2(false);
     const renameBusy = useRef2(false);
     const [memory, setMemory] = useState2([]);
@@ -2634,6 +2955,7 @@ var DshXiaozhi = (() => {
     const [toolCatalog, setToolCatalog] = useState2([]);
     const [editing, setEditing] = useState2("");
     const [editName, setEditName] = useState2("");
+    const [menu, setMenu] = useState2(null);
     const [historyAgent, setHistoryAgent] = useState2(null);
     const [pendingAgent, setPendingAgent] = useState2({});
     const [pendingBusy, setPendingBusy] = useState2("");
@@ -2649,6 +2971,32 @@ var DshXiaozhi = (() => {
     };
     const configAgent = configuring ? agents.find((item) => item.id === configuring) || null : null;
     const manageAgent = managing ? agents.find((item) => item.id === managing) || null : null;
+    const deleteAgent = confirmAgent ? agents.find((item) => item.id === confirmAgent) || null : null;
+    useEffect2(() => {
+      if (!menu) return void 0;
+      const close = (event) => {
+        if (event?.target?.closest?.(".xz-agent-menu, .xz-agent-menu-btn")) return;
+        setMenu(null);
+      };
+      const onKey = (event) => {
+        if (event.key === "Escape") setMenu(null);
+      };
+      document.addEventListener("mousedown", close);
+      document.addEventListener("keydown", onKey);
+      return () => {
+        document.removeEventListener("mousedown", close);
+        document.removeEventListener("keydown", onKey);
+      };
+    }, [menu]);
+    const agentRoleName = (agent) => {
+      const hit = matchRolePreset(agent.systemPrompt || "", agent.name || "");
+      const preset = hit ? ROLE_PRESETS.find((item) => item.id === hit) : null;
+      return preset ? t(preset.labelKey) : t("agentRoleCustom");
+    };
+    const agentChip = (agent) => {
+      if ((agent.deviceCount ?? 0) === 0) return { kind: "warn", text: t("agentUnbound") };
+      return agent.online ? { kind: "ok", text: t("online") } : { kind: "", text: t("offline") };
+    };
     const createAgent = async () => {
       setBusyId("new");
       try {
@@ -2665,12 +3013,7 @@ var DshXiaozhi = (() => {
       }
     };
     const removeAgent = async (agent) => {
-      if (confirmDelete !== agent.id) {
-        setConfirmDelete(agent.id);
-        notify(t("agentDeleteHint"), "bad");
-        return;
-      }
-      setConfirmDelete("");
+      setConfirmAgent("");
       setBusyId(agent.id);
       try {
         await callApi("/agents/remove", { method: "POST", body: { agentId: agent.id } });
@@ -2778,7 +3121,6 @@ var DshXiaozhi = (() => {
       }
     };
     const deviceAction = async (action, device, value) => {
-      if (action === "remove" && !window.confirm(t("remove") + "?")) return;
       if (action === "rename" && (device.nickName || "") === String(value ?? "")) return;
       setBusyId(device.deviceId);
       try {
@@ -2788,8 +3130,6 @@ var DshXiaozhi = (() => {
           await callApi("/devices/ota", { method: "POST", body: { deviceId: device.deviceId, enabled: value === true } });
         } else if (action === "disconnect") {
           await callApi("/devices/disconnect", { method: "POST", body: { deviceId: device.deviceId } });
-        } else if (action === "remove") {
-          await callApi("/devices/remove", { method: "POST", body: { deviceId: device.deviceId } });
         }
         await onChanged();
       } catch (error) {
@@ -2924,19 +3264,50 @@ var DshXiaozhi = (() => {
         agents.length === 0 ? h("div", { className: "xz-empty" }, t("empty")) : h(
           "div",
           { className: "xz-card-grid" },
-          agents.map(
-            (agent) => h(
+          agents.map((agent) => {
+            const chip = agentChip(agent);
+            const startRename = () => {
+              setEditing(agent.id);
+              setEditName(agent.name || "");
+            };
+            const toggleMenu = (event) => {
+              if (menu?.id === agent.id) {
+                setMenu(null);
+                return;
+              }
+              const button = event.currentTarget;
+              const cardBox = button.closest(".xz-agent-card").getBoundingClientRect();
+              const rect = button.getBoundingClientRect();
+              const openUp = window.innerHeight - rect.bottom < 150;
+              setMenu({
+                id: agent.id,
+                right: Math.max(8, cardBox.right - rect.right),
+                top: openUp ? null : rect.bottom - cardBox.top + 6,
+                bottom: openUp ? cardBox.bottom - rect.top + 6 : null
+              });
+            };
+            const cell = (label, value, title) => h(
               "div",
-              { key: agent.id, className: "xz-devcard" },
+              { className: "xz-agent-cell" },
+              h("div", { className: "xz-agent-cell-label" }, label),
+              h("div", { className: "xz-agent-cell-value", title: title || value }, value)
+            );
+            return h(
+              "div",
+              { key: agent.id, className: "xz-agent-card" },
               h(
                 "div",
-                { className: "xz-devcard-head" },
-                h("div", { className: "xz-devcard-mark" }, h(Icon, { name: "devices", size: 16 })),
-                editing === agent.id ? h(
+                { className: "xz-agent-head" },
+                h(
+                  "span",
+                  { className: "xz-agent-avatar", "aria-hidden": "true" },
+                  (agent.name || "?").trim().slice(0, 1) || "?"
+                ),
+                h(
                   "div",
-                  { className: "xz-row", style: { flex: 1 } },
-                  h("input", {
-                    className: "xz-input xz-devcard-rename",
+                  { className: "xz-agent-titlebar" },
+                  editing === agent.id ? h("input", {
+                    className: "xz-input xz-agent-rename",
                     autoFocus: true,
                     value: editName,
                     maxLength: 40,
@@ -2960,91 +3331,98 @@ var DshXiaozhi = (() => {
                       }
                       commitRename(agent);
                     }
-                  })
-                ) : h(
-                  "div",
-                  { className: "xz-devcard-title" },
-                  h("strong", {
-                    className: "xz-devcard-name",
+                  }) : h("h3", {
+                    className: "xz-agent-name",
                     title: t("rename"),
-                    onClick: () => {
-                      setEditing(agent.id);
-                      setEditName(agent.name || "");
-                    }
+                    onClick: startRename
                   }, agent.name || t("unnamed")),
-                  h("span", { className: `xz-dot ${agent.online ? "on" : ""}`, style: { marginLeft: 6 } }),
-                  h("span", { className: "xz-devcard-state" }, agent.online ? t("online") : t("offline"))
+                  h("span", { className: `xz-agent-chip ${chip.kind}` }, chip.text)
                 ),
-                editing === agent.id ? null : h("button", {
-                  className: "xz-btn",
-                  disabled: busyId === agent.id,
+                h("button", {
+                  type: "button",
+                  className: "xz-agent-menu-btn",
+                  "aria-label": t("agentMenu"),
+                  "aria-haspopup": "menu",
+                  "aria-expanded": menu?.id === agent.id,
+                  onClick: toggleMenu
+                }, "\u22EF")
+              ),
+              menu?.id === agent.id ? h(
+                "div",
+                {
+                  className: "xz-menu xz-agent-menu",
+                  role: "menu",
+                  style: {
+                    position: "absolute",
+                    right: menu.right,
+                    left: "auto",
+                    top: menu.top ?? "auto",
+                    bottom: menu.bottom ?? "auto"
+                  }
+                },
+                h("button", {
+                  type: "button",
+                  className: "xz-provider-menu-item",
                   onClick: () => {
+                    setMenu(null);
                     setInjecting(agent);
                     setText("");
                   }
-                }, t("inject"))
-              ),
-              h(
-                "div",
-                { className: "xz-devcard-devices" },
-                (agent.devices || []).length === 0 ? t("agentNoDevices") : (agent.devices || []).map(
-                  (device, index) => h(
-                    "span",
-                    { key: device.deviceId, style: { marginRight: 10, whiteSpace: "nowrap" } },
-                    `${index + 1}. ${device.nickName || device.deviceId}${device.online ? " \u25CF" : ""}`
-                  )
-                )
-              ),
-              h(
-                "div",
-                { className: "xz-devcard-facts" },
-                h(
-                  "div",
-                  null,
-                  h("span", { className: "xz-devcard-label" }, t("voice")),
-                  h("span", {
-                    className: "xz-devcard-value",
-                    title: agent.overrides?.voice || ""
-                  }, agent.overrides?.voice ? voiceLabel(agent.overrides?.voice, state.voice?.tts?.provider) : t("voiceDefault"))
-                ),
-                h(
-                  "div",
-                  null,
-                  h("span", { className: "xz-devcard-label" }, t("agentDevices")),
-                  h("span", { className: "xz-devcard-value" }, t("agentDeviceCount").replace("{n}", String(agent.deviceCount ?? 0)))
-                ),
-                h(
-                  "div",
-                  null,
-                  h("span", { className: "xz-devcard-label" }, t("lastSeen")),
-                  h("span", { className: "xz-devcard-value" }, formatAgo(agent.lastSeenAt))
-                )
-              ),
-              h(
-                "div",
-                { className: "xz-devcard-foot" },
-                h("button", { className: "xz-btn", onClick: () => openConfig(agent.id) }, t("configure")),
-                h(
-                  "button",
-                  { className: "xz-btn", onClick: () => setManaging(agent.id) },
-                  `${t("agentDevices")}(${agent.deviceCount ?? 0})`
-                ),
+                }, `${t("inject")}\u2026`),
                 h("button", {
-                  className: "xz-btn",
+                  type: "button",
+                  className: "xz-provider-menu-item",
+                  onClick: () => {
+                    setMenu(null);
+                    startRename();
+                  }
+                }, t("agentMenuRename")),
+                h("button", {
+                  type: "button",
+                  className: "xz-provider-menu-item is-danger",
+                  disabled: busyId === agent.id,
+                  title: t("agentDeleteHint"),
+                  onClick: () => {
+                    setMenu(null);
+                    setConfirmAgent(agent.id);
+                  }
+                }, t("agentMenuDelete"))
+              ) : null,
+              h(
+                "div",
+                { className: "xz-agent-grid" },
+                cell(t("agentRole"), agentRoleName(agent)),
+                cell(
+                  t("agentModel"),
+                  agent.overrides?.model || t("agentModelDefault"),
+                  agent.overrides?.model || ""
+                ),
+                cell(t("agentRecentChat"), formatAgo(agent.lastSeenAt))
+              ),
+              h(
+                "div",
+                { className: "xz-agent-actions" },
+                h("button", {
+                  type: "button",
+                  className: "xz-agent-action",
+                  onClick: () => openConfig(agent.id)
+                }, agentActionIcon("config"), t("configure")),
+                h("button", {
+                  type: "button",
+                  className: "xz-agent-action",
                   onClick: () => {
                     setConfiguring("");
                     setHistoryAgent(agent);
                   }
-                }, t("history")),
+                }, agentActionIcon("history"), t("history")),
                 h("button", {
-                  className: "xz-btn danger",
-                  disabled: busyId === agent.id,
-                  title: t("agentDeleteHint"),
-                  onClick: () => removeAgent(agent)
-                }, confirmDelete === agent.id ? t("agentDeleteConfirm") : t("remove"))
+                  type: "button",
+                  className: "xz-agent-action",
+                  onClick: () => setManaging(agent.id)
+                }, agentActionIcon("devices"), `${t("agentDevices")} (${agent.deviceCount ?? 0})`)
               )
-            )
-          )
+            );
+          })
         )
       ),
       injecting ? h(
@@ -3071,6 +3449,36 @@ var DshXiaozhi = (() => {
             { className: "xz-row", style: { justifyContent: "flex-end" } },
             h("button", { className: "xz-btn", onClick: () => setInjecting(null) }, t("cancel")),
             h("button", { className: "xz-btn primary", disabled: !text.trim(), onClick: sendInject }, t("send"))
+          )
+        )
+      ) : null,
+      deleteAgent ? h(
+        "div",
+        { className: "xz-modal-mask", onClick: () => setConfirmAgent("") },
+        h(
+          "div",
+          {
+            className: "xz-modal xz-confirm-modal",
+            role: "dialog",
+            "aria-modal": "true",
+            "aria-label": t("agentDeleteTitle"),
+            onClick: (event) => event.stopPropagation()
+          },
+          h("h3", null, t("agentDeleteTitle")),
+          h(
+            "p",
+            { className: "xz-confirm-text" },
+            t("agentDeleteBody").replace("{name}", deleteAgent.name || t("unnamed"))
+          ),
+          h(
+            "div",
+            { className: "xz-row xz-confirm-foot" },
+            h("button", { className: "xz-btn", onClick: () => setConfirmAgent("") }, t("cancel")),
+            h("button", {
+              className: "xz-btn danger-confirm",
+              disabled: busyId === deleteAgent.id,
+              onClick: () => removeAgent(deleteAgent)
+            }, t("remove"))
           )
         )
       ) : null,
@@ -3120,7 +3528,11 @@ var DshXiaozhi = (() => {
     onMove,
     onDelete,
     onTest,
-    onTestPrimary
+    onTestPrimary,
+    onPromote,
+    // 2026-11-14：全局 TTS 改成「服务商池」——只添加/编辑/删除，不再分主用/备用、不排顺序；
+    // 用哪家由「智能体 → 配置 → 角色」选，其余按本列表顺序自动降级。
+    pool = false
   }) {
     const [menu, setMenu] = useState2(null);
     const primaryKey = backupKeyState(stage, primary);
@@ -3175,16 +3587,99 @@ var DshXiaozhi = (() => {
         right: Math.max(8, Math.round(window.innerWidth - rect.right))
       });
     };
-    const menuItem = (label, onClick, { disabled = false, danger = false, confirm = false } = {}) => h("button", {
+    const menuItem = (label, onClick, { disabled = false, danger = false, confirm = false, title = "" } = {}) => h("button", {
       type: "button",
       role: "menuitem",
       disabled: disabled || void 0,
+      title: title || void 0,
       className: `xz-provider-menu-item${danger ? " is-danger" : ""}${confirm ? " confirm" : ""}`,
       onClick: disabled ? void 0 : onClick
     }, label);
     const openEntry = menu ? entries[menu.index] : null;
     const openKey = openEntry ? openEntry.id || `draft-${menu.index}` : "";
     const openProbe = openEntry ? stageDescriptor(openEntry.provider, stage)?.probe || { kind: "none" } : null;
+    if (pool) {
+      const hasPrimary = Boolean(primary?.provider);
+      const rows = [
+        ...hasPrimary ? [{ ...primary, __poolPrimary: true }] : [],
+        ...entries
+      ];
+      const entriesIndex = (index) => index - (hasPrimary ? 1 : 0);
+      const serverIndex = (index) => hasPrimary ? index : index + 1;
+      const isPrimaryRow = (index) => hasPrimary && index === 0;
+      const avatarOf = (provider) => {
+        const label = stageProviderLabel(stage, provider || "").trim();
+        return (label[0] || "?").toUpperCase();
+      };
+      return h(
+        "div",
+        { className: "xz-backup-section xz-provider-pool" },
+        h("p", { className: "xz-pool-hint" }, t("ttsPoolHint")),
+        h(
+          "div",
+          { className: "xz-pool-list" },
+          rows.length === 0 ? h("p", { className: "xz-pool-empty" }, t("ttsPoolEmpty")) : rows.map((entry, index) => {
+            const rowKey = isPrimaryRow(index) ? "pool-primary" : entry.id || `pool-draft-${index}`;
+            const keyState = backupKeyState(stage, entry);
+            const probe = stageDescriptor(entry.provider, stage)?.probe || { kind: "none" };
+            const result = isPrimaryRow(index) ? primaryTest : entry.id ? testResults[entry.id] : null;
+            const isTesting = isPrimaryRow(index) ? primaryTesting : isTestingId(entry.id, testingId);
+            const testLabel2 = providersDirty ? t("saveAndTest") : probe.labelKey ? t(probe.labelKey) : t("backupTest");
+            const confirm = confirmDelete === rowKey;
+            const keyText = keyState.text.includes("\u2022") ? `${t("backupSecret")} ${keyState.text}` : keyState.text;
+            return h(
+              "div",
+              { key: rowKey, className: "xz-pool-row" },
+              h("span", { className: "xz-pool-avatar", "aria-hidden": "true" }, avatarOf(entry.provider)),
+              h(
+                "div",
+                { className: "xz-pool-title" },
+                h(
+                  "div",
+                  { className: "xz-pool-name" },
+                  h("strong", null, stageProviderLabel(stage, entry.provider || "")),
+                  h("span", { className: `xz-dot ${keyState.ok ? "on" : ""}`, title: keyState.text }),
+                  providersDirty && isPrimaryRow(index) ? h("span", { className: "xz-chip mute" }, t("backupDraft")) : null
+                ),
+                h(
+                  "div",
+                  { className: "xz-pool-meta" },
+                  h("span", { className: "xz-pool-key", title: keyState.text }, keyText),
+                  result ? h("span", { className: "xz-pool-meta-sep", "aria-hidden": "true" }) : null,
+                  result ? h("span", { className: "xz-pool-test" }, backupTestText(stage, result)) : null
+                )
+              ),
+              h(
+                "div",
+                { className: "xz-pool-actions" },
+                h("button", {
+                  type: "button",
+                  className: "xz-pool-link",
+                  onClick: () => isPrimaryRow(index) ? onEditPrimary() : onEdit(entriesIndex(index))
+                }, t("backupEdit")),
+                probe.kind === "none" ? null : h("button", {
+                  type: "button",
+                  className: "xz-pool-link",
+                  disabled: isTesting,
+                  onClick: () => isPrimaryRow(index) ? onTestPrimary() : onTest(entriesIndex(index))
+                }, isTesting ? t("backupTesting") : testLabel2),
+                h("button", {
+                  type: "button",
+                  className: `xz-pool-link danger${confirm ? " is-confirm" : ""}`,
+                  onClick: () => onDelete(serverIndex(index), rowKey)
+                }, confirm ? t("backupDeleteConfirm") : t("remove"))
+              )
+            );
+          })
+        ),
+        h(
+          "button",
+          { type: "button", className: "xz-pool-add", onClick: onAdd },
+          h("span", { className: "xz-pool-add-plus", "aria-hidden": "true" }, "+"),
+          t("providerPoolAdd")
+        )
+      );
+    }
     return h(
       "div",
       { className: "xz-backup-section" },
@@ -3223,6 +3718,8 @@ var DshXiaozhi = (() => {
           summaryOf(primary) ? fact(summaryOf(primary).label, summaryOf(primary).value) : null,
           fact(t("backupSecret"), primaryKey.text)
         ),
+        // 「随时替换」的入口提示：主用/备用不是固定关系，备用行 ⋯ 里一键设为主用。
+        entries.length > 0 ? h("p", { className: "xz-hint xz-provider-swap-hint" }, t("promoteHint")) : null,
         primaryTest ? h("div", { className: "xz-backup-test" }, backupTestText(stage, primaryTest)) : null
       ),
       // ---------------------------------------------------------------- 备用
@@ -3294,6 +3791,14 @@ var DshXiaozhi = (() => {
           role: "menu",
           style: { top: `${menu.top}px`, right: `${menu.right}px`, left: "auto" }
         },
+        menuItem(
+          t("promoteToPrimary"),
+          () => {
+            setMenu(null);
+            onPromote(menu.index);
+          },
+          { title: t("promoteToPrimaryHint") }
+        ),
         menuItem(t("backupMoveUp"), () => {
           setMenu(null);
           onMove(menu.index, -1);
@@ -3604,6 +4109,10 @@ var DshXiaozhi = (() => {
     const [error, setError] = useState2("");
     const [saving, setSaving] = useState2(false);
     const [openStage, setOpenStage] = useState2(null);
+    const [firmwareFile, setFirmwareFile] = useState2(null);
+    const [firmwareInfo, setFirmwareInfo] = useState2(state?.firmware?.info ?? null);
+    const [firmwareBusy, setFirmwareBusy] = useState2(false);
+    const [firmwareNote, setFirmwareNote] = useState2("");
     const [editor, setEditor] = useState2(null);
     const [testResults, setTestResults] = useState2({});
     const [testingId, setTestingId] = useState2("");
@@ -3636,6 +4145,9 @@ var DshXiaozhi = (() => {
       }).catch((err) => setError(err.message));
     }, []);
     useEffect2(() => {
+      setFirmwareInfo(state?.firmware?.info ?? null);
+    }, [state?.firmware?.info?.fileName, state?.firmware?.info?.size, state?.firmware?.info?.uploadedAt]);
+    useEffect2(() => {
       if (!settings) return;
       if (applyingServerRef.current) {
         applyingServerRef.current = false;
@@ -3659,6 +4171,47 @@ var DshXiaozhi = (() => {
     settingsRef.current = settings;
     const patch = (group, values) => setSettings({ ...settings, [group]: { ...settings[group], ...values } });
     const nested = (group, key, values) => setSettings({ ...settings, [group]: { ...settings[group], [key]: { ...settings[group][key], ...values } } });
+    const uploadFirmware = async () => {
+      if (!firmwareFile) return;
+      setFirmwareBusy(true);
+      setFirmwareNote("");
+      try {
+        const headers = {
+          "x-dsh-xiaozhi": "1",
+          "content-type": "application/octet-stream",
+          "x-firmware-name": firmwareFile.name
+        };
+        if (settings.firmware.version) headers["x-firmware-version"] = settings.firmware.version;
+        const response = await fetch(`${API}/firmware/upload`, { method: "POST", headers, body: firmwareFile });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+        setFirmwareInfo(payload.info || null);
+        setFirmwareNote(t("firmwareUploaded"));
+        notify?.(t("firmwareUploaded"));
+      } catch (err) {
+        setFirmwareNote(`${t("firmwareUploadFailed")}\uFF1A${err.message}`);
+      } finally {
+        setFirmwareBusy(false);
+      }
+    };
+    const removeFirmware = async () => {
+      setFirmwareBusy(true);
+      setFirmwareNote("");
+      try {
+        const response = await fetch(`${API}/firmware/remove`, {
+          method: "POST",
+          headers: { "x-dsh-xiaozhi": "1" }
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+        setFirmwareInfo(null);
+        setFirmwareNote(t("firmwareRemoved"));
+      } catch (err) {
+        setFirmwareNote(`${t("firmwareUploadFailed")}\uFF1A${err.message}`);
+      } finally {
+        setFirmwareBusy(false);
+      }
+    };
     const backupsOf = (stage) => {
       const list = settings.voice?.[stage]?.backups || [];
       return Array.isArray(list) ? list : [];
@@ -3684,6 +4237,8 @@ var DshXiaozhi = (() => {
       primary: settings.voice?.[stage] || {},
       entries: backupsOf(stage),
       providersDirty,
+      // 2026-11-14：TTS 走「服务商池」——不分主备、不排序；用哪家在智能体页选。
+      pool: stage === "tts",
       primaryTest: primaryTests[stage],
       testingPrimary,
       testResults,
@@ -3693,9 +4248,10 @@ var DshXiaozhi = (() => {
       onAdd: () => openAddBackup(stage),
       onEdit: (index) => openEditBackup(stage, index),
       onMove: (index, delta) => moveBackup(stage, index, delta),
-      onDelete: (index, key) => removeBackup(stage, index, key),
+      onDelete: (index, key) => stage === "tts" ? removePoolEntry(stage, index, key) : removeBackup(stage, index, key),
       onTest: (index) => runBackupTest(stage, index),
-      onTestPrimary: () => runPrimaryTest(stage)
+      onTestPrimary: () => runPrimaryTest(stage),
+      onPromote: (index) => promoteBackup(stage, index)
     });
     const setBackups = (stage, next) => {
       setProvidersDirty(true);
@@ -3778,6 +4334,28 @@ var DshXiaozhi = (() => {
       [list[index], list[target]] = [list[target], list[index]];
       setBackups(stage, list);
     };
+    const promoteBackup = async (stage, index) => {
+      if (providersDirty) {
+        const saved = await save();
+        if (!saved) return;
+      }
+      try {
+        const result = await callApi("/settings/provider/promote", {
+          method: "POST",
+          body: { kind: stage, index }
+        });
+        applyingServerRef.current = true;
+        setSettings(withBackups(result.settings));
+        setProvidersDirty(false);
+        setPrimaryClear({});
+        setConfirmDelete("");
+        setPrimaryTests((previous) => ({ ...previous, [stage]: null }));
+        notify(t("promoteOk"), "ok");
+      } catch (err) {
+        const hint = err.status === 404 ? "\uFF08\u670D\u52A1\u7AEF\u8FD8\u6CA1\u52A0\u8F7D\u8FD9\u4E2A\u63A5\u53E3\uFF0C\u91CD\u542F DSH \u540E\u751F\u6548\uFF09" : "";
+        notify(`${t("actionFailed")}${err.message}${hint}`, "bad");
+      }
+    };
     const removeBackup = (stage, index, cardKey) => {
       if (confirmDelete !== cardKey) {
         setConfirmDelete(cardKey);
@@ -3788,6 +4366,43 @@ var DshXiaozhi = (() => {
       }
       setConfirmDelete("");
       setBackups(stage, backupsOf(stage).filter((_, position) => position !== index));
+    };
+    const removePrimary = async (stage) => {
+      if (providersDirty) {
+        const saved = await save();
+        if (!saved) return;
+      }
+      try {
+        const result = await callApi("/settings/provider/remove", {
+          method: "POST",
+          body: { kind: stage, index: 0 }
+        });
+        applyingServerRef.current = true;
+        setSettings(withBackups(result.settings));
+        setProvidersDirty(false);
+        setPrimaryClear({});
+        setConfirmDelete("");
+        setPrimaryTests((previous) => ({ ...previous, [stage]: null }));
+        notify(t("providerRemoved"), "ok");
+      } catch (err) {
+        const hint = err.status === 404 ? "\uFF08\u670D\u52A1\u7AEF\u8FD8\u6CA1\u52A0\u8F7D\u8FD9\u4E2A\u63A5\u53E3\uFF0C\u91CD\u542F DSH \u540E\u751F\u6548\uFF09" : "";
+        notify(`${t("actionFailed")}${err.message}${hint}`, "bad");
+      }
+    };
+    const removePoolEntry = (stage, index, cardKey) => {
+      if (confirmDelete !== cardKey) {
+        setConfirmDelete(cardKey);
+        window.setTimeout(() => {
+          setConfirmDelete((current) => current === cardKey ? "" : current);
+        }, 4e3);
+        return;
+      }
+      setConfirmDelete("");
+      if (index === 0) {
+        void removePrimary(stage);
+        return;
+      }
+      setBackups(stage, backupsOf(stage).filter((_, position) => position !== index - 1));
     };
     const runBackupTest = async (stage, index) => {
       const providerId = backupsOf(stage)[index]?.provider;
@@ -4000,6 +4615,8 @@ var DshXiaozhi = (() => {
       const detail = stageDetail(stage);
       const chain = stageChain(stage);
       const key = backupKeyState(stage, primary);
+      const pool = stage === "tts";
+      const poolCount = (primary.provider ? 1 : 0) + backups.length;
       return h(
         "button",
         {
@@ -4023,15 +4640,15 @@ var DshXiaozhi = (() => {
         h(
           "div",
           { className: "xz-stage-card-primary" },
-          h("strong", null, stageProviderLabel(stage, primary.provider)),
+          h("strong", null, pool ? poolCount > 0 ? t("ttsProviderCount").replace("{n}", String(poolCount)) : t("ttsPoolEmpty") : stageProviderLabel(stage, primary.provider)),
           detail ? h("span", { className: "xz-stage-card-detail", title: detail }, detail) : null
         ),
         h(
           "div",
           { className: "xz-stage-card-facts" },
           h("span", null, `${t("backupSecret")}: ${key.text}`),
-          h("span", null, t("configBackupCount").replace("{n}", String(backups.length))),
-          chain ? h("span", { className: "xz-stage-card-chain", title: chain }, `${t("backupChain")}: ${chain}`) : null
+          pool ? h("span", null, t("ttsProviderCount").replace("{n}", String(poolCount))) : h("span", null, t("configBackupCount").replace("{n}", String(backups.length))),
+          !pool && chain ? h("span", { className: "xz-stage-card-chain", title: chain }, `${t("backupChain")}: ${chain}`) : null
         ),
         h(
           "div",
@@ -4047,7 +4664,7 @@ var DshXiaozhi = (() => {
       h(
         "div",
         {
-          className: "xz-modal xz-stage-modal",
+          className: `xz-modal xz-stage-modal${openStage === "tts" ? " is-pool" : ""}`,
           role: "dialog",
           "aria-modal": "true",
           onClick: (event) => event.stopPropagation()
@@ -4068,8 +4685,8 @@ var DshXiaozhi = (() => {
         h(
           "div",
           { className: "xz-modal-body" },
-          h(ProviderSection, providerSectionProps(openStage)),
-          openStage === "tts" ? h("p", { className: "xz-hint", style: { margin: "10px 0 0" } }, t("ttsVoicePerDevice")) : null
+          // TTS 的说明已经收在服务商池的顶部提示里，这里不再重复第二行灰字。
+          h(ProviderSection, providerSectionProps(openStage))
         ),
         h(
           "div",
@@ -4197,6 +4814,34 @@ var DshXiaozhi = (() => {
             { className: "xz-field" },
             h("label", null, t("firmwareUrl")),
             h("input", { className: "xz-input", value: settings.firmware.url, onChange: (e) => patch("firmware", { url: e.target.value }) })
+          ),
+          h(
+            "div",
+            { className: "xz-field" },
+            h("label", null, t("firmwareFile")),
+            h("input", {
+              className: "xz-input",
+              type: "file",
+              accept: ".bin,application/octet-stream",
+              onChange: (e) => setFirmwareFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)
+            }),
+            h(
+              "div",
+              { className: "xz-row", style: { gap: 8, marginTop: 6 } },
+              h("button", {
+                type: "button",
+                className: "xz-btn",
+                disabled: !firmwareFile || firmwareBusy,
+                onClick: uploadFirmware
+              }, firmwareBusy ? t("firmwareUploading") : t("firmwareUpload")),
+              firmwareInfo ? h("button", { type: "button", className: "xz-btn", disabled: firmwareBusy, onClick: removeFirmware }, t("firmwareRemove")) : null
+            ),
+            h(
+              "span",
+              { className: "note" },
+              firmwareInfo ? `${firmwareInfo.fileName} \xB7 ${(firmwareInfo.size / 1024 / 1024).toFixed(2)} MB \xB7 sha256 ${String(firmwareInfo.sha256 || "").slice(0, 12)}\u2026` : t("firmwareNone")
+            ),
+            firmwareNote ? h("span", { className: "note" }, firmwareNote) : null
           ),
           h(
             "div",

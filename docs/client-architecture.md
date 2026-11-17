@@ -9,7 +9,7 @@
 
 ```js
 window.__ModuleLoader__.load({
-  id: '@local/dsh-xiaozhi',
+  id: '@aishangwuji/dsh-xiaozhi',
   factory(require) {
     // ...
     return DshXiaozhi   // { inject: [...], apply(ctx) }
@@ -121,7 +121,7 @@ npm run build
 npm run smoke
 npm run check:ui
 node --check client.js
-node --test "test/*.test.mjs"   # 251 项
+node --test "test/*.test.mjs"   # 275 项
 ```
 
 ## 7. 变更记录
@@ -146,7 +146,7 @@ node --test "test/*.test.mjs"   # 251 项
   防抖 700ms 自动 `POST /settings`，底部只显示「保存中… / 已自动保存 / 失败重试」。保存期间
   有新改动时用 revision 判断，不用服务端回写覆盖本地；切视图卸载时立即 flush。
 - **2026-11-08（音色列表）**：智能体「角色」页的音色下拉改为按 `GET /voices?provider=&resourceId=`
-  拉取；火山配置了 AK/SK 时走官方 `ListSpeakers`（`source:'api'`），否则回内置清单
+  拉取；2026-11-13 起火山也只回内置清单（官方 `ListSpeakers` 已删除），`source` 恒为 `catalog`
   （`source:'catalog'`）并在下拉下标注。全局 TTS 主用编辑弹窗新增可选的 AccessKey/SecretAccessKey
   （`primaryOnly` 字段，备用条目不显示）。
 - **2026-11-08（智能体模型字段）**：「模型与记忆」页的「模型」明确为 **LLM 模型名**，下拉选项来自

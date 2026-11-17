@@ -12,7 +12,7 @@ import { DeviceStore } from '../src/store.js'
 const silent = { info() {}, warn() {}, error() {} }
 const CONTROL = '/dsh-xiaozhi-7c3a'
 
-async function start({ probeLlm, probeProvider } = {}) {
+async function start({ probeLlm, probeProvider, llm } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-xiaozhi-settings-'))
   const config = {
     host: '127.0.0.1',
@@ -36,6 +36,7 @@ async function start({ probeLlm, probeProvider } = {}) {
     settings,
     probeLlm,
     probeProvider,
+    llm,
     logger: silent,
   })
   const server = createServer((req, res) => control.handler(req, res))
@@ -346,6 +347,132 @@ test('backup providers persist with server ids and only masks leave the process'
     )
     assert.equal(restored.llm.backups[0].hasApiKey, true)
     assert.doesNotMatch(JSON.stringify(restored), /sk-backup-deepseek-secret/)
+  } finally {
+    await harness.dispose()
+  }
+})
+
+test('a backup can be promoted to primary and the old primary drops into its slot', async () => {
+  const harness = await start()
+  try {
+    const saved = await harness.call('/settings', {
+      method: 'POST',
+      body: {
+        voice: {
+          llm: {
+            provider: 'deepseek',
+            model: 'deepseek-chat',
+            apiKey: 'sk-primary-llm',
+            maxTokens: 96,
+            backups: [
+              { provider: 'mimo', model: 'mimo-v2', apiKey: 'sk-backup-mimo' },
+              { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-backup-deepseek' },
+            ],
+          },
+          tts: {
+            provider: 'volc',
+            apiKey: 'tts-primary-key',
+            backups: [{ provider: 'xunfei', appId: 'xf-app', apiKey: 'xf-key', apiSecret: 'xf-secret' }],
+          },
+        },
+      },
+    })
+    assert.equal(saved.status, 200)
+    const ttsBackupId = saved.json.settings.voice.tts.backups[0].id
+
+    // 把唯一的 TTS 备用（讯飞）设为主用，旧主用（火山）落到备用 1。
+    const promotedTts = await harness.call('/settings/provider/promote', {
+      method: 'POST',
+      body: { kind: 'tts', index: 0 },
+    })
+    assert.equal(promotedTts.status, 200)
+    const ttsView = promotedTts.json.settings.voice.tts
+    assert.equal(ttsView.provider, 'xunfei')
+    assert.equal(ttsView.hasApiKey, true)
+    assert.equal(ttsView.hasApiSecret, true, '被提升条目的密钥状态跟着它走')
+    assert.equal(ttsView.backups.length, 1)
+    assert.equal(ttsView.backups[0].provider, 'volc')
+    assert.notEqual(ttsView.backups[0].id, ttsBackupId, '降级的主用拿到新 id')
+    // 密钥不过 HTTP：响应里只有掩码。
+    assert.doesNotMatch(JSON.stringify(promotedTts.json), /xf-key|xf-secret|tts-primary-key/)
+
+    // 明文在磁盘上各归各位：讯飞的成了主用，火山的留在备用。
+    const disk = await readDisk(harness)
+    assert.equal(disk.voice.tts.provider, 'xunfei')
+    assert.equal(disk.voice.tts.appId, 'xf-app')
+    assert.equal(disk.voice.tts.apiKey, 'xf-key')
+    assert.equal(disk.voice.tts.apiSecret, 'xf-secret')
+    assert.equal(disk.voice.tts.backups[0].provider, 'volc')
+    assert.equal(disk.voice.tts.backups[0].apiKey, 'tts-primary-key')
+
+    // LLM：提升第 2 条 → 主用 deepseek；maxTokens 这类全局项不跟着搬；
+    // 被提升的那条从列表里摘掉，旧主用落到它原来的位置（顺序不变）。
+    const promotedLlm = await harness.call('/settings/provider/promote', {
+      method: 'POST',
+      body: { kind: 'llm', index: 1 },
+    })
+    assert.equal(promotedLlm.status, 200)
+    const llmView = promotedLlm.json.settings.voice.llm
+    assert.equal(llmView.provider, 'deepseek')
+    assert.equal(llmView.maxTokens, 96, '全局项（回复长度上限）留在主用')
+    assert.deepEqual(llmView.backups.map((entry) => entry.provider), ['mimo', 'deepseek'])
+    assert.equal((await readDisk(harness)).voice.llm.apiKey, 'sk-backup-deepseek')
+    // 降级的主用落在「被提升那条原来的位置」（index 1），不是列表头。
+    assert.equal((await readDisk(harness)).voice.llm.backups[0].apiKey, 'sk-backup-mimo')
+    assert.equal((await readDisk(harness)).voice.llm.backups[1].apiKey, 'sk-primary-llm')
+  } finally {
+    await harness.dispose()
+  }
+})
+
+test('promoting a backup when no primary was ever configured leaves no empty entry', async () => {
+  const harness = await start()
+  try {
+    const saved = await harness.call('/settings', {
+      method: 'POST',
+      body: { voice: { tts: { backups: [{ provider: 'deepseek', apiKey: 'sk-ds' }] } } },
+    })
+    assert.equal(saved.status, 200)
+    assert.equal(saved.json.settings.voice.tts.provider, '', '主用还没配过')
+
+    const promoted = await harness.call('/settings/provider/promote', {
+      method: 'POST',
+      body: { kind: 'tts', index: 0 },
+    })
+    assert.equal(promoted.status, 200)
+    assert.equal(promoted.json.settings.voice.tts.provider, 'deepseek')
+    assert.deepEqual(promoted.json.settings.voice.tts.backups, [], '不留 provider 为空的空壳条目')
+    assert.equal((await readDisk(harness)).voice.tts.apiKey, 'sk-ds')
+  } finally {
+    await harness.dispose()
+  }
+})
+
+test('promote is CSRF-protected, validates the index, and rejects a broken DSH host provider', async () => {
+  const harness = await start({ llm: { listProviders: () => [{ id: 'opencode-go' }] } })
+  try {
+    await harness.settings.update({ voice: { llm: { backups: [{ provider: 'host', hostProvider: 'opencode-go', model: 'x' }] } } })
+    // /settings 本身会拦坏值；这里模拟「磁盘上已被手改坏」的那份，确认提升路径同样拦。
+    harness.settings.state.voice.llm.backups[0].hostProvider = 'not-registered'
+
+    const savedHost = await harness.call('/settings/provider/promote', {
+      method: 'POST',
+      body: { kind: 'llm', index: 0 },
+    })
+    assert.equal(savedHost.status, 400)
+    assert.equal(savedHost.json.error.code, 'invalid-host-provider')
+    assert.equal(harness.settings.state.voice.llm.provider, '', '被拒时不能改状态')
+
+    assert.equal(
+      (await harness.call('/settings/provider/promote', { method: 'POST', body: { kind: 'tts', index: 0 }, csrf: false })).status,
+      403,
+    )
+    const badStage = await harness.call('/settings/provider/promote', { method: 'POST', body: { kind: 'voice', index: 0 } })
+    assert.equal(badStage.status, 400)
+    assert.equal(badStage.json.error.code, 'invalid-stage')
+    const badIndex = await harness.call('/settings/provider/promote', { method: 'POST', body: { kind: 'asr', index: 3 } })
+    assert.equal(badIndex.status, 400)
+    assert.equal(badIndex.json.error.code, 'invalid-index')
   } finally {
     await harness.dispose()
   }
@@ -784,6 +911,94 @@ test('LLM maxTokens can be set, clamped and cleared', async () => {
       body: { voice: { llm: { maxTokens: null } } },
     })
     assert.equal(cleared.json.settings.voice.llm.maxTokens, null, 'null clears back to the plugin default')
+  } finally {
+    await harness.dispose()
+  }
+})
+
+test('removing the first provider promotes the next one (TTS pool semantics)', async () => {
+  const harness = await start()
+  try {
+    await harness.call('/settings', {
+      method: 'POST',
+      body: {
+        voice: {
+          tts: {
+            provider: 'deepseek',
+            apiKey: 'sk-deepseek-pool',
+            backups: [
+              { provider: 'volc', apiKey: 'volc-pool-key', resourceId: 'seed-tts-2.0' },
+              { provider: 'baizhi', apiKey: 'baizhi-pool-key' },
+            ],
+          },
+        },
+      },
+    })
+
+    // 删「第一家」= 火山（连同凭据）顶上，百智云顺延，旧主用整条消失、不生成空壳。
+    const removed = await harness.call('/settings/provider/remove', {
+      method: 'POST',
+      body: { kind: 'tts', index: 0 },
+    })
+    assert.equal(removed.status, 200)
+    const view = removed.json.settings.voice.tts
+    assert.equal(view.provider, 'volc')
+    assert.equal(view.hasApiKey, true, '被提升条目的密钥状态跟着它走')
+    assert.equal(view.resourceId, 'seed-tts-2.0', '资源族跟着条目走')
+    assert.deepEqual(view.backups.map((entry) => entry.provider), ['baizhi'])
+    // 密钥不过 HTTP：响应里只有掩码。
+    assert.doesNotMatch(JSON.stringify(removed.json), /volc-pool-key|baizhi-pool-key|sk-deepseek-pool/)
+
+    const disk = await readDisk(harness)
+    assert.equal(disk.voice.tts.provider, 'volc')
+    assert.equal(disk.voice.tts.apiKey, 'volc-pool-key')
+    assert.equal(disk.voice.tts.backups[0].provider, 'baizhi')
+    assert.equal(disk.voice.tts.backups[0].apiKey, 'baizhi-pool-key')
+  } finally {
+    await harness.dispose()
+  }
+})
+
+test('removing a backup keeps the primary, and removing the last one clears the stage', async () => {
+  const harness = await start()
+  try {
+    const saved = await harness.call('/settings', {
+      method: 'POST',
+      body: {
+        voice: {
+          tts: { provider: 'deepseek', apiKey: 'sk-only-primary', backups: [{ provider: 'baizhi', apiKey: 'bz-only' }] },
+        },
+      },
+    })
+    assert.equal(saved.status, 200)
+
+    // 扁平下标 1 = 第一条备用。
+    const removed = await harness.call('/settings/provider/remove', {
+      method: 'POST',
+      body: { kind: 'tts', index: 1 },
+    })
+    assert.equal(removed.status, 200)
+    assert.equal(removed.json.settings.voice.tts.provider, 'deepseek')
+    assert.equal(removed.json.settings.voice.tts.hasApiKey, true)
+    assert.deepEqual(removed.json.settings.voice.tts.backups, [])
+
+    // 只剩主用时再删 → 清空该段，不留半份凭据。
+    const cleared = await harness.call('/settings/provider/remove', {
+      method: 'POST',
+      body: { kind: 'tts', index: 0 },
+    })
+    assert.equal(cleared.status, 200)
+    assert.equal(cleared.json.settings.voice.tts.provider, '')
+    assert.equal(cleared.json.settings.voice.tts.hasApiKey, false)
+    assert.deepEqual(cleared.json.settings.voice.tts.backups, [])
+    const disk = await readDisk(harness)
+    assert.equal(disk.voice.tts.apiKey, '')
+    assert.equal(disk.voice.tts.apiSecret, '')
+
+    // 越界 / 未知环节 / 缺 CSRF 头。
+    assert.equal((await harness.call('/settings/provider/remove', { method: 'POST', body: { kind: 'tts', index: 5 } })).status, 400)
+    assert.equal((await harness.call('/settings/provider/remove', { method: 'POST', body: { kind: 'voice', index: 0 } })).status, 400)
+    assert.equal((await harness.call('/settings/provider/remove', { method: 'POST', body: { kind: 'tts', index: 0 }, csrf: false })).status, 403)
   } finally {
     await harness.dispose()
   }

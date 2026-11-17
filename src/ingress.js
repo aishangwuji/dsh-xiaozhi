@@ -14,6 +14,7 @@
  */
 
 import { createServer } from 'node:http'
+import { createReadStream } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { clientIp, isPrivateAddress, readFirmwareVersion, readIdentity } from './identity.js'
 import { DeviceStoreError } from './store.js'
@@ -76,7 +77,7 @@ function sanitizeAudioParams(raw) {
   }
 }
 
-export function createIngress({ config, store, hub, logger, inboundMcp, pending, clock = () => Date.now() }) {
+export function createIngress({ config, store, hub, logger, inboundMcp, pending, firmware = null, clock = () => Date.now() }) {
   const startedAt = clock()
   const ready = store.load()
   const sessions = new Map()
@@ -99,6 +100,80 @@ export function createIngress({ config, store, hub, logger, inboundMcp, pending,
     return { url: `${secure ? 'wss' : 'ws'}://${host}/xiaozhi/v1/`, scope: 'derived' }
   }
 
+  /**
+   * 固件下载的绝对地址：按请求的 Host 拼，和 websocket 地址同一个来源。
+   * 控制台可能通过反代访问，x-forwarded-proto 优先。
+   */
+  function firmwareUrl(req, fileName) {
+    const forwardedProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim()
+    const secure = forwardedProto === 'https' || forwardedProto === 'wss'
+    const host = String(req.headers.host ?? '').trim()
+    if (!host) return ''
+    return `${secure ? 'https' : 'http'}://${host}/firmware/${encodeURIComponent(fileName)}`
+  }
+
+  function serveFirmware(req, res, rawName) {
+    let name = ''
+    try {
+      name = decodeURIComponent(rawName)
+    } catch {
+      name = ''
+    }
+    const file = firmware?.stream?.(name) ?? null
+    if (!file) {
+      sendJson(res, 404, { error: { code: 'firmware-not-found', message: '固件不存在' } })
+      return
+    }
+    res.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      'content-length': file.size,
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+    })
+    if (req.method === 'HEAD') {
+      res.end()
+      return
+    }
+    file.stream.on('error', () => {
+      try {
+        res.destroy()
+      } catch {
+        // Already gone.
+      }
+    })
+    file.stream.pipe(res)
+  }
+
+  /**
+   * OTA 的 `firmware` 段。
+   *
+   * 没有升级包时版本必须等于设备当前版本（或 0.0.0）：固件的判断是
+   * `IsNewVersionAvailable(current, version) || force`，如果给了一个新版本号但
+   * URL 为空，它会提示有新版本、然后拿空 URL 去升级并失败。
+   */
+  function firmwarePayload(device, req) {
+    if (device.otaEnabled === false) return { version: '', url: '', force: false }
+    const info = firmware?.info?.() ?? null
+    const configured = config.firmware ?? {}
+    const reported = String(device.firmwareVersion || '').trim()
+    const url = info ? firmwareUrl(req, info.fileName) : String(configured.url ?? '').trim()
+    const version = url
+      ? String(info?.version || configured.version || '').trim().slice(0, 40) || reported || '0.0.0'
+      : reported || '0.0.0'
+    const force = url && configured.force === true ? 1 : 0
+    // 固件（ota.cc）用 `cJSON_IsNumber(force) && valueint == 1` 判定强制升级，
+    // JSON 布尔 true 在 cJSON 里不是 number，会被忽略——所以这里必须发 1/0。
+    trace('ota.firmware', {
+      device: device.deviceId,
+      version,
+      url,
+      force,
+      file: info?.fileName ?? '',
+      reported,
+    })
+    return { version, url, force }
+  }
+
   async function handleOta(req, res, url) {
     const identity = readIdentity(req, url)
     if (!identity.deviceId || !identity.clientId) {
@@ -112,6 +187,17 @@ export function createIngress({ config, store, hub, logger, inboundMcp, pending,
       return
     }
     const ip = clientIp(req)
+    // 设备 OTA 请求体里带 `application.version`（固件版本）和 board；头里通常没有。
+    // 读一下，既用于设备名册展示，也用于「没有升级包时告诉它已是最新」。
+    let otaBody
+    try {
+      otaBody = await readJsonBody(req, 64 * 1024)
+    } catch {
+      otaBody = undefined
+    }
+    const reportedVersion =
+      readFirmwareVersion(req) ||
+      (typeof otaBody?.application?.version === 'string' ? otaBody.application.version.trim().slice(0, 32) : '')
     let ensured
     try {
       const known = store.get(identity.deviceId)
@@ -120,7 +206,7 @@ export function createIngress({ config, store, hub, logger, inboundMcp, pending,
           deviceId: identity.deviceId,
           clientId: identity.clientId,
           ip,
-          firmwareVersion: readFirmwareVersion(req),
+          firmwareVersion: reportedVersion,
         })
         if (!queued) {
           logger.warn?.(`dsh-xiaozhi: pending queue unavailable/full for ${identity.deviceId}`)
@@ -136,7 +222,7 @@ export function createIngress({ config, store, hub, logger, inboundMcp, pending,
         return
       }
       ensured = await store.ensureDevice({
-        firmwareVersion: readFirmwareVersion(req),
+        firmwareVersion: reportedVersion,
         deviceId: identity.deviceId,
         clientId: identity.clientId,
         ip,
@@ -166,11 +252,9 @@ export function createIngress({ config, store, hub, logger, inboundMcp, pending,
       websocket: { url: endpoint.url, token: config.endpoints.token },
       server_time: { timestamp: now, timezone_offset: config.timezoneOffset },
       activation: null,
-      // 设备级 OTA 开关：关掉后不给 version/url，固件拿到空版本就不会升级
-      // （保留字段本身，避免老固件把缺失字段当成协议错误）。
-      firmware: ensured.device.otaEnabled === false
-        ? { version: '', url: '', force: false }
-        : { ...config.firmware },
+      // 固件升级通道（2026-11-16）：控制台上传 .bin 后这里给设备绝对下载地址；
+      // 没有升级包时版本与设备当前版本一致，固件判断为「已是最新」。
+      firmware: firmwarePayload(ensured.device, req),
     })
   }
 
@@ -325,6 +409,7 @@ export function createIngress({ config, store, hub, logger, inboundMcp, pending,
           logger,
           createDecoder: config.voice.createDecoder,
           encodeSpeech: config.voice.encodeSpeech,
+          createStreamEncoder: config.voice.createStreamEncoder,
           onClose: () => {
             if (connection.isOpen) connection.close(CLOSE_CODE.normal, 'exit intent')
           },
@@ -479,7 +564,12 @@ export function createIngress({ config, store, hub, logger, inboundMcp, pending,
       })
       return
     }
-    if (req.method === 'GET' || req.method === 'POST') {
+    if (req.method === 'GET' || req.method === 'POST' || req.method === 'HEAD') {
+      const firmwareMatch = /^\/firmware\/([^/]+)$/.exec(path)
+      if (firmwareMatch) {
+        serveFirmware(req, res, firmwareMatch[1])
+        return
+      }
       if (path === '/xiaozhi/ota/' || path === '/xiaozhi/ota') {
         await handleOta(req, res, url)
         return

@@ -23,14 +23,14 @@
 | 环节 | 允许的 provider（备用列表） | 每条配置携带的字段 |
 |---|---|---|
 | LLM | `host` / `deepseek` / `mimo`（`host` = 复用 DSH 已配置的厂商，2026-11-10 起） | `provider` `hostProvider` `model` `baseUrl` `appId` `apiKey` |
-| TTS | `edge` / `xunfei` / `volc` | `provider` `appId` `apiKey` `apiSecret`（2026-11-08：控制台只提交这些；`voice` `rate` `speed` `model` `resourceId` `url` 是历史兼容字段，服务端 `BACKUP_SPEC` 仍接受手工配置） |
-| ASR | `local` / `funasr` / `xunfei` / `volc` | `provider` `url` `language` `accent` `resourceId` `appId` `apiKey` `apiSecret` |
+| TTS | `edge` / `xunfei` / `volc` / `baizhi` / `deepseek` | `provider` `appId` `apiKey` `apiSecret`（2026-11-08：控制台只提交这些；`voice` `rate` `speed` `model` `resourceId` `url` 是历史兼容字段，服务端 `BACKUP_SPEC` 仍接受手工配置） |
+| ASR | `local` / `funasr` / `xunfei` / `volc` / `baizhi` / `deepseek` | `provider` `url` `language` `accent` `resourceId` `appId` `apiKey` `apiSecret` |
 
 > 服务端白名单（`src/settings.js` 的 `BACKUP_SPEC`）由描述符派生（保留 `funasr` 以兼容手工配置）；
 > **控制台只列描述符里声明过的服务商**：LLM = **DSH 已配置**（`host`，复用 DSH 的厂商与凭据，免密钥）/
 > DeepSeek / 小米 MiMo（OpenAI / 火山 / 星火已从 LLM 段移除，火山与讯飞仍保留 TTS/ASR）；
-> TTS = 火山引擎豆包 / 讯飞语音合成 / 百智云语音合成 / 微软 Edge；ASR = 火山引擎豆包 /
-> 讯飞语音听写 / 百智云语音识别 / 本地 SenseVoice。`mock` 与 `funasr` 不出现在下拉里。
+> TTS = 火山引擎豆包 / 讯飞语音合成 / 百智云语音合成 / DeepSeek 语音合成 / 微软 Edge；ASR = 火山引擎豆包 /
+> 讯飞语音听写 / 百智云语音识别 / DeepSeek 语音识别 / 本地 SenseVoice。`mock` 与 `funasr` 不出现在下拉里。
 > 旧 settings 里残留的 openai/volc/spark LLM 条目在加载时被丢弃，手写主用会在建连时以
 > `unknown LLM provider` 明确报错（不静默换厂商）。
 >
@@ -174,6 +174,22 @@
 没返回音频时返回 `{ ok:false, error }`，不会伪造成功。写接口照旧要 `x-dsh-xiaozhi: 1` 头。
 现有 `/test/llm` 保留（等价于 kind=llm/source=primary）。
 
+### POST `/settings/provider/promote`
+
+> 新增（2026-11-14）：「随时替换」——把第 `index` 条备用提升为主用，旧主用落到该位置。
+
+请求：`{ "kind": "llm" | "tts" | "asr", "index": 0 }`（`index` 是服务端顺序，0 起）；写接口要 `x-dsh-xiaozhi: 1`。
+
+- **为什么在服务端做**：备用条目在控制台里是掩码（`sk-••••ab`），前端把它当主用提交会把掩码存成密钥；
+  服务端在内存里整段互换，明文不经过 HTTP。
+- 只搬该段声明的字段（`BACKUP_SPEC[stage]`）；全局项（如 `llm.maxTokens`）留在主用。
+  被提升条目的 `id` 随它成为主用而消失，降级的主用拿到**新 id**（「同 id 才保留密钥」不会串到别家）。
+- 主用从未配置过（`provider` 为空）时不生成空壳备用条目，直接把被提升的那条从列表摘掉。
+- `provider: "host"` 的备用提升前同样校验 `hostProvider` 是否在当前 profile 注册（坏值 400
+  `invalid-host-provider`，与 `POST /settings` 同一套）。响应体同 `GET /settings`（全是掩码）。
+
+错误：`400 invalid-stage` / `400 invalid-index` / `400 invalid-host-provider`；缺 CSRF 头 403。
+
 ## 4. 运行时装配（index.js + adapters/index.js）
 
 - `resolveConfig` 不涉及备用列表；`applyRuntimeSettings()` 把
@@ -208,6 +224,23 @@
   - `llm.failover` / `tts.failover` / `asr.failover`：`{ device, from, to, provider, error, ms }`
   - 失败链条只落到 `logger.warn`，不要 `logger.error`（配置错误另算）。
 
+## 4.5 TTS 的「服务商池」（2026-11-14 起与 LLM/ASR 不同）
+
+LLM 与 ASR 仍是「主用 + 备用 + 上移/下移/设为主用」。**TTS 改成平铺的服务商池**：
+
+- 全局 TTS 页只做添加 / 编辑 / 删除，**没有**主用徽标、序号、上移/下移、设为主用；
+- 用哪家由「智能体 → 配置 → 角色」的「TTS 服务商」下拉决定（`overrides.ttsProvider`），音色跟着所选厂商；
+- 智能体没选时用池里的第一行；其余已配置服务商按列表顺序自动降级（不用维护顺序 UI）。
+
+删除走 `POST /settings/provider/remove`：请求 `{ "kind": "tts", "index": 0 }`（`index` 是扁平列表下标，
+0 = 第一行，1.. = 备用）。删第一行时服务端把下一条**连同凭据**顶上、其余顺延；只剩一家时清空该段。
+原因与 promote 相同：浏览器里只有掩码，前端自己搬会把 `sk-••••ab` 存成密钥。
+
+错误：`400 invalid-stage` / `400 invalid-index`；缺 CSRF 头 403。
+
+界面（2026-11-14 调整）：一张白卡里每行 = 首字徽标 + 厂商名（状态点）+ 密钥掩码，右侧是**文字链**
+编辑 / 测试 / 删除（删除二次确认，红字）；底部一条虚线「+ 添加服务商」。TTS 弹窗用 is-pool`n自适应高度（内容少时不留空白，行多时内部滚动），不再渲染重复的「音色按智能体选」第二行提示。
+
 ## 5. 控制台 UI
 
 2026-11-08 改版：全局设置 → 服务商是 **ASR / LLM / TTS 三张概览卡**，点「管理」进入该环节的弹窗。
@@ -227,13 +260,14 @@
 **二级：stage 弹窗**（`xz-stage-modal`，固定头 + 可滚体 + 固定脚）
 
 - 头部：`‹ 返回` + 环节名 + 状态点 + 摘要；正文顶部一行说明；
-- 主用卡（淡蓝描边 + 主用徽标，固定第一优先级、不可删除/移位）：**标题行** = 厂商中文名 +
+- **TTS 例外**：没有主用卡，弹窗里是平铺的「服务商池」列表（见 4.5）。
+- 主用卡（淡蓝描边 + 主用徽标，固定第一优先级；可被备用「设为主用」换下来，2026-11-14）：**标题行** = 厂商中文名 +
   状态点 + 右侧 `[编辑]` `[测试]`（2026-11-09 收敛，按钮不再单独占一行）；
   下面才是模型/资源摘要（**TTS 卡没有摘要行**：全局不配音色，只显示厂商 + 密钥状态，2026-11-08）、
   密钥状态（已配置 / 未配置 / 无需密钥，只显示掩码）、最近测试结果。
 - 备用：**纵向列表**（不是网格），每行是**单行三段式** = 序号 + 厂商名 + 状态点 /
   摘要 + 密钥状态 + 测试结果 / 右侧 `[编辑] [⋯]`；
-  `⋯` 打开的是**贴着按钮的浮层菜单**（`position:fixed`，右侧对齐；上移 / 下移 / 测试 / 删除），
+  `⋯` 打开的是**贴着按钮的浮层菜单**（`position:fixed`，右侧对齐；**设为主用** / 上移 / 下移 / 测试 / 删除，2026-11-14 加「设为主用」），
   **不再在行内展开按钮组**——行内展开会把行撑高、下面的行跟着跳；点空白或 Esc 关闭，删除仍是二次确认（2026-11-09）。
   摘要为空（例如本地 SenseVoice 没有资源 ID）时整段不渲染，不显示「资源 ID: —」这类噪音。
   摘要的**标签跟着该厂商描述符 `summary` 的第一个字段**走：`resourceId` →「资源 ID」、
@@ -259,7 +293,7 @@
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"      # 全量 251 项必须全绿（2026-11-08）
+node --test "test/*.test.mjs"      # 全量 275 项必须全绿（2026-11-14）
 npm run build                      # src/client/** → client.js（esbuild，React external）
 npm run smoke                      # 真实 React SSR 渲染主要页面 + slot 注册校验
 node --check client.js             # UI 产物语法检查
@@ -272,6 +306,6 @@ node --check client.js             # UI 产物语法检查
 - TTS 音色归属（2026-11-08）：全局条目只存「厂商 + 凭据」，`voice` / `model` / `resourceId`
   可清空；只带凭据的主用/备用条目能构建；空音色 → 厂商默认、跨厂商残留 → 本厂商默认、
   自定义 ID 原样保留（`DEFAULT_TTS_VOICES` / `resolveTtsVoice`）。
-- failover：LLM 未出字前切换、出字后不切换、sticky 与 5 分钟回落；TTS 整句重试；ASR 回放
+- failover：LLM 未出字前切换、出字后不切换、sticky 与 5 分钟回落；TTS 首包前重试（出音频后不换家）；ASR 回放
   重试且不推 partial；abort 不触发切换；候选构建失败被跳过。
 - 控制 API：`/test/provider` 的 primary / backup / 未保存条目错误分支（用注入的假 probe）。

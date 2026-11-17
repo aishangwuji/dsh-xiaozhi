@@ -44,7 +44,7 @@ const sandbox = {
 }
 vm.createContext(sandbox)
 vm.runInContext(bundle, sandbox)
-if (!loaded || loaded.id !== '@local/dsh-xiaozhi') throw new Error('module not registered')
+if (!loaded || loaded.id !== '@aishangwuji/dsh-xiaozhi') throw new Error('module not registered')
 const plugin = loaded.factory((id) => {
   if (id === 'react') return React
   throw new Error(`unexpected require(${id})`)
@@ -220,6 +220,9 @@ const DIALOG_MATRIX = [
   { stage: 'tts', provider: 'xunfei', expect: ['appId', 'apiKey', 'apiSecret'] },
   { stage: 'tts', provider: 'baizhi', expect: ['apiKey'] },
   { stage: 'tts', provider: 'edge', expect: ['ttsEdgeKeyless'] },
+  // 2026-11-14：DeepSeek 也有语音两段（同一把 Key；没有语种字段）。
+  { stage: 'tts', provider: 'deepseek', expect: ['apiKey', 'deepseekTtsNote'] },
+  { stage: 'asr', provider: 'deepseek', expect: ['apiKey', 'deepseekAsrNote'] },
   { stage: 'asr', provider: 'volc', expect: ['apiKey', 'resourceId'] },
   { stage: 'asr', provider: 'baizhi', expect: ['apiKey', 'asrLanguage'] },
   { stage: 'asr', provider: 'xunfei', expect: ['appId', 'apiKey', 'apiSecret', 'asrLanguage'] },

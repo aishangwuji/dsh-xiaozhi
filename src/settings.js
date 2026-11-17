@@ -501,13 +501,112 @@ export class SettingsStore {
     return this.snapshot()
   }
 
+  /**
+   * 「随时替换」：把第 `index` 条备用提升为主用，旧主用落到该位置（顺序不变）。
+   *
+   * 为什么必须在服务端互换：备用条目在控制台里是**掩码**，浏览器把它当主用提交会把
+   * `sk-••••12` 存成密钥；而主用的明文从不离开本进程。这里在内存里整段搬，密钥不经过 HTTP。
+   *
+   * 规则：
+   * - 只搬该段声明的字段（`BACKUP_SPEC[stage]`），全局项（如 `llm.maxTokens`）留在主用；
+   * - 旧主用从未配置过（provider 为空）时不生成空备用条目，直接摘掉被提升的那条；
+   * - 校验全部通过才替换状态并落盘（失败不留半份配置）。
+   */
+  async promote(stage, index) {
+    const spec = BACKUP_SPEC[stage]
+    if (!spec) throw new SettingsError('invalid', `未知环节：${String(stage)}`)
+    const next = structuredClone(this.state)
+    const current = next.voice?.[stage]
+    const list = Array.isArray(current?.backups) ? current.backups : []
+    const position = Number(index)
+    if (!Number.isInteger(position) || position < 0 || position >= list.length) {
+      throw new SettingsError('invalid', `没有第 ${Number.isFinite(position) ? position + 1 : '?'} 条备用服务商`)
+    }
+    const promoted = list[position]
+    if (!promoted || typeof promoted !== 'object' || !promoted.provider) {
+      throw new SettingsError('invalid', '这条备用服务商缺少 provider，无法设为主用')
+    }
+
+    const rest = list.filter((_, at) => at !== position)
+    // 旧主用降为备用（同一位置）；从未配置过主用时不留空壳。
+    if (current.provider) {
+      const demoted = { id: randomUUID(), provider: current.provider }
+      for (const [key] of spec.fields) demoted[key] = current[key] ?? ''
+      for (const key of spec.secrets) demoted[key] = current[key] ?? ''
+      rest.splice(position, 0, demoted)
+    }
+
+    const primary = { ...current, provider: promoted.provider, configured: true }
+    for (const [key] of spec.fields) primary[key] = promoted[key] ?? ''
+    for (const key of spec.secrets) primary[key] = promoted[key] ?? ''
+    primary.backups = rest
+
+    next.voice[stage] = primary
+    next.updatedAt = this.clock()
+    this.state = next
+    await this.persist()
+    return this.snapshot()
+  }
+
+  /**
+   * 删除一段能力里的某一条服务商（2026-11-14，TTS 改成「服务商池」后用）。
+   *
+   * `index` 是**扁平列表**的下标：0 = 主用位，1..n = 备用条目。删主用位时：
+   * - 还有备用 → 第一条备用（连同它的凭据）顶上，其余顺延，**不生成空壳**；
+   * - 没有备用 → 把这一段清空（provider 置空、该段字段清零），保留全局项（如 `llm.maxTokens`）。
+   *
+   * 与 `promote()` 一样在服务端做：浏览器里只有掩码，前端自己搬会把 `sk-••••12` 存成密钥。
+   * 校验全部通过才替换状态并落盘（失败不留半份配置）。
+   */
+  async remove(stage, index) {
+    const spec = BACKUP_SPEC[stage]
+    if (!spec) throw new SettingsError('invalid', `未知环节：${String(stage)}`)
+    const next = structuredClone(this.state)
+    const current = next.voice?.[stage] ?? {}
+    const list = Array.isArray(current.backups) ? current.backups : []
+    const position = Number(index)
+    const total = (current.provider ? 1 : 0) + list.length
+    if (!Number.isInteger(position) || position < 0 || position >= total) {
+      throw new SettingsError('invalid', `没有第 ${Number.isFinite(position) ? position + 1 : '?'} 条服务商`)
+    }
+
+    if (position === 0 && !current.provider) {
+      // 主用从未配置过：扁平列表从第一条备用开始，下标 0 就是删它（不生成空壳、不“顶上”）。
+      const rest = [...list]
+      rest.splice(0, 1)
+      next.voice[stage] = { ...current, backups: rest }
+    } else if (position === 0 && list.length > 0) {
+      const promoted = list[0]
+      if (!promoted?.provider) throw new SettingsError('invalid', '这条服务商缺少 provider，无法顶上')
+      const primary = { ...current, provider: promoted.provider, configured: true }
+      for (const [key] of spec.fields) primary[key] = promoted[key] ?? ''
+      for (const key of spec.secrets) primary[key] = promoted[key] ?? ''
+      primary.backups = list.slice(1)
+      next.voice[stage] = primary
+    } else if (position === 0) {
+      const cleared = { ...current, provider: '', configured: false }
+      for (const [key] of spec.fields) cleared[key] = ''
+      for (const key of spec.secrets) cleared[key] = ''
+      cleared.backups = []
+      next.voice[stage] = cleared
+    } else {
+      const rest = [...list]
+      rest.splice(position - 1, 1)
+      next.voice[stage] = { ...current, backups: rest }
+    }
+
+    next.updatedAt = this.clock()
+    this.state = next
+    await this.persist()
+    return this.snapshot()
+  }
+
   async persist() {
     this.writeQueue = this.writeQueue.then(() => this.#write()).catch((error) => {
       this.logger.error?.(`dsh-xiaozhi: failed to persist settings: ${error.message}`)
     })
     return this.writeQueue
   }
-
   async #write() {
     const body = `${JSON.stringify(this.state, null, 2)}\n`
     await mkdir(dirname(this.file), { recursive: true })

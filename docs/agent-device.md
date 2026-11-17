@@ -93,7 +93,7 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
 |---|---|---|
 | GET | `/agents` | 列表；每条带 `devices` / `deviceCount` / `online` / `lastSeenAt` |
 | POST | `/agents` | `{name, ...overrides}` 新建 |
-| POST | `/agents/update` | `{agentId, name?, systemPrompt?, voice?, language?, model?, speed?, silenceMs?}`；空串 = 删掉该覆盖 |
+| POST | `/agents/update` | `{agentId, name?, systemPrompt?, voice?, ttsProvider?, language?, model?, speed?, silenceMs?}`；空串 = 删掉该覆盖。`ttsProvider` 只能是全局已配置的 TTS 主用/备用（否则 400 `invalid-tts-provider`），空 = 跟随全局主用（2026-11-14） |
 | POST | `/agents/bind` | `{agentId, deviceId}` 绑定（设备已在别的智能体上 = 移动） |
 | POST | `/agents/unbind` | `{agentId, deviceId}` 解绑；设备不属于该智能体 → 400 |
 | POST | `/agents/remove` | `{agentId}` **级联删除**绑定设备（含历史与记忆），与参考 `deleteAgent` 一致 |
@@ -117,6 +117,8 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
   （历史仍用 `deviceId`）。
 - 工具：`isDisabled(name, scope)` 的 scope 可以是设备 id（语音链路）或智能体 id（控制台），
   两者都解析到智能体的 `toolDisabled`。
+- `overrides.ttsProvider`（2026-11-14）在 `index.js` 的 `adaptersFor` 里经 `prioritizeTtsProvider()` 重排 TTS
+  候选链：被指定的厂商条目（连同凭据）提为主用，原主用整条降为第一备用，其余备用顺序不变
 - adapter 缓存 key 已覆盖三段配置 + 设备 overrides；智能体配置改了之后设备重连即生效
   （和旧版一样，运行中的会话不热更）。
 
@@ -129,7 +131,7 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
   扩展能力（工具开关）——全部写智能体。
 - 顶部「待审核设备」：`autoProvision:false` 时陌生设备先列在这里；每行显示 MAC/IP/首次请求/尝试次数，
   用 PillSelect 选择智能体后「批准」，或「拒绝」。批准后设备下一次连接即通过。
-- 「设备(N)」弹窗：已绑定到本智能体的设备（改名 / OTA / 断开 / 解绑 / 删除设备）+
+- 「设备(N)」弹窗：已绑定到本智能体的设备（改名 / OTA / 断开 / 解绑；**没有「删除设备」入口**（2026-11-13 用户要求，误操作代价大；`POST /devices/remove` 仍保留给脚本/API））+
   其他设备（显示「当前：<智能体>」，按钮「移入本智能体」；移入是移动，会从原智能体移走）。
   **语义是 N 台设备 : 1 个智能体**——多台设备绑同一智能体即不同区域的麦克风/扬声器矩阵；
   一台设备同一时刻只属于一个智能体，不做设备↔智能体多对多。布局：头部标题块可收缩、关闭按钮
@@ -143,7 +145,7 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"      # 全量 251 项必须全绿（2026-11-08）
+node --test "test/*.test.mjs"      # 全量 275 项必须全绿（2026-11-14）
 npm run build && npm run smoke      # 控制台构建 + 冒烟（src/client/** → client.js）
 node --check client.js
 ```

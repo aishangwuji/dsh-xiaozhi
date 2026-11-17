@@ -14,6 +14,7 @@ import { InboundMcpRegistry } from '../src/mcp/inbound.js'
 import { SettingsStore } from '../src/settings.js'
 import { DeviceStore } from '../src/store.js'
 import { PendingStore } from '../src/pending.js'
+import { createFirmwareStore } from '../src/firmware.js'
 import { openWebSocket } from './ws-client.mjs'
 
 const MAC = '02:4A:7D:E3:89:BF'
@@ -88,7 +89,9 @@ async function startHarness(overrides = {}, { inboundMcp } = {}) {
   await adoptLegacyDevices({ devices: store, agents, logger: silent })
   const hub = new ConnectionHub({ logger: silent })
   const gatewayRef = { current: createGateway({ config: config.gateway, logger: silent }) }
-  const ingress = createIngress({ config: { ...config, gatewayRef }, store, hub, logger: silent, inboundMcp, pending })
+  const firmware = createFirmwareStore({ dir: join(dir, 'firmware'), logger: silent })
+  firmware.load()
+  const ingress = createIngress({ config: { ...config, gatewayRef }, store, hub, logger: silent, inboundMcp, pending, firmware })
   await ingress.listen()
   const port = ingress.server.address().port
   const base = `http://127.0.0.1:${port}`
@@ -103,6 +106,7 @@ async function startHarness(overrides = {}, { inboundMcp } = {}) {
     config,
     gatewayRef,
     pending,
+    firmware,
     defaults: { systemPrompt: '默认人设', silenceMs: 400 },
     settings,
     logger: silent,
@@ -120,6 +124,7 @@ async function startHarness(overrides = {}, { inboundMcp } = {}) {
     hub,
     gatewayRef,
     settings,
+    firmware,
     ingress,
     base,
     port,
@@ -135,10 +140,11 @@ async function startHarness(overrides = {}, { inboundMcp } = {}) {
   }
 }
 
-function ota(harness, { headers = {} } = {}) {
+function ota(harness, { headers = {}, body } = {}) {
   return fetch(`${harness.base}/xiaozhi/ota/`, {
     method: 'POST',
     headers: { 'Device-Id': MAC, 'Client-Id': randomUUID(), ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
   })
 }
 
@@ -631,6 +637,239 @@ test('inbound /mcp rejects a bad token and registers tools for a valid channel',
     }
   } finally {
     inbound.close()
+    await harness.dispose()
+  }
+})
+
+test('an agent can pin a configured TTS provider but not an unconfigured one', async () => {
+  const harness = await startHarness()
+  try {
+    await harness.settings.update({ voice: { tts: { provider: 'deepseek', apiKey: 'sk-deepseek-test' } } })
+    const agent = await harness.agents.create({ name: '音色测试' })
+    const update = (body) =>
+      fetch(`${harness.controlBase}${CONTROL}/agents/update`, {
+        method: 'POST',
+        headers: controlHeaders(),
+        body: JSON.stringify({ agentId: agent.id, ...body }),
+      })
+
+    // 没配置过的厂商：400，且不留半份配置（否则会先落盘、连上设备才失败）。
+    const bad = await update({ ttsProvider: 'xunfei' })
+    assert.equal(bad.status, 400)
+    assert.equal((await bad.json()).error.code, 'invalid-tts-provider')
+
+    const ok = await update({ ttsProvider: 'deepseek' })
+    assert.equal(ok.status, 200)
+    assert.equal((await ok.json()).agent.overrides.ttsProvider, 'deepseek')
+
+    // 空串 = 删掉覆盖，跟随全局主用。
+    const cleared = await update({ ttsProvider: '' })
+    assert.equal(cleared.status, 200)
+    assert.equal('ttsProvider' in (await cleared.json()).agent.overrides, false)
+  } finally {
+    await harness.dispose()
+  }
+})
+
+// --------------------------------------------------------------------------- 固件升级通道
+
+test('OTA reports the device firmware version and no upgrade without a package', async () => {
+  const harness = await startHarness()
+  try {
+    const response = await ota(harness, {
+      headers: { 'content-type': 'application/json' },
+      body: { application: { version: '2.5.3' }, board: { name: 'esp32-s3-touch-amoled-2.06' } },
+    })
+    assert.equal(response.status, 200)
+    const payload = await response.json()
+    assert.equal(payload.firmware.version, '2.5.3')
+    assert.equal(payload.firmware.url, '')
+    assert.equal(payload.firmware.force, 0)
+    // OTA 请求体里的 application.version 是设备固件版本，必须进入设备名册。
+    assert.equal(harness.store.get(MAC).firmwareVersion, '2.5.3')
+  } finally {
+    await harness.dispose()
+  }
+})
+
+test('uploaded firmware is served to the device with an absolute URL', async () => {
+  const harness = await startHarness()
+  try {
+    const bytes = Buffer.from('watch-firmware-2.6.0')
+    const upload = await fetch(`${harness.controlBase}${CONTROL}/firmware/upload`, {
+      method: 'POST',
+      headers: {
+        'x-dsh-xiaozhi': '1',
+        'content-type': 'application/octet-stream',
+        'x-firmware-name': 'watch-2.6.0.bin',
+        'x-firmware-version': '2.6.0',
+      },
+      body: bytes,
+    })
+    assert.equal(upload.status, 200)
+    const uploaded = await upload.json()
+    assert.equal(uploaded.info.fileName, 'watch-2.6.0.bin')
+    assert.equal(uploaded.info.version, '2.6.0')
+    assert.equal(harness.settings.state.firmware.version, '2.6.0')
+
+    const response = await ota(harness, {
+      headers: { 'content-type': 'application/json' },
+      body: { application: { version: '2.5.3' } },
+    })
+    const payload = await response.json()
+    assert.equal(payload.firmware.version, '2.6.0')
+    assert.equal(payload.firmware.url, `${harness.base}/firmware/watch-2.6.0.bin`)
+    assert.equal(payload.firmware.force, 0)
+
+    const download = await fetch(payload.firmware.url)
+    assert.equal(download.status, 200)
+    assert.equal(download.headers.get('content-type'), 'application/octet-stream')
+    assert.deepEqual(Buffer.from(await download.arrayBuffer()), bytes)
+  } finally {
+    await harness.dispose()
+  }
+})
+
+test('firmware upload requires the CSRF header and validates the file name', async () => {
+  const harness = await startHarness()
+  try {
+    const missingCsrf = await fetch(`${harness.controlBase}${CONTROL}/firmware/upload`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream', 'x-firmware-name': 'a.bin' },
+      body: Buffer.from('x'),
+    })
+    assert.equal(missingCsrf.status, 403)
+
+    const badName = await fetch(`${harness.controlBase}${CONTROL}/firmware/upload`, {
+      method: 'POST',
+      headers: {
+        'x-dsh-xiaozhi': '1',
+        'content-type': 'application/octet-stream',
+        'x-firmware-name': '../evil.bin',
+      },
+      body: Buffer.from('x'),
+    })
+    assert.equal(badName.status, 400)
+    assert.equal((await badName.json()).error.code, 'invalid-name')
+
+    // 没有文件时 /firmware/<name> 只能 404，不能把任意路径读出来。
+    const traversal = await fetch(`${harness.base}/firmware/%2e%2e%2findex.json`)
+    assert.equal(traversal.status, 404)
+  } finally {
+    await harness.dispose()
+  }
+})
+
+test('removing firmware falls back to the reported device version', async () => {
+  const harness = await startHarness()
+  try {
+    await fetch(`${harness.controlBase}${CONTROL}/firmware/upload`, {
+      method: 'POST',
+      headers: {
+        'x-dsh-xiaozhi': '1',
+        'content-type': 'application/octet-stream',
+        'x-firmware-name': 'watch-2.6.0.bin',
+        'x-firmware-version': '2.6.0',
+      },
+      body: Buffer.from('bytes'),
+    })
+    const removed = await fetch(`${harness.controlBase}${CONTROL}/firmware/remove`, {
+      method: 'POST',
+      headers: { 'x-dsh-xiaozhi': '1' },
+    })
+    assert.equal(removed.status, 200)
+    assert.equal((await removed.json()).removed, true)
+
+    const response = await ota(harness, {
+      headers: { 'content-type': 'application/json' },
+      body: { application: { version: '2.5.3' } },
+    })
+    const payload = await response.json()
+    assert.equal(payload.firmware.version, '2.5.3')
+    assert.equal(payload.firmware.url, '')
+  } finally {
+    await harness.dispose()
+  }
+})
+
+test('force upgrade reaches the device as a number (cJSON only accepts 1)', async () => {
+  const harness = await startHarness({ firmware: { version: '2.6.0', url: '', force: true } })
+  try {
+    await fetch(`${harness.controlBase}${CONTROL}/firmware/upload`, {
+      method: 'POST',
+      headers: {
+        'x-dsh-xiaozhi': '1',
+        'content-type': 'application/octet-stream',
+        'x-firmware-name': 'watch-2.6.0.bin',
+        'x-firmware-version': '2.6.0',
+      },
+      body: Buffer.from('bytes'),
+    })
+    const response = await ota(harness, {
+      headers: { 'content-type': 'application/json' },
+      body: { application: { version: '2.6.0' } },
+    })
+    const payload = await response.json()
+    // 版本相同也要强制升级；固件用 cJSON_IsNumber 判定，发 true 会被忽略。
+    assert.equal(payload.firmware.force, 1)
+    assert.equal(payload.firmware.version, '2.6.0')
+  } finally {
+    await harness.dispose()
+  }
+})
+
+test('device tools are visible to the console while the device is online', async () => {
+  const harness = await startHarness()
+  try {
+    const otaResponse = await ota(harness)
+    assert.equal(otaResponse.status, 200)
+
+    // 模拟一条已完成 MCP 握手的在线会话：控制台只能读到只读目录。
+    harness.hub.sessions.set(MAC, {
+      deviceId: MAC,
+      id: 'fake-session',
+      voice: {
+        deviceTools: () => ({
+          ready: true,
+          tools: [
+            {
+              name: 'self_audio_speaker_set_volume',
+              originalName: 'self.audio_speaker.set_volume',
+              description: '调整音量',
+              parameters: { type: 'object', properties: { volume: { type: 'integer' } }, required: [] },
+            },
+          ],
+        }),
+      },
+    })
+    const live = await fetch(
+      `${harness.controlBase}${CONTROL}/devices/tools?deviceId=${encodeURIComponent(MAC)}`,
+    )
+    assert.equal(live.status, 200)
+    const body = await live.json()
+    assert.equal(body.online, true)
+    assert.equal(body.ready, true)
+    assert.equal(body.tools.length, 1)
+    assert.equal(body.tools[0].name, 'self_audio_speaker_set_volume')
+    assert.equal(body.tools[0].originalName, 'self.audio_speaker.set_volume')
+
+    // 设备离线（会话被移除）时明确返回 online:false、空目录，而不是 404。
+    harness.hub.sessions.delete(MAC)
+    const offline = await fetch(
+      `${harness.controlBase}${CONTROL}/devices/tools?deviceId=${encodeURIComponent(MAC)}`,
+    )
+    const offlineBody = await offline.json()
+    assert.equal(offline.status, 200)
+    assert.equal(offlineBody.online, false)
+    assert.deepEqual(offlineBody.tools, [])
+
+    const missing = await fetch(`${harness.controlBase}${CONTROL}/devices/tools`)
+    assert.equal(missing.status, 400)
+    const unknown = await fetch(
+      `${harness.controlBase}${CONTROL}/devices/tools?deviceId=${encodeURIComponent('AA:BB:CC:DD:EE:FF')}`,
+    )
+    assert.equal(unknown.status, 404)
+  } finally {
     await harness.dispose()
   }
 })

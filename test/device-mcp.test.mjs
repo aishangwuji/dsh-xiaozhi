@@ -53,6 +53,15 @@ test('device MCP handshake sends initialize + tools/list and exposes tools', asy
       },
     },
   ])
+  // 控制台只读目录：清洗名 + 原始名 + 描述 + 入参，执行仍用原始名。
+  assert.deepEqual(client.catalog(), [
+    {
+      name: 'turn_on_off',
+      originalName: 'turn on/off',
+      description: 'switch the light',
+      parameters: { type: 'object', properties: { on: { type: 'boolean' } }, required: ['on'] },
+    },
+  ])
 })
 
 test('device MCP call uses the original tool name and resolves content text', async () => {

@@ -160,6 +160,23 @@ export class DeviceMcpClient {
     }))
   }
 
+  /**
+   * 控制台只读目录：设备上报了哪些工具（清洗后的名字 + 原始名 + 描述 + 入参）。
+   * 不参与执行，也不代表工具一定可调用——执行仍走 `callTool` 的原始名映射。
+   */
+  catalog() {
+    return [...this.tools.values()].map((tool) => ({
+      name: tool.name,
+      originalName: tool.originalName,
+      description: tool.description,
+      parameters: {
+        type: tool.inputSchema.type,
+        properties: tool.inputSchema.properties,
+        required: tool.inputSchema.required,
+      },
+    }))
+  }
+
   /** 调用设备工具；返回文本（官方优先取 content[0].text）。 */
   async callTool(name, args = {}, { signal } = {}) {
     const tool = this.tools.get(name)

@@ -43,7 +43,8 @@ test('voice language metadata drives the mismatch hint, and unknown means unknow
 
 test('the catalog ships the official languages, including the Japanese voices', () => {
   const vivi = VOICE_OPTIONS.volc.find((voice) => voice.value === 'zh_female_vv_uranus_bigtts')
-  assert.match(vivi.languages, /日语/, 'Vivi 2.0 is the multilingual 2.0 voice')
+  // 官方 2.0 音色表写的是「日文」，旧数据写「日语」，两种措辞都接受。
+  assert.match(vivi.languages, /日文|日语/, 'Vivi 2.0 is the multilingual 2.0 voice')
   const japanese = VOICE_OPTIONS.volc.filter((voice) => /日语/.test(voice.languages || ''))
   assert.ok(japanese.some((voice) => voice.value === 'multi_male_wanqudashu_moon_bigtts'))
   assert.ok(

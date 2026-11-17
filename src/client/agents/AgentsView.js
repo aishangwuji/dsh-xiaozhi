@@ -1,7 +1,7 @@
-import { h, useState, useRef } from '../react.js'
-import { t, callApi, formatAgo, voiceLabel } from '../core.js'
-import { Icon } from '../ui/Icon.js'
+import { h, useState, useRef, useEffect } from '../react.js'
+import { t, callApi, formatAgo } from '../core.js'
 import { PillSelect } from '../ui/PillSelect.js'
+import { ROLE_PRESETS, matchRolePreset } from './rolePresets.js'
 import { AgentConfigDialog } from './AgentConfigDialog.js'
 import { AgentDevicesDialog } from './AgentDevicesDialog.js'
 import { HistoryDialog } from './HistoryDialog.js'
@@ -11,15 +11,35 @@ import { HistoryDialog } from './HistoryDialog.js'
      *
      * 对齐参考服务端：人设/模型/音色/语种/记忆/工具都在智能体上（同一智能体的设备共用），
      * 设备只留物理属性与绑定关系。删除智能体级联删除它绑定的设备（与 deleteAgent 一致），
-     * 所以按钮做成二次确认，并把「会一起删几台设备」写在提示里。
+     * 所以删除入口做成二次确认，并把「会一起删几台设备」写在提示里。
      */
+    // 操作条上的三个小图标（内联 SVG，避免为三个图标引入图标库）。
+    const ACTION_PATHS = {
+      config: ['M4 7h10', 'M18 7h2', 'M4 17h2', 'M10 17h10', 'M16 7a2 2 0 1 0 0-.1z', 'M8 17a2 2 0 1 0 0-.1z'],
+      history: ['M3.5 12a8.5 8.5 0 1 0 2.6-6.1', 'M3.5 5.5v4h4', 'M12 7.5V12l3 1.8'],
+      devices: ['M8 3.5h8a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 19V5A1.5 1.5 0 0 1 8 3.5z', 'M11 17.5h2']
+    }
+    const agentActionIcon = (name) => h('svg', {
+      width: 14,
+      height: 14,
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: 1.8,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      'aria-hidden': 'true',
+      className: 'xz-agent-action-icon'
+    }, (ACTION_PATHS[name] || []).map((d, index) => h('path', { key: index, d })))
+
     function AgentsView({ state, notify, onChanged }) {
       const [injecting, setInjecting] = useState(null);
       const [text, setText] = useState('');
       const [busyId, setBusyId] = useState('');
       const [configuring, setConfiguring] = useState('');
       const [managing, setManaging] = useState('');
-      const [confirmDelete, setConfirmDelete] = useState('');
+      // 删除智能体走确认弹窗（2026-11-13 用户要求）：卡片菜单点一下就弹窗，不再「再次点击删除」。
+      const [confirmAgent, setConfirmAgent] = useState('');
       const renameCancelled = useRef(false);
       const renameBusy = useRef(false);
       const [memory, setMemory] = useState([]);
@@ -27,6 +47,8 @@ import { HistoryDialog } from './HistoryDialog.js'
       const [toolCatalog, setToolCatalog] = useState([]);
       const [editing, setEditing] = useState('');
       const [editName, setEditName] = useState('');
+      // 卡片右上角「⋯」菜单：position:fixed 贴着按钮弹出，不参与卡片布局。
+      const [menu, setMenu] = useState(null);
       const [historyAgent, setHistoryAgent] = useState(null);
       const [pendingAgent, setPendingAgent] = useState({});
       const [pendingBusy, setPendingBusy] = useState('');
@@ -42,6 +64,40 @@ import { HistoryDialog } from './HistoryDialog.js'
       };
       const configAgent = configuring ? agents.find((item) => item.id === configuring) || null : null;
       const manageAgent = managing ? agents.find((item) => item.id === managing) || null : null;
+      const deleteAgent = confirmAgent ? agents.find((item) => item.id === confirmAgent) || null : null;
+
+      // 点空白 / Esc 关掉「⋯」菜单：菜单是浮层，不能跟着卡片一起滚进布局。
+      useEffect(() => {
+        if (!menu) return undefined;
+        const close = (event) => {
+          if (event?.target?.closest?.('.xz-agent-menu, .xz-agent-menu-btn')) return;
+          setMenu(null);
+        };
+        const onKey = (event) => {
+          if (event.key === 'Escape') setMenu(null);
+        };
+        document.addEventListener('mousedown', close);
+        document.addEventListener('keydown', onKey);
+        return () => {
+          document.removeEventListener('mousedown', close);
+          document.removeEventListener('keydown', onKey);
+        };
+      }, [menu]);
+
+      /** 卡片上的「角色」= 人设命中的角色模板名；没命中就是自定义。 */
+      const agentRoleName = (agent) => {
+        const hit = matchRolePreset(agent.systemPrompt || '', agent.name || '');
+        const preset = hit ? ROLE_PRESETS.find((item) => item.id === hit) : null;
+        return preset ? t(preset.labelKey) : t('agentRoleCustom');
+      };
+
+      /** 状态徽标：没绑设备 → 未绑定；绑了 → 在线/离线。 */
+      const agentChip = (agent) => {
+        if ((agent.deviceCount ?? 0) === 0) return { kind: 'warn', text: t('agentUnbound') };
+        return agent.online
+          ? { kind: 'ok', text: t('online') }
+          : { kind: '', text: t('offline') };
+      };
 
       const createAgent = async () => {
         setBusyId('new');
@@ -60,14 +116,8 @@ import { HistoryDialog } from './HistoryDialog.js'
       };
 
       const removeAgent = async (agent) => {
-        // 第一次点击只进入「确认删除」，第二次才真的删：与备用服务商删除同一套交互。
-        // 级联删除是破坏性操作，第一次点击顺手把后果说清楚（按钮上的 title 在移动端点不到）。
-        if (confirmDelete !== agent.id) {
-          setConfirmDelete(agent.id);
-          notify(t('agentDeleteHint'), 'bad');
-          return;
-        }
-        setConfirmDelete('');
+        // 级联删除是破坏性操作：确认弹窗里点「删除」才会走到这里。
+        setConfirmAgent('');
         setBusyId(agent.id);
         try {
           await callApi('/agents/remove', { method: 'POST', body: { agentId: agent.id } });
@@ -186,7 +236,6 @@ import { HistoryDialog } from './HistoryDialog.js'
       };
 
       const deviceAction = async (action, device, value) => {
-        if (action === 'remove' && !window.confirm(t('remove') + '?')) return;
         if (action === 'rename' && (device.nickName || '') === String(value ?? '')) return;
         setBusyId(device.deviceId);
         try {
@@ -196,8 +245,6 @@ import { HistoryDialog } from './HistoryDialog.js'
             await callApi('/devices/ota', { method: 'POST', body: { deviceId: device.deviceId, enabled: value === true } });
           } else if (action === 'disconnect') {
             await callApi('/devices/disconnect', { method: 'POST', body: { deviceId: device.deviceId } });
-          } else if (action === 'remove') {
-            await callApi('/devices/remove', { method: 'POST', body: { deviceId: device.deviceId } });
           }
           await onChanged();
         } catch (error) {
@@ -324,14 +371,44 @@ import { HistoryDialog } from './HistoryDialog.js'
           agents.length === 0
             ? h('div', { className: 'xz-empty' }, t('empty'))
             : h('div', { className: 'xz-card-grid' },
-                agents.map((agent) =>
-                  h('div', { key: agent.id, className: 'xz-devcard' },
-                    h('div', { className: 'xz-devcard-head' },
-                      h('div', { className: 'xz-devcard-mark' }, h(Icon, { name: 'devices', size: 16 })),
-                      editing === agent.id
-                        ? h('div', { className: 'xz-row', style: { flex: 1 } },
-                            h('input', {
-                              className: 'xz-input xz-devcard-rename',
+                agents.map((agent) => {
+                  const chip = agentChip(agent);
+                  const startRename = () => {
+                    setEditing(agent.id);
+                    setEditName(agent.name || '');
+                  };
+                  const toggleMenu = (event) => {
+                    if (menu?.id === agent.id) {
+                      setMenu(null);
+                      return;
+                    }
+                    // 菜单相对卡片定位（卡片 position:relative）：卡片外层 .xz-card 有 backdrop-filter，
+                    // 会成为 fixed 元素的包含块，用视口坐标会整体偏移、还会被卡片圆角/溢出裁掉。
+                    // 所以这里算「相对卡片」的坐标，并给下方留不足时向上翻。
+                    const button = event.currentTarget;
+                    const cardBox = button.closest('.xz-agent-card').getBoundingClientRect();
+                    const rect = button.getBoundingClientRect();
+                    const openUp = window.innerHeight - rect.bottom < 150;
+                    setMenu({
+                      id: agent.id,
+                      right: Math.max(8, cardBox.right - rect.right),
+                      top: openUp ? null : rect.bottom - cardBox.top + 6,
+                      bottom: openUp ? cardBox.bottom - rect.top + 6 : null
+                    });
+                  };
+                  const cell = (label, value, title) =>
+                    h('div', { className: 'xz-agent-cell' },
+                      h('div', { className: 'xz-agent-cell-label' }, label),
+                      h('div', { className: 'xz-agent-cell-value', title: title || value }, value)
+                    );
+                  return h('div', { key: agent.id, className: 'xz-agent-card' },
+                    h('div', { className: 'xz-agent-head' },
+                      h('span', { className: 'xz-agent-avatar', 'aria-hidden': 'true' },
+                        (agent.name || '?').trim().slice(0, 1) || '?'),
+                      h('div', { className: 'xz-agent-titlebar' },
+                        editing === agent.id
+                          ? h('input', {
+                              className: 'xz-input xz-agent-rename',
                               autoFocus: true,
                               value: editName,
                               maxLength: 40,
@@ -356,77 +433,94 @@ import { HistoryDialog } from './HistoryDialog.js'
                                 commitRename(agent);
                               }
                             })
-                          )
-                        : h('div', { className: 'xz-devcard-title' },
-                            h('strong', {
-                              className: 'xz-devcard-name',
+                          : h('h3', {
+                              className: 'xz-agent-name',
                               title: t('rename'),
-                              onClick: () => {
-                                setEditing(agent.id);
-                                setEditName(agent.name || '');
-                              }
+                              onClick: startRename
                             }, agent.name || t('unnamed')),
-                            h('span', { className: `xz-dot ${agent.online ? 'on' : ''}`, style: { marginLeft: 6 } }),
-                            h('span', { className: 'xz-devcard-state' }, agent.online ? t('online') : t('offline'))
-                          ),
-                      editing === agent.id
-                        ? null
-                        : h('button', {
-                            className: 'xz-btn',
-                            disabled: busyId === agent.id,
+                        h('span', { className: `xz-agent-chip ${chip.kind}` }, chip.text)
+                      ),
+                      h('button', {
+                        type: 'button',
+                        className: 'xz-agent-menu-btn',
+                        'aria-label': t('agentMenu'),
+                        'aria-haspopup': 'menu',
+                        'aria-expanded': menu?.id === agent.id,
+                        onClick: toggleMenu
+                      }, '⋯')
+                    ),
+                    menu?.id === agent.id
+                      ? h('div', {
+                          className: 'xz-menu xz-agent-menu',
+                          role: 'menu',
+                          style: {
+                            position: 'absolute',
+                            right: menu.right,
+                            left: 'auto',
+                            top: menu.top ?? 'auto',
+                            bottom: menu.bottom ?? 'auto'
+                          }
+                        },
+                          h('button', {
+                            type: 'button',
+                            className: 'xz-provider-menu-item',
                             onClick: () => {
+                              setMenu(null);
                               setInjecting(agent);
                               setText('');
                             }
-                          }, t('inject'))
-                    ),
-                    h('div', { className: 'xz-devcard-devices' },
-                      (agent.devices || []).length === 0
-                        ? t('agentNoDevices')
-                        : (agent.devices || []).map((device, index) =>
-                            h('span', { key: device.deviceId, style: { marginRight: 10, whiteSpace: 'nowrap' } },
-                              `${index + 1}. ${device.nickName || device.deviceId}${device.online ? ' ●' : ''}`)
-                          )
-                    ),
-                    h('div', { className: 'xz-devcard-facts' },
-                      h('div', null,
-                        h('span', { className: 'xz-devcard-label' }, t('voice')),
-                        h('span', {
-                          className: 'xz-devcard-value',
-                          title: agent.overrides?.voice || ''
-                        }, agent.overrides?.voice
-                          ? voiceLabel(agent.overrides?.voice, state.voice?.tts?.provider)
-                          : t('voiceDefault'))
+                          }, `${t('inject')}…`),
+                          h('button', {
+                            type: 'button',
+                            className: 'xz-provider-menu-item',
+                            onClick: () => {
+                              setMenu(null);
+                              startRename();
+                            }
+                          }, t('agentMenuRename')),
+                          h('button', {
+                            type: 'button',
+                            className: 'xz-provider-menu-item is-danger',
+                            disabled: busyId === agent.id,
+                            title: t('agentDeleteHint'),
+                            onClick: () => {
+                              setMenu(null);
+                              setConfirmAgent(agent.id);
+                            }
+                          }, t('agentMenuDelete'))
+                        )
+                      : null,
+                    h('div', { className: 'xz-agent-grid' },
+                      cell(t('agentRole'), agentRoleName(agent)),
+                      cell(
+                        t('agentModel'),
+                        agent.overrides?.model || t('agentModelDefault'),
+                        agent.overrides?.model || ''
                       ),
-                      h('div', null,
-                        h('span', { className: 'xz-devcard-label' }, t('agentDevices')),
-                        h('span', { className: 'xz-devcard-value' }, t('agentDeviceCount').replace('{n}', String(agent.deviceCount ?? 0)))
-                      ),
-                      h('div', null,
-                        h('span', { className: 'xz-devcard-label' }, t('lastSeen')),
-                        h('span', { className: 'xz-devcard-value' }, formatAgo(agent.lastSeenAt))
-                      )
+                      cell(t('agentRecentChat'), formatAgo(agent.lastSeenAt))
                     ),
-                    h('div', { className: 'xz-devcard-foot' },
-                      h('button', { className: 'xz-btn', onClick: () => openConfig(agent.id) }, t('configure')),
-                      h('button', { className: 'xz-btn', onClick: () => setManaging(agent.id) },
-                        `${t('agentDevices')}(${agent.deviceCount ?? 0})`),
+                    h('div', { className: 'xz-agent-actions' },
                       h('button', {
-                        className: 'xz-btn',
+                        type: 'button',
+                        className: 'xz-agent-action',
+                        onClick: () => openConfig(agent.id)
+                      }, agentActionIcon('config'), t('configure')),
+                      h('button', {
+                        type: 'button',
+                        className: 'xz-agent-action',
                         onClick: () => {
                           setConfiguring('');
                           setHistoryAgent(agent);
                         }
-                      }, t('history')),
+                      }, agentActionIcon('history'), t('history')),
                       h('button', {
-                        className: 'xz-btn danger',
-                        disabled: busyId === agent.id,
-                        title: t('agentDeleteHint'),
-                        onClick: () => removeAgent(agent)
-                      }, confirmDelete === agent.id ? t('agentDeleteConfirm') : t('remove'))
+                        type: 'button',
+                        className: 'xz-agent-action',
+                        onClick: () => setManaging(agent.id)
+                      }, agentActionIcon('devices'), `${t('agentDevices')} (${agent.deviceCount ?? 0})`)
                     )
-                  )
-                )
+                  );
+                })
               )
         ),
         injecting
@@ -446,6 +540,30 @@ import { HistoryDialog } from './HistoryDialog.js'
                 h('div', { className: 'xz-row', style: { justifyContent: 'flex-end' } },
                   h('button', { className: 'xz-btn', onClick: () => setInjecting(null) }, t('cancel')),
                   h('button', { className: 'xz-btn primary', disabled: !text.trim(), onClick: sendInject }, t('send'))
+                )
+              )
+            )
+          : null,
+        deleteAgent
+          ? h('div', { className: 'xz-modal-mask', onClick: () => setConfirmAgent('') },
+              h('div', {
+                className: 'xz-modal xz-confirm-modal',
+                role: 'dialog',
+                'aria-modal': 'true',
+                'aria-label': t('agentDeleteTitle'),
+                onClick: (event) => event.stopPropagation()
+              },
+                h('h3', null, t('agentDeleteTitle')),
+                h('p', { className: 'xz-confirm-text' },
+                  t('agentDeleteBody').replace('{name}', deleteAgent.name || t('unnamed'))
+                ),
+                h('div', { className: 'xz-row xz-confirm-foot' },
+                  h('button', { className: 'xz-btn', onClick: () => setConfirmAgent('') }, t('cancel')),
+                  h('button', {
+                    className: 'xz-btn danger-confirm',
+                    disabled: busyId === deleteAgent.id,
+                    onClick: () => removeAgent(deleteAgent)
+                  }, t('remove'))
                 )
               )
             )

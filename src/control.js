@@ -20,8 +20,8 @@ import { hostProviderIssue } from './voice/host-provider.js'
 import { modelsFor } from './models.js'
 import { openAiCompatiblePreset } from './voice/adapters/index.js'
 import { localProviders } from './voice/adapters/local-asr.js'
-import { listVolcSpeakersCached, speakerOptions } from './voice/volc-speakers.js'
 import { providersPayload } from './providers.js'
+import { FirmwareError, MAX_FIRMWARE_BYTES } from './firmware.js'
 
 const CONTROL_PREFIX = '/dsh-xiaozhi-7c3a'
 const MAX_JSON_BODY = 64 * 1024
@@ -63,10 +63,27 @@ async function readJson(req, limit = MAX_JSON_BODY) {
   }
 }
 
+/** 二进制请求体（固件上传）；超限抛 413，不把半个文件写进内存。 */
+async function readBinary(req, limit) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of req) {
+    size += chunk.length
+    if (size > limit) {
+      const error = new Error('request body is too large')
+      error.status = 413
+      throw error
+    }
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks)
+}
+
 function statusOf(error) {
   if (error instanceof DeviceStoreError) return error.code === 'not-found' ? 404 : 400
   if (error instanceof AgentStoreError) return error.code === 'not-found' ? 404 : 400
   if (error instanceof SettingsError) return error.code === 'weak-password' ? 400 : 400
+  if (error instanceof FirmwareError) return error.code === 'too-large' ? 413 : 400
   return Number.isSafeInteger(error.status) ? error.status : 500
 }
 
@@ -89,6 +106,7 @@ export function createControlHandler({
   memory,
   history,
   pending,
+  firmware,
   ready: bootstrapReady,
   logger,
   clock = () => Date.now(),
@@ -211,6 +229,9 @@ export function createControlHandler({
     const patch = {}
     if (typeof body.systemPrompt === 'string') patch.systemPrompt = body.systemPrompt.trim().slice(0, 2000)
     if (typeof body.voice === 'string') patch.voice = body.voice.trim().slice(0, 120)
+    // 智能体级 TTS 服务商（2026-11-14）：必须是全局已配置的主用/备用之一（下面校验），
+    // 空串 = 删掉覆盖、跟随全局主用。
+    if (typeof body.ttsProvider === 'string') patch.ttsProvider = body.ttsProvider.trim().slice(0, 20)
     // 语种会被拼进系统提示词，只放白名单值；不在名单里的一律当“跟随音色”。
     if (typeof body.language === 'string') patch.language = normalizeOutputLanguage(body.language)
     if (typeof body.model === 'string') patch.model = body.model.trim().slice(0, 120)
@@ -267,6 +288,12 @@ export function createControlHandler({
         listener: { host: config.host, port },
         gateway: gateway ? gateway.describe() : { enabled: false, commands: 0 },
         voice: { enabled: Boolean(voice?.enabled) },
+        firmware: {
+          info: firmware?.info?.() ?? null,
+          version: String(config.firmware?.version ?? ''),
+          url: String(config.firmware?.url ?? ''),
+          force: config.firmware?.force === true,
+        },
         devices: store.list().map(publicDevice),
         pending: (pending?.list?.() ?? []).map(publicPending),
         // 控制台的「智能体」页直接用这份快照（卡片 = 智能体，设备是成员）。
@@ -278,6 +305,31 @@ export function createControlHandler({
 
     if (method === 'GET' && path === '/devices') {
       sendJson(res, 200, { devices: store.list().map(publicDevice) })
+      return
+    }
+
+    // 设备工具可见性（2026-11-16）：设备在线时 VoiceSession 已完成 MCP 握手，
+    // 这里只读返回它上报的工具目录；不在线/未握手时给出明确状态，控制台不猜。
+    if (method === 'GET' && path === '/devices/tools') {
+      const deviceId = String(url.searchParams.get('deviceId') ?? '').trim()
+      if (!deviceId) {
+        sendJson(res, 400, { error: { code: 'device-required', message: 'deviceId 必填' } })
+        return
+      }
+      const device = store.get(deviceId)
+      if (!device) {
+        sendJson(res, 404, { error: { code: 'device-not-found', message: '设备不存在' } })
+        return
+      }
+      const live = hub.get(deviceId)
+      const snapshot = live?.voice?.deviceTools?.() ?? { ready: false, tools: [] }
+      sendJson(res, 200, {
+        deviceId,
+        nickName: device.nickName ?? '',
+        online: Boolean(live),
+        ready: Boolean(snapshot.ready),
+        tools: Array.isArray(snapshot.tools) ? snapshot.tools : [],
+      })
       return
     }
 
@@ -375,6 +427,29 @@ export function createControlHandler({
       }
       const overrides = overridePatchOf(body)
       if (hostProvider !== undefined) overrides.hostProvider = hostProvider
+      // 智能体级 TTS 服务商：只允许选「已经配置过凭据」的主用/备用。否则会先落盘、
+      // 等设备连上才在构建期失败，表现为「设备一直聆听中」。
+      const pinnedTts = overrides.ttsProvider
+      if (pinnedTts) {
+        const ttsVoice = settings?.state?.voice?.tts ?? {}
+        const configured = [
+          ttsVoice.provider,
+          ...(Array.isArray(ttsVoice.backups) ? ttsVoice.backups.map((entry) => entry?.provider) : []),
+        ]
+          .map((value) => String(value ?? '').trim())
+          .filter(Boolean)
+        if (!configured.includes(pinnedTts)) {
+          sendJson(res, 400, {
+            error: {
+              code: 'invalid-tts-provider',
+              message:
+                `TTS 服务商「${pinnedTts}」还没配置：先到「全局设置 → TTS 合成」把它加为主用或备用，` +
+                '再回来选音色',
+            },
+          })
+          return
+        }
+      }
       const agent = await agents.update({
         agentId,
         name: typeof body.name === 'string' ? body.name : undefined,
@@ -770,42 +845,17 @@ export function createControlHandler({
 
     if (method === 'GET' && path === '/voices') {
       const provider = String(url.searchParams.get('provider') ?? '').trim()
-      const requestedResource = String(url.searchParams.get('resourceId') ?? '').trim()
       // 不带 provider：保持旧契约，一次返回全部厂商的内置清单（首屏兜底）。
-      // 直接遍历目录，避免「加了厂商忘了往这个数组里补名字」的漂移。
       if (!provider) {
         const options = {}
         for (const item of Object.keys(VOICE_OPTIONS)) options[item] = voiceOptionsFor(item)
         sendJson(res, 200, { options })
         return
       }
-      const catalog = voiceOptionsFor(provider)
-      // 火山 TTS 的 resourceId 全局被清空（音色归智能体），这里按默认 2.0 查。
-      const resourceId = requestedResource || (provider === 'volc' ? 'seed-tts-2.0' : '')
-      if (provider !== 'volc' || !resourceId) {
-        sendJson(res, 200, { options: { [provider]: catalog }, source: 'catalog' })
-        return
-      }
-      // 官方 ListSpeakers 要 AK/SK；TTS 合成仍用 X-Api-Key。没配 AK/SK 就回内置清单并标注。
-      const tts = settings.state?.voice?.tts ?? {}
-      if (!tts.appId || !tts.apiSecret) {
-        sendJson(res, 200, { options: { volc: catalog }, source: 'catalog' })
-        return
-      }
-      try {
-        const speakers = await listVolcSpeakersCached({
-          accessKey: tts.appId,
-          secretKey: tts.apiSecret,
-          resourceId,
-        })
-        const options = speakerOptions(speakers)
-        sendJson(res, 200, {
-          options: { volc: options.length ? options : catalog },
-          source: options.length ? 'api' : 'catalog',
-        })
-      } catch (error) {
-        sendJson(res, 200, { options: { volc: catalog }, source: 'catalog', error: error.message })
-      }
+      // 音色列表**只有内置清单**（2026-11-13 用户决定）：火山官方 ListSpeakers 需要 AK/SK，
+      // 而 AK 与语音 AppID 是两套东西（填错只会得到 InvalidClientTokenId / security token），
+      // 少一个必填坑、也不用每次联网拉。资源族过滤在前端做（voicesForResource）。
+      sendJson(res, 200, { options: { [provider]: voiceOptionsFor(provider) }, source: 'catalog' })
       return
     }
 
@@ -831,6 +881,55 @@ export function createControlHandler({
     }
 
     // --------------------------------------------------------------- admin API
+
+    // ---------------------------------------------------------------- 固件升级
+    if (path === '/firmware' || path === '/firmware/upload' || path === '/firmware/remove') {
+      if (!firmware) {
+        sendJson(res, 503, { error: { code: 'firmware-unavailable', message: '固件仓库未初始化' } })
+        return
+      }
+      if (method === 'GET' && path === '/firmware') {
+        sendJson(res, 200, {
+          info: firmware.info(),
+          version: String(config.firmware?.version ?? ''),
+          url: String(config.firmware?.url ?? ''),
+          force: config.firmware?.force === true,
+          devices: store.list().map((device) => ({
+            deviceId: device.deviceId,
+            nickName: device.nickName ?? '',
+            firmwareVersion: device.firmwareVersion ?? '',
+            otaEnabled: device.otaEnabled !== false,
+            online: hub.has(device.deviceId),
+          })),
+        })
+        return
+      }
+      if (method === 'POST' && path === '/firmware/upload') {
+        if (!requireTrustedMutation(req, res)) return
+        // 原始二进制体（不套 multipart）：控制台只传文件本身，版本/文件名走头。
+        // 上限 +1 让超限在读取阶段就 413，而不是把 16MB 全读进内存再判。
+        const buffer = await readBinary(req, MAX_FIRMWARE_BYTES + 1)
+        const version = String(req.headers['x-firmware-version'] ?? '').trim().slice(0, 40)
+        const fileName = String(req.headers['x-firmware-name'] ?? '').trim()
+        const info = await firmware.save(buffer, { fileName, version })
+        // 版本号是 OTA 响应里「有没有新版本」的依据：上传时带了就顺手写进设置，
+        // 否则还要用户再回设置页改一次。
+        if (version && settings?.update) {
+          await settings.update({ firmware: { version } })
+          onSettingsChanged?.()
+        }
+        sendJson(res, 200, { info })
+        return
+      }
+      if (method === 'POST' && path === '/firmware/remove') {
+        if (!requireTrustedMutation(req, res)) return
+        const removed = await firmware.remove()
+        sendJson(res, 200, { removed, info: firmware.info() })
+        return
+      }
+      sendJson(res, 405, { error: { code: 'method-not-allowed', message: 'unsupported firmware route' } })
+      return
+    }
 
     if (method === 'GET' && path === '/settings') {
       sendJson(res, 200, settingsPayload())
@@ -875,6 +974,86 @@ export function createControlHandler({
         }
       }
       await settings.update(body)
+      onSettingsChanged?.()
+      sendJson(res, 200, settingsPayload())
+      return
+    }
+
+    /**
+     * 「随时替换」：把第 index 条备用提升为主用，旧主用落到该位置。
+     *
+     * 必须在服务端做：备用条目在控制台里是**掩码**，把它当主用提交会把 `sk-••••12`
+     * 存成密钥；主用明文从不离开本进程。这里整段互换，密钥不经过浏览器。
+     * `host` 条目的 hostProvider 与 /settings 走同一套校验（坏值 400，不能等建连才炸）。
+     */
+    if (method === 'POST' && path === '/settings/provider/promote') {
+      if (!requireTrustedMutation(req, res)) return
+      const body = await readJson(req)
+      const kind = String(body?.kind ?? '').trim()
+      if (kind !== 'llm' && kind !== 'tts' && kind !== 'asr') {
+        sendJson(res, 400, { error: { code: 'invalid-stage', message: 'kind 只能是 llm / tts / asr' } })
+        return
+      }
+      const index = Number(body?.index)
+      const entry = settings.state.voice?.[kind]?.backups?.[index]
+      if (!entry) {
+        sendJson(res, 400, {
+          error: { code: 'invalid-index', message: `没有第 ${Number.isFinite(index) ? index + 1 : '?'} 条备用服务商` },
+        })
+        return
+      }
+      if (kind === 'llm' && entry.provider === 'host') {
+        const issue = hostProviderIssue(entry.hostProvider, llm)
+        if (issue) {
+          sendJson(res, 400, { error: { code: 'invalid-host-provider', message: issue } })
+          return
+        }
+      }
+      try {
+        await settings.promote(kind, index)
+      } catch (error) {
+        sendJson(res, error.code === 'invalid' ? 400 : 500, {
+          error: { code: error.code || 'promote-failed', message: error.message },
+        })
+        return
+      }
+      onSettingsChanged?.()
+      sendJson(res, 200, settingsPayload())
+      return
+    }
+    if (method === 'POST' && path === '/settings/provider/remove') {
+      if (!requireTrustedMutation(req, res)) return
+      const body = await readJson(req)
+      const kind = String(body?.kind ?? '').trim()
+      if (kind !== 'llm' && kind !== 'tts' && kind !== 'asr') {
+        sendJson(res, 400, { error: { code: 'invalid-stage', message: 'kind 只能是 llm / tts / asr' } })
+        return
+      }
+      const index = Number(body?.index)
+      const voice = settings.state.voice?.[kind] ?? {}
+      const total = (voice.provider ? 1 : 0) + (Array.isArray(voice.backups) ? voice.backups.length : 0)
+      if (!Number.isInteger(index) || index < 0 || index >= total) {
+        sendJson(res, 400, {
+          error: { code: 'invalid-index', message: `没有第 ${Number.isFinite(index) ? index + 1 : '?'} 条服务商` },
+        })
+        return
+      }
+      // 删主用位会让第一条备用顶上：host 来源同样要在保存边界校验，坏值不能借删除混进来。
+      if (kind === 'llm' && index === 0 && voice.backups?.[0]?.provider === 'host') {
+        const issue = hostProviderIssue(voice.backups[0].hostProvider, llm)
+        if (issue) {
+          sendJson(res, 400, { error: { code: 'invalid-host-provider', message: issue } })
+          return
+        }
+      }
+      try {
+        await settings.remove(kind, index)
+      } catch (error) {
+        sendJson(res, error.code === 'invalid' ? 400 : 500, {
+          error: { code: error.code || 'remove-failed', message: error.message },
+        })
+        return
+      }
       onSettingsChanged?.()
       sendJson(res, 200, settingsPayload())
       return

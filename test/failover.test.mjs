@@ -305,13 +305,12 @@ test('LLM abort is not a failure and never triggers a switch', async () => {
 
 // ------------------------------------------------------------------------- TTS
 
-test('TTS retries the whole sentence on the next candidate, leaking no partial audio', async () => {
+test('TTS fails over before any audio when the first candidate errors out', async () => {
   const clock = makeClock()
   const logger = makeLogger()
   const primary = {
     name: 'xunfei',
     async *synthesize() {
-      yield Buffer.from([1, 2])
       throw new Error('tts down')
     },
   }
@@ -338,7 +337,38 @@ test('TTS retries the whole sentence on the next candidate, leaking no partial a
   assert.deepEqual(Buffer.concat(next), Buffer.from([9, 8, 7]))
 })
 
-test('TTS abort yields nothing and never switches', async () => {
+test('TTS stops on the failing candidate once audio has been emitted (no duplicated half sentence)', async () => {
+  let backupCalls = 0
+  const primary = {
+    name: 'xunfei',
+    async *synthesize() {
+      yield Buffer.from([1, 2])
+      throw new Error('tts down mid-sentence')
+    },
+  }
+  const backup = {
+    name: 'volc',
+    async *synthesize() {
+      backupCalls += 1
+      yield Buffer.from([9])
+    },
+  }
+  const tts = createFailoverTts([primary, backup], { labels: ['xunfei', 'volc'], logger: makeLogger() })
+  const chunks = []
+  let failure = null
+  try {
+    for await (const chunk of tts.synthesize('第一句。', {})) chunks.push(chunk)
+  } catch (error) {
+    failure = error
+  }
+  assert.deepEqual(Buffer.concat(chunks), Buffer.from([1, 2]))
+  assert.ok(failure)
+  assert.equal(failure.dshNoSwitch, true)
+  assert.equal(backupCalls, 0)
+  assert.equal(tts.preferred, 0)
+})
+
+test('TTS abort stops streaming and never switches', async () => {
   const controller = new AbortController()
   let backupCalls = 0
   const primary = {
@@ -358,7 +388,8 @@ test('TTS abort yields nothing and never switches', async () => {
   }
   const tts = createFailoverTts([primary, backup], { labels: ['xunfei', 'volc'], logger: makeLogger() })
   const chunks = await collect(tts.synthesize('打断。', { signal: controller.signal }))
-  assert.deepEqual(chunks, [])
+  // 已经流出去的采样收不回来（流式的代价），但绝不能换家重念。
+  assert.deepEqual(chunks, [Buffer.from([1])])
   assert.equal(backupCalls, 0)
   assert.equal(tts.preferred, 0)
 })

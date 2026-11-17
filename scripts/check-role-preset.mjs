@@ -31,7 +31,8 @@ dom.window.HTMLElement.prototype.scrollIntoView = () => {}
 const json = (body) => ({ ok: true, status: 200, text: async () => JSON.stringify(body), json: async () => body })
 globalThis.fetch = async (url) => {
   const path = String(url)
-  if (path.includes('/voices')) return json({ options: {}, source: 'catalog' })
+  // 用插件真实内置清单回包：音色下拉要按资源族过滤，空清单会让断言变成「空列表也算过」。
+  if (path.includes('/voices')) return json({ options: { volc: voiceOptionsFor('volc') }, source: 'catalog' })
   if (path.includes('/settings')) return json({ settings: { voice: { tts: { provider: 'volc', resourceId: '' } } }, defaults: {} })
   if (path.includes('/models')) return json({ options: [] })
   return json({})
@@ -43,6 +44,7 @@ const { AgentConfigDialog } = await import('../src/client/agents/AgentConfigDial
 const { setT } = await import('../src/client/core.js')
 const { zh } = await import('../src/client/i18n/zh.js')
 const { ROLE_PRESETS, rolePresetPrompt } = await import('../src/client/agents/rolePresets.js')
+const { voiceOptionsFor } = await import('../src/voice/voices.js')
 setT((key) => zh[key] ?? `MISSING:${key}`)
 
 // 模板文案的唯一来源是 xiaozhi-esp32-server 导出的基准文件；这里逐字比对，禁止自创或手改措辞。
@@ -120,6 +122,18 @@ async function run() {
   await tick(150)
   origError(`  手改后模板 = ${presetLabel()}`)
   check(presetLabel() === zh.rolePresetCustom, '手改人设后下拉应回落「自定义」')
+
+  // 音色下拉必须按资源族过滤：全局 TTS 是火山默认 2.0 时，1.x 的「湾湾小何」(moon) 不许出现，
+  // 否则选中就会 55000000（有字没声）；2.0 的「小何」(uranus) 要在列表里。
+  const voiceTrigger = document.querySelector('.xz-pillselect-trigger[aria-label="' + zh.voice + '"]')
+  check(Boolean(voiceTrigger), '角色页没有音色下拉')
+  voiceTrigger.click()
+  await tick(120)
+  const voiceLabels = [...document.querySelectorAll('.xz-menu-item')].map((item) => item.textContent.trim())
+  check(!voiceLabels.some((label) => label.startsWith('湾湾小何')), '2.0 资源里混进了 1.x 音色「湾湾小何」')
+  // 火山 2.0 清单已按官方表重建（2026-11-14），标签形如「小何 2.0」。
+  check(voiceLabels.some((label) => label === '小何 2.0' || label.startsWith('小何（')), '2.0 音色「小何」不在列表里')
+  origError(`  音色列表 ${voiceLabels.length} 项，无 1.x 混入`) 
 
   check(!document.body.innerHTML.includes('MISSING:'), '有 i18n 缺键（页面里出现 MISSING:）')
   const reactErrors = problems.filter((line) => !line.includes('not wrapped in act'))

@@ -82,6 +82,31 @@
 .xz-devcard-config{border-top:1px solid var(--xz-line);padding-top:10px}
 .xz-devcard-config .xz-capability{padding:6px 8px;font-size:12px}
 .xz-devcard-foot{display:flex;gap:6px;flex-wrap:wrap}
+/* 智能体卡片（2026-11-13 改版）：徽标 + 名字/状态 + ⋯ 菜单，三格信息，三按钮操作条。
+   取舍：原卡片的设备明细挪进「设备 (N)」弹窗；播报从常驻按钮挪进 ⋯ 菜单，操作条保持三个。 */
+.xz-agent-card{position:relative;display:flex;flex-direction:column;border:1px solid var(--xz-line);border-radius:14px;background:var(--xz-surface-strong);transition:border-color .18s ease,box-shadow .18s ease}
+.xz-agent-card:hover{border-color:rgba(0,122,255,.28);box-shadow:0 6px 18px rgba(15,23,42,.07)}
+.xz-agent-head{display:flex;align-items:center;gap:10px;padding:14px 14px 0}
+.xz-agent-avatar{width:44px;height:44px;flex:none;border-radius:12px;display:grid;place-items:center;font-size:18px;font-weight:700;line-height:1;color:#0f766e;background:linear-gradient(135deg,rgba(16,185,129,.22),rgba(45,212,191,.12) 45%,rgba(34,211,238,.22));box-shadow:inset 0 0 0 1px rgba(16,185,129,.25)}
+.xz-agent-titlebar{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
+.xz-agent-name{margin:0;font-size:15px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border-bottom:1px dashed transparent}
+.xz-agent-name:hover{border-bottom-color:var(--xz-line)}
+.xz-agent-rename{height:28px;padding:0 9px;font-size:13px;line-height:1.2;border-radius:9px;max-width:220px;box-sizing:border-box}
+.xz-agent-chip{flex:none;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:500;line-height:18px;background:rgba(0,0,0,.04);color:var(--xz-text-2);box-shadow:inset 0 0 0 1px var(--xz-line);white-space:nowrap}
+.xz-agent-chip.warn{background:rgba(245,158,11,.12);color:#b45309;box-shadow:inset 0 0 0 1px rgba(245,158,11,.32)}
+.xz-agent-chip.ok{background:rgba(16,185,129,.12);color:#047857;box-shadow:inset 0 0 0 1px rgba(16,185,129,.32)}
+.xz-agent-menu-btn{width:32px;height:32px;flex:none;border:0;border-radius:9px;background:transparent;color:var(--xz-text-2);font-size:17px;line-height:1;cursor:pointer}
+.xz-agent-menu-btn:hover,.xz-agent-menu-btn[aria-expanded="true"]{background:rgba(0,0,0,.05);color:var(--xz-text)}
+.xz-agent-menu{position:absolute;z-index:40;min-width:160px;max-height:none;overflow:visible}
+.xz-agent-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 14px 14px;padding:10px 0;border:1px solid var(--xz-line);border-radius:10px;background:var(--xz-surface)}
+.xz-agent-cell{min-width:0;padding:0 10px}
+.xz-agent-cell + .xz-agent-cell{border-left:1px solid var(--xz-line)}
+.xz-agent-cell-label{font-size:10.5px;color:var(--xz-text-3);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.xz-agent-cell-value{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.xz-agent-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:10px;border-top:1px solid var(--xz-line);border-radius:0 0 14px 14px;background:rgba(0,0,0,.015)}
+.xz-agent-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:34px;min-width:0;padding:0 8px;border-radius:9px;border:1px solid var(--xz-line);background:var(--xz-surface-strong);color:var(--xz-text-2);font:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:border-color .15s ease,background-color .15s ease,color .15s ease}
+.xz-agent-action:hover{border-color:rgba(0,122,255,.35);background:var(--xz-primary-soft);color:var(--xz-primary)}
+.xz-agent-action-icon{flex:none;opacity:.85}
 .xz-switch{position:relative;width:38px;height:22px;border-radius:999px;border:none;background:rgba(0,0,0,.16);cursor:pointer;padding:0;transition:background .18s ease}
 .xz-switch span{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.22);transition:transform .18s ease}
 .xz-switch.on{background:#0a84ff}
@@ -149,6 +174,11 @@
 .xz-devcard-name:hover{border-bottom-color:var(--xz-line)}
 
 .xz-modal{width:min(520px,92vw);background:var(--xz-surface-strong);border-radius:var(--xz-radius-lg);box-shadow:var(--xz-shadow-lg);padding:22px;box-sizing:border-box}
+.xz-confirm-modal{width:min(440px,92vw)}
+.xz-confirm-modal .xz-confirm-text{margin:6px 0 18px;font-size:12.5px;line-height:1.6;color:var(--xz-text-2)}
+.xz-confirm-foot{justify-content:flex-end;gap:8px}
+.xz-btn.danger-confirm{border-color:rgba(255,59,48,.4);background:var(--xz-danger);color:#fff}
+.xz-btn.danger-confirm:hover:not(:disabled){background:#e0342a}
 .xz-modal h3{margin:0 0 6px;font-size:15px}
 .xz-modal p{margin:0 0 14px;font-size:12px;color:var(--xz-text-2)}
 .xz-toast{position:fixed;right:24px;bottom:24px;z-index:50;background:rgba(29,29,31,.92);color:#fff;padding:11px 16px;border-radius:14px;font-size:12px;box-shadow:var(--xz-shadow-md);max-width:360px}
@@ -192,6 +222,7 @@
 .xz-chip.primary{background:var(--xz-primary-soft);color:var(--xz-primary);font-weight:600}
 .xz-devcard-ord{width:24px;height:24px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;background:var(--xz-primary-soft);color:var(--xz-primary)}
 .xz-backup-facts{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--xz-text-2)}
+.xz-provider-swap-hint{margin:6px 0 0;font-size:12px;color:var(--xz-text-2);line-height:1.5}
 .xz-backup-fact{display:flex;gap:8px;min-width:0}
 .xz-backup-fact .k{flex:none;width:62px;color:var(--xz-text-3);font-size:10.5px;line-height:17px}
 .xz-backup-fact .v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -321,6 +352,34 @@
 /* 添加备用：列表底部一整行，不再是同尺寸 dashed 方块 */
 .xz-backup-add-row{display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;margin-top:8px;padding:10px 12px;border:1px dashed var(--xz-line);border-radius:12px;background:transparent;color:var(--xz-primary);font:inherit;font-size:12.5px;cursor:pointer}
 .xz-backup-add-row:hover:not(:disabled){background:var(--xz-primary-soft);border-color:rgba(0,122,255,.4)}
+/* 服务商池（TTS，2026-11-14）：一张白卡里排「首字徽标 + 名称/密钥 + 文字操作」，
+   不再每行三颗描边按钮；弹窗高度随内容收缩（is-pool），避免几行下面一大片空白。 */
+.xz-stage-modal.is-pool{height:auto;max-height:min(640px,88vh)}
+.xz-provider-pool{display:flex;flex-direction:column;gap:12px}
+.xz-pool-hint{margin:0;font-size:12px;color:var(--xz-text-2);line-height:1.55}
+.xz-pool-list{border:1px solid var(--xz-line);border-radius:14px;background:var(--xz-surface-strong);overflow:hidden}
+.xz-pool-empty{margin:0;padding:26px 16px;text-align:center;font-size:12px;color:var(--xz-text-3)}
+.xz-pool-row{display:flex;align-items:center;gap:12px;padding:11px 14px;min-width:0}
+.xz-pool-row + .xz-pool-row{border-top:1px solid var(--xz-line)}
+.xz-pool-row:hover{background:var(--xz-surface-muted)}
+.xz-pool-avatar{flex:none;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;font-size:13px;font-weight:600;color:var(--xz-text-2);background:linear-gradient(135deg,#f1f6ff,#e8f0ff);border:1px solid rgba(0,122,255,.14)}
+.xz-pool-title{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.xz-pool-name{display:flex;align-items:center;gap:7px;min-width:0}
+.xz-pool-name strong{min-width:0;font-size:13.5px;font-weight:600;color:var(--xz-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xz-pool-meta{display:flex;align-items:center;gap:7px;min-width:0;font-size:11.5px;color:var(--xz-text-3);white-space:nowrap;overflow:hidden}
+.xz-pool-key{font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
+.xz-pool-meta-sep{flex:none;width:3px;height:3px;border-radius:50%;background:var(--xz-text-3);opacity:.55}
+.xz-pool-test{overflow:hidden;text-overflow:ellipsis}
+.xz-pool-actions{flex:none;display:flex;align-items:center;gap:2px;margin-left:auto}
+.xz-pool-link{border:none;background:transparent;padding:4px 7px;border-radius:7px;font:inherit;font-size:12px;line-height:1.5;color:var(--xz-text-2);cursor:pointer}
+.xz-pool-link:hover:not(:disabled){background:rgba(15,23,42,.05);color:var(--xz-text)}
+.xz-pool-link:disabled{opacity:.5;cursor:default}
+.xz-pool-link.danger{color:var(--xz-danger)}
+.xz-pool-link.danger:hover:not(:disabled){background:rgba(255,59,48,.08)}
+.xz-pool-link.danger.is-confirm{background:var(--xz-danger);color:#fff;font-weight:600}
+.xz-pool-add{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:42px;border:1px dashed var(--xz-line);border-radius:12px;background:transparent;color:var(--xz-text-2);font:inherit;font-size:12.5px;cursor:pointer;transition:background-color .12s ease,color .12s ease,border-color .12s ease}
+.xz-pool-add:hover{color:var(--xz-primary);border-color:rgba(0,122,255,.4);background:var(--xz-primary-soft)}
+.xz-pool-add-plus{font-size:15px;line-height:1;color:inherit}
 /* 接入与网关：可折叠、默认收起，页面的视觉重点留给服务商 */
 .xz-config-access>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:650}
 .xz-config-access>summary::-webkit-details-marker{display:none}
@@ -373,6 +432,11 @@
 .xz-device-row-mac{font-family:var(--xz-font-mono);font-size:11px;color:var(--xz-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xz-device-row-actions{display:flex;gap:6px;flex-wrap:wrap}
 .xz-device-row-actions .xz-btn{padding:4px 9px;font-size:11.5px;border-radius:9px}
+.xz-device-tools{padding:8px 10px;background:var(--xz-surface-muted);border-radius:9px}
+.xz-device-tool-list{display:flex;flex-direction:column;gap:6px}
+.xz-device-tool{display:flex;align-items:baseline;gap:8px;font-size:12px;min-width:0}
+.xz-device-tool code{font-family:var(--xz-font-mono);color:var(--xz-text);white-space:nowrap}
+.xz-device-tool span{color:var(--xz-text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:768px){.xz-config-modal{width:94vw;height:min(620px,90vh)}.xz-config-modal-body{padding:12px 14px}.xz-config-modal-foot{flex-wrap:wrap}}
 `;
 export { CSS }

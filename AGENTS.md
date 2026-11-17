@@ -51,7 +51,8 @@
 
 ## 三、判停：当前是设备说了算
 
-- 固件里 AFE VAD 的参数来自 `main/audio/engines/afe_audio_engine.cc`：`vad_mode = VAD_MODE_2`、`vad_min_noise_ms = 300`（2026-11-06 为抗环境音误触发从 0/100 调高）。
+- 固件里 AFE VAD 的参数来自 `main/audio/engines/afe_audio_engine.cc`：`vad_mode = VAD_MODE_2`、`vad_min_noise_ms = 300`（2026-11-06 为抗环境音误触发从 0/100 调到 300；2026-11-15 试过 500 又还原——500ms 对用户太迟钝，句中停顿交给服务端续话窗口兜底，**不再改固件值**）。
+- **续话窗口（2026-11-15）**：设备发 `listen stop` 后服务端不再立刻收口，先等 `continuationMs`（默认 300ms）；窗口内又出现说话能量（RMS > `continuationThreshold`，默认 0.02）就取消收口，同一段话继续喂 ASR。见 `session.js` 的 `#scheduleFinalize` / `#onPcm` / `#cancelPendingFinalize`，trace 记 `listen.grace` 与 `turn.continue`。
 - 固件在 `application.cc` 的 `MAIN_EVENT_VAD_CHANGE` 里记 `vad_speaking_`，从"说话"转到"静音"且处于 listening 时发 `listen stop`，串口打印 `VAD end of speech, sending listen stop`。
 - 服务端 `voice.vadMode` 默认 `device`：收到 `listen stop` 才收口，音频持续喂 ASR，不再用自己的阈值判句尾。
 - `vadMode: energy` 是给"不发 listen stop 的老固件"留的兜底：`silenceMs 400`（对齐 Go 服务端 `chat_max_silence_duration`），`minSpeechMs 120` / `vadThreshold 0.03` 是能量 VAD 自己的参数，和原厂神经 VAD 的 0.5/0.4 不是一个量纲。
@@ -59,6 +60,13 @@
 ## 四、地址：mDNS 优先，云端兜底
 
 - 插件在 `src/mdns.js` 广播 `_xiaozhi._tcp`：SRV 端口 8989、TXT `path=/xiaozhi/ota/`、A 记录是本机 IPv4，主机名 `xiaozhi.local`。每 60 秒重新取一次地址再广播。
+- **应答必须单播（2026-11-14 实测修）**：esp-idf 的 `mdns_query_ptr` 发出的查询是 `QU=0`（手表串口抓到的
+  `qu=false`），旧逻辑只在 `QU=1` 时才单播、其余只发 multicast；这台机器有 VMware / Clash TUN 等虚拟网卡，
+  Windows 上 multicast 出口由路由表决定，回答会从 `192.168.10.1` 之类的虚拟网卡出去，手表永远收不到，
+  于是每次开机都 `mDNS: no _xiaozhi._tcp service` → 回落官方云。现在**一律先单播回查询方**（`rinfo`），
+  再按查询方所在网段补一包 multicast；没有来源时才按所有 LAN 网卡逐个发。
+  实测证据：临时应答器改成单播后，手表立刻日志 `Ota: mDNS: found 192.168.43.10 -> http://192.168.43.10:8989/xiaozhi/ota/`
+  并走本地 OTA（`No mqtt section found` → WebSocket），不再连 `api.tenclass.net`。
 - 这台机器同时有 Clash TUN（`198.18.0.0`）、`2.0.1.9`、VMware 网段、`169.254.x` 这些地址，多播默认跟着路由表走会从 TUN 出去。当前的做法：只广播 RFC1918 + `100.64/10`（`isLanAddress`），公告按网卡逐个发（`setMulticastInterface`），回答查询时从查询方所在网段回。
 - 固件 `ota.cc` 的 `ResolveOtaUrlFromMdns()` 查 `_xiaozhi._tcp`，用 SRV 的 host/port 和 TXT 的 path 拼出 `http://<ip>:8989/xiaozhi/ota/`，串口打印 `mDNS: found ...`；一条公告里有多个 A 记录时，挑与手表自己同网段的那个（`esp_netif_get_ip_info` 拿自身 IP/掩码）。
 - 候选顺序：NVS 手工 `ota_url` → mDNS → 编译期 `CONFIG_OTA_URL_LAN`（当前为空）→ `CONFIG_OTA_URL`（云端 `https://api.tenclass.net/xiaozhi/ota/`）。
@@ -71,16 +79,19 @@
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"          # 全量 254 项，必须全绿
+node --test "test/*.test.mjs"          # 全量 307 项，必须全绿
 npm run build                          # src/client/** → client.js（esbuild，React 保持 external）
 npm run smoke                          # 真实 React SSR 渲染主要页面 + slot 注册校验
-npm run check:ui                       # jsdom 交互检查：概览卡 → 弹窗 → 添加 → ⋯ → 模型回显 → 自动保存
+npm run check:ui                       # jsdom 交互检查：概览卡 → 弹窗 → 添加 → ⋯ → 模型回显 → 自动保存 → TTS 服务商池（无主备、删除走服务端）
 npm run check:fonts                    # 真浏览器验字体：中文不许落宋体、空态与正文同字体、MAC 仍等宽（改样式必跑）
 npm run check:role                     # jsdom 验「角色模板」下拉：选模板填充人设、与基准逐字一致、手改回落自定义（改角色页必跑）
+npm run check:devices                  # jsdom 验「管理设备」弹窗：移入/绑定必须二次确认，取消不发请求（改设备弹窗必跑）
+npm run check:card                     # jsdom 验智能体卡片 ⋯ 菜单：相对卡片定位、关闭、重命名入口 + 「不许回退 overflow/fixed」样式守卫（改智能体卡片必跑）
+npm run check:voice                    # jsdom 验智能体「TTS 服务商 + 音色」下拉：4 家官方清单、换服务商重置音色、保存带 ttsProvider（改音色/服务商必跑）
 node --check client.js                 # 构建产物语法检查
 ```
 
-当前 254 项，覆盖分句、VAD、Ogg/Opus 往返、mock 整轮、打断、20 轮、语种、音色族、**TTS 默认音色**（全局只存凭据可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留）、设备级覆盖合并（含「设备 hostProvider 不再强切 host」）、全局设置（人设/静音收口、`applyRuntimeSettings` 的 hostProvider/backups 叠加回归）、备用服务商（持久化/掩码/留空保留/整次失败/**条数不设上限**/`/test/provider`）、**服务商描述符**（描述符与 `BACKUP_SPEC` 白名单一致、字段可存储、stage 级名字覆盖、`hidden` 只存不展示、`GET /providers` 路由，`test/providers.test.mjs` 8 项）、**ASR 在线测试**（TTS→ASR 编排：分块喂 PCM、TTS mock/无音频/ASR error 的报错，`test/asr-probe.test.mjs` 5 项）、**火山官方音色列表**（HMAC 签名按官方 GET/POST 向量验证、ListSpeakers 分页/缓存/错误、无 AK/SK 回退内置清单，`test/volc-sign.test.mjs` 4 项 + `test/volc-speakers.test.mjs` 4 项）、**设备侧 MCP/IoT**（MCP initialize/tools/list/tools/call 与工具名清洗、IoT descriptors/states/commands，`test/device-mcp.test.mjs` 5 项 + `test/device-iot.test.mjs` 2 项）、**外部 MCP（stdio）**（子进程 JSON-RPC initialize/tools/list/tools/call，`test/mcp-stdio.test.mjs` 1 项）、**外部 MCP（SSE / Streamable HTTP）**（本地 HTTP server 走通 initialize/tools/list/tools/call，`test/mcp-http.test.mjs` 1 项）、**MCP 接入点**（WebSocket JSON-RPC initialize/tools/list/tools/call，`test/mcp-endpoint.test.mjs` 1 项）、**入站 `/mcp`**（token 鉴权 + 服务端驱动 initialize/tools/list/tools/call，`test/mcp-inbound.test.mjs` 2 项 + `test/http.test.mjs` 1 项）、**服务端插件工具**（newsnow 热榜 / Intl 农历 / exit 退出 / HASS / RAGFlow / call_device / play_music + 「change_role / get_weather 已下掉」反向断言，`test/tools-extra.test.mjs` 9 项；音乐解码 `test/music.test.mjs` 1 项）、**待审核设备**（`PendingStore` 持久化/尝试次数/重新加载、`autoProvision:false` 时 OTA/WS 返回 `device-pending`、控制台批准并绑定指定智能体、拒绝移除、批准后 OTA 放行，`test/pending.test.mjs` 1 项 + `test/http.test.mjs` 1 项）、三段 failover（LLM 未出字前切换、TTS 整句重试、ASR 回放不推 partial、abort 不切换、粘性回落）、mDNS 报文与地址过滤、小米 MiMo（api-key 认证头 / thinking / SSE / 工具调用 / 模型清单走 /v1/models 无内置兜底）、联网工具（Search 带正文与截断预算 / web_fetch 正文与 403·404 语义 / 动态 Key / 无 Key 回退）、对话历史（会话聚合与标题 / 旧格式 10 分钟迁移 / WAV 读写与路径安全 / 30 天保留与容量清理 / clear 粒度 / 4 条 HTTP 路由）、**智能体/设备绑定**（旧设备迁移与记忆复制 / 多设备绑定与移动 / 解绑 / 配置共享 / 级联删除 / 历史合并 / **智能体重名拦截**，`test/agents.test.mjs` 7 项）、**百智云语音**（描述符覆盖 ASR/TTS、语种归一化、语速能力门控、WAV 解析/重采样、TTS 请求体与 401 报错、ASR 真实节奏发送 + commit + delta/final 拼接 + 服务端错误帧，`test/baizhi.test.mjs` 13 项）。
+当前 307 项，覆盖分句、VAD、Ogg/Opus 往返、mock 整轮、打断、20 轮、语种、音色族、**TTS 默认音色**（全局只存凭据可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留）、设备级覆盖合并（含「设备 hostProvider 不再强切 host」）、全局设置（人设/静音收口、`applyRuntimeSettings` 的 hostProvider/backups 叠加回归）、备用服务商（持久化/掩码/留空保留/整次失败/**条数不设上限**/`/test/provider`）、**服务商描述符**（描述符与 `BACKUP_SPEC` 白名单一致、字段可存储、stage 级名字覆盖、`hidden` 只存不展示、`GET /providers` 路由，`test/providers.test.mjs` 8 项）、**ASR 在线测试**（TTS→ASR 编排：分块喂 PCM、TTS mock/无音频/ASR error 的报错，`test/asr-probe.test.mjs` 5 项）、**设备侧 MCP/IoT**（MCP initialize/tools/list/tools/call 与工具名清洗、IoT descriptors/states/commands，`test/device-mcp.test.mjs` 5 项 + `test/device-iot.test.mjs` 2 项）、**外部 MCP（stdio）**（子进程 JSON-RPC initialize/tools/list/tools/call，`test/mcp-stdio.test.mjs` 1 项）、**外部 MCP（SSE / Streamable HTTP）**（本地 HTTP server 走通 initialize/tools/list/tools/call，`test/mcp-http.test.mjs` 1 项）、**MCP 接入点**（WebSocket JSON-RPC initialize/tools/list/tools/call，`test/mcp-endpoint.test.mjs` 1 项）、**入站 `/mcp`**（token 鉴权 + 服务端驱动 initialize/tools/list/tools/call，`test/mcp-inbound.test.mjs` 2 项 + `test/http.test.mjs` 1 项）、**服务端插件工具**（newsnow 热榜 / Intl 农历 / exit 退出 / HASS / RAGFlow / call_device / play_music + 「change_role / get_weather 已下掉」反向断言，`test/tools-extra.test.mjs` 9 项；音乐解码 `test/music.test.mjs` 1 项）、**待审核设备**（`PendingStore` 持久化/尝试次数/重新加载、`autoProvision:false` 时 OTA/WS 返回 `device-pending`、控制台批准并绑定指定智能体、拒绝移除、批准后 OTA 放行，`test/pending.test.mjs` 1 项 + `test/http.test.mjs` 1 项）、三段 failover（LLM 未出字前切换、TTS 首包前切换/出音频后不换家、ASR 回放不推 partial、abort 不切换、粘性回落）、mDNS 报文与地址过滤、小米 MiMo（api-key 认证头 / thinking / SSE / 工具调用 / 模型清单走 /v1/models 无内置兜底）、联网工具（Search 带正文与截断预算 / web_fetch 正文与 403·404 语义 / 动态 Key / 无 Key 回退）、对话历史（会话聚合与标题 / 旧格式 10 分钟迁移 / WAV 读写与路径安全 / 30 天保留与容量清理 / clear 粒度 / 4 条 HTTP 路由）、**智能体/设备绑定**（旧设备迁移与记忆复制 / 多设备绑定与移动 / 解绑 / 配置共享 / 级联删除 / 历史合并 / **智能体重名拦截**，`test/agents.test.mjs` 7 项）、**百智云语音**（描述符覆盖 ASR/TTS、语种归一化、语速能力门控、WAV 解析/重采样、TTS 请求体与 401 报错、ASR 真实节奏发送 + commit + delta/final 拼接 + 服务端错误帧，`test/baizhi.test.mjs` 13 项）、**DeepSeek 语音**（描述符覆盖 ASR/TTS、WAV 编解码与立体声下混、multipart `file` 上传、采样率归一、120s 截断、空音频不发请求、TTS 请求体与重采样、400 与计费字符上限，`test/deepseek.test.mjs` 18 项）、**主用/备用互换**（服务端整段互换且密钥不出进程、空主用不留空壳、CSRF / 非法 index / 坏 hostProvider 被拒，`test/settings.test.mjs` 3 项）、**表情跟随**（21 个表情名与固件 `chibi-maid_240` 资源一一对应、emoji 被 SSE 拆成两半仍能识别、无 emoji 不发 emotion、TTS 文本与历史里都不含 emoji，`test/emotion.test.mjs` 6 项）、**回合守卫**（listen stop 后的续话窗口：窗口内继续说不收口、窗口内没声音正常收口、工具调用前发 `% 工具名` 提示、工具报错回灌给模型、模型只回表情时用兜底话术收尾，`test/turn-guard.test.mjs` 8 项，含「空回合后不重发 listen start 也能接住下一句」）。**TTS 流式下发**（首包早于合成结束、流式 Ogg 解复用跨页/跨字节边界、abort 停流且不产生幽灵帧、空音频不发 sentence_start，`test/tts-stream.test.mjs` 4 项）。**固件升级通道**（固件仓库保存/替换/删除与非法名拒绝、OTA 请求体解析设备版本、上传后 OTA 下发绝对 URL、force 以数字下发、移除后回落到设备版本，`test/firmware.test.mjs` 4 项 + `test/http.test.mjs` 5 项）。**错误气泡与 session_id**（ASR 失败 alert、LLM 失败 alert + 兜底语音、下行业务消息带 session_id，`test/turn-guard.test.mjs` 3 项）。**设备工具可见性**（`DeviceMcpClient.catalog()` 只读目录、`GET /devices/tools` 在线/离线/参数校验，`test/device-mcp.test.mjs` + `test/http.test.mjs`）。
 
 **不接手表也能做的三种探针**：
 
@@ -152,12 +163,14 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 | 智能体页点「+ 新建」后整页白屏 | 控制台没弹错误，页面直接空白；`crash.log` 无新记录（React 19 卸载根树不抛 window error） | `src/client/agents/AgentConfigDialog.js` 用了 `toolLabel` 却没从 `core.js` 导入。配置弹窗一打开就提前构造「扩展能力」页签，`toolLabel(tool.name)` 抛 ReferenceError → React 卸载整棵树。已修：补 import；`npm run smoke` 的 `AgentConfigDialog` 改成非空 `tools`（空数组会把 `map` 里的调用短路掉，正是这次漏检的原因） |
 | 服务商编辑弹窗里「模型」下拉显示「未选择」，已保存的模型看起来丢了 | 编辑一条备用 LLM，模型触发器是「未选择」；直接保存后值其实还在（`draft.model` 没变） | `ModelField` 只在厂商 `/models` 返回的 `options` 里找当前值。厂商清单没包含该 id（模型下线 / 手填自定义 id / 接口只返回一部分）时，`PillSelect` 回退到 `selectPlaceholder`（未选择）。2026-11-08 修：`ModelField` 把当前值补进选项（同 `AgentConfigDialog` 音色的做法）；`PillSelect` 新增 `placeholder`，空值显示描述符 `modelHint`（DeepSeek = `deepseek-chat`）而不是「未选择」；`npm run check:ui` 用「清单故意不含 `gpt-4o-mini`」回归 |
 | 新设备一直连不上，OTA 返回 `403 device-pending` | 控制台「智能体」页顶部出现待审核卡片；`pending.json` 有该 MAC | 默认 `autoProvision: false`，陌生设备要先在控制台选智能体并批准；批准后设备下一次 OTA/WS 才放行。不是固件故障，也不需要激活码 |
+| 配了 DeepSeek 语音后：说话没反应 / 没声音 | `voice.log` 里 `deepseek.asr.error` 或 `deepseek.tts.error 400` | 适配器自身保证音频 ≤120s / ≤8 MiB、WAV 采样率落在官方 7 档内，正常链路不会触发 413——若仍出现，多半是服务端按「整个请求体」限长或接口行为变了；TTS 400 = 文本未通过内容审核（`Content Exists Risk`）或没有可朗读文本。`429` = 账号并发超限（每账号最多 50 个在途请求） |
+| 手表每次开机都连 `xiaozhi.me` / 插件收不到 OTA | 手表串口 `Ota: mDNS: no _xiaozhi._tcp service on this LAN`，随后 `Checking version at https://api.tenclass.net/...`；PC 上单独发 PTR 查询**能**收到应答 | 插件只对 `QU=1` 的查询单播，esp-idf 发的是 `QU=0`；只发 multicast 时出口从 VMware `192.168.10.1` 出去，手表收不到。2026-11-14 修：应答一律单播给查询方 + 同网段补 multicast（`src/mdns.js` 的 `send()`） |
 
 ## 八、当前的边界和未定项
 
 - 判停有两套模式并存（`device` / `energy`），`energy` 只服务不发 `listen stop` 的老固件；两套语义在同一份配置里，读配置时容易混。
 - 能量 VAD 的 `minSpeechMs` / `vadThreshold` 不是原厂值，原厂是神经 VAD，数值不可直接搬（技术债 TD-6）。
-- mDNS 依赖局域网多播；有些路由器/访客网络会隔离，那种情况下设备会落到云端。
+- mDNS 依赖局域网多播；有些路由器/访客网络会隔离，那种情况下设备会落到云端。同机虚拟网卡（VMware/TUN）会让 multicast 出口走错网卡，所以**应答单播是主路径、multicast 只是补充**（2026-11-14）。
 - 全局设置与智能体配置都是**下次连接**生效，没有热更新通道。
 - 智能体级"选 Harness 厂商就用 Harness 模型"的自动切换已在 2026-11-07 删除：`src/device-config.js` 现在只让智能体覆盖模型名，provider / Key / 端点一律由全局设置决定；`host` 只能由全局 `voice.llm.provider` 显式选择。`/agents/update` 仍接受 `hostProvider`（只校验是不是当前 profile 已注册的厂商），但它**不参与运行时装配**，属于历史字段。
 - 联网工具（2026-11-07 起）：`web_search` 固定 `need_content: true`，回传每条结果的正文摘录（单条 ≤900 字、整批 ≤3800 字）；`web_fetch`（DeepSeek Fetch，Markdown 正文 ≤3500 字）。两者都用 DeepSeek Key（LLM 主用不是 DeepSeek 时自动从备用链找），Key 用运行时 getter，保存即生效；没 Key 时 `web_search` 退回 Harness `ctx.web.search`，`web_fetch` 明确报不可用。
@@ -176,12 +189,38 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   （契约仍是「只测已保存的配置」，只是把两步合成一次点击）；已自动保存时直接测。
 - 弹窗尺寸（2026-11-08 修）：控制台 4 个弹窗**一律固定外框**、只有内部区域滚动，不要再退回「max-height + 内容撑开」（父层 `align-items:center`，高度一变标题与页签就上下跳）：智能体配置 `.xz-config-modal` 720×600（页签条固定，只有 `.xz-pane` 滚动）、历史对话 `.xz-history-modal` 920×720、服务商编辑 `.xz-modal-lg` 560×460（表单区滚动）、播报测试 `.xz-inject-modal` 520×320。高度统一写 `height:min(Xpx,86~88vh)` 兜底小视口；切页签 / 换厂商 / 消息增减都不得改变外框尺寸。**例外**：设备管理 `.xz-devices-modal` 用 `max-height:min(560px,86vh)` + 内容自适应高度（2026-11-09 修，设备少时不留大片空白），只有 `.xz-modal-body` 滚动。
 - **设备封禁已删除（2026-11-09）**：设备只是智能体的麦克风/扬声器，封禁没有实际价值；已从 `devices.json` 字段、`DeviceStore.setBlocked`、OTA/WS 的 403 校验、控制台按钮、`/devices/block` 路由和 i18n 全部移除。旧 `devices.json` 里的 `blocked` 字段在加载时被忽略，不再拦截设备。
-- **智能体卡片内联改名（2026-11-09）**：输入框用 `.xz-devcard-rename`（28px 高、最多 220px 宽），不再沿用表单 `.xz-input` 的 36px 高度，避免点名字改名时卡片被撑高、整页布局跳动。
+- **智能体卡片改版（2026-11-13）**：卡片 = 名字首字徽标（渐变方块）+ 名字/状态徽标（**未绑定** / 在线 / 离线）
+  + 右上 `⋯` 浮层菜单（播报 / 重命名 / 删除智能体；相对卡片绝对定位，点空白或 Esc 关闭），中间三格信息
+  （**角色** = 人设命中的角色模板名、没命中显示「自定义」；**模型**；**最近对话**），底部三按钮
+  **配置 / 历史 / 设备 (N)**。取舍：设备明细不再铺在卡片里（都进「设备 (N)」弹窗），播报从常驻按钮挪进 `⋯`，
+  操作条固定三格。改名仍是点名字就地编辑（`.xz-agent-rename`，28px 高、最多 220px 宽，不撑高卡片）；
+  状态点换成文字徽标（`.xz-agent-chip` 的 warn/ok 两态）；动作小图标是内联 SVG（`ACTION_PATHS`），不引图标库。
+  **删除改成确认弹窗（2026-11-13 用户要求）**：`⋯` → 「删除智能体」直接弹 `.xz-modal.xz-confirm-modal`
+  （标题 + 「确定删除“<名字>”吗？…」+ 取消 / 红色删除），不再「再次点击删除」——菜单点一次就关，
+  要求用户重开菜单再点一次既绕又容易误删。弹窗是 AgentsView 内、`.xz-card` 之外的兄弟节点，
+  所以 `position:fixed` 的遮罩不会被 card 的 `backdrop-filter` 改变包含块。
+  **菜单定位踩过的坑（2026-11-13 实测修）**：一开始用 `position:fixed` + 视口坐标，结果菜单整体偏移、
+  还被卡片裁掉——因为卡片外层 `.xz-card` 有 `backdrop-filter`（会成为 fixed 的包含块），`.xz-agent-card` 的
+  `overflow:hidden` 又把菜单裁在卡片边界。现在改成 **相对卡片定位**：菜单 inline `position:absolute`，
+  坐标由 `getBoundingClientRect()` 换算成「相对卡片」的 `top`/`right`（按钮底 + 6 / 卡片右 − 按钮右），
+  下方空间不足 150px 时向上翻成 `bottom`；`.xz-agent-card` 去掉 `overflow:hidden`、底部圆角交给 
+  `.xz-agent-actions`。回归守卫 `npm run check:card`（`scripts/check-agent-card.mjs`，jsdom）：断言这两个根因不许回来
+  （`.xz-agent-card` 无 `overflow:hidden`、`.xz-agent-menu` 必须是 `absolute`）+ 点开/关闭/重命名入口。**不要再改回 fixed。**
 - **智能体重名拦截（2026-11-09）**：`AgentStore.create/update` 用 `assertNameAvailable` 做 trim 后的精确比较，重名抛 `duplicate-name`（HTTP 400）；改名时排除自己。控制台 `callApi` 带 `error.code`，`AgentsView` 把 `duplicate-name` 映射成 `agentNameDuplicate` 提示；新建默认名也改为找未占用的「智能体 N」，避免自动创建撞名。
 - **扩展能力卡片（2026-11-09）**：`.xz-capability-name` 占满剩余宽度并单行省略，`.xz-capability .xz-switch` 固定 `margin-left:auto`，所以标签长短不会把开关顶到不同位置；`CapabilitiesView` 复用同一套 class，规则对它同样生效。
 - **字体（2026-11-09 修，用户点名）**：中文**只许**走 `--xz-font`（`-apple-system…"Segoe UI","Noto Sans SC","Microsoft YaHei UI","Microsoft YaHei",sans-serif`，本机实测落到 **Noto Sans SC**）；等宽**只给 ASCII**（MAC / IP / URL / JSON），统一用 `--xz-font-mono`（`ui-monospace…Consolas,"Noto Sans Mono CJK SC","Noto Sans SC","Microsoft YaHei",monospace`），这样即使等宽元素里混进中文也不会掉进宋体。**两个已踩的坑**：① 智能体卡片的设备行原本是 `.xz-devcard-mac{font-family:ui-monospace,monospace}`，于是空态「还没有绑定设备」和「1. 手表 ●」实际渲染成 **NSimSun（新宋体）**——已拆成 `.xz-devcard-devices`（sans、12px、`--xz-text-2`、行高 1.8），`AgentsView` 只有这一处用过旧类；② **这台机器的浏览器把 `sans-serif` 映射成 SimSun**，所以任何「继承裸 `sans-serif`」的文字都会变宋体：设备弹窗的 `.xz-hint`（「没有其他设备」）自己没有字体声明，就中招了——已加 `.xz-hint{font-family:var(--xz-font)}`，弹窗内 `.xz-modal-body .xz-hint` 统一 12px / `--xz-text-2` / 行高 1.5。复现方式（实测）：把浏览器字体预设 `sansserif` 改成 SimSun，旧栈 → `Segoe UI + SimSun`，新栈 → `Noto Sans SC`，裸 `sans-serif` → SimSun。回归守卫 `npm run check:fonts`（`scripts/check-fonts.mjs`，真浏览器 + CDP，需要 Edge/Chrome，可 `CHROME_PATH` 指定）**故意把 `sans-serif` 预设改成 SimSun 再跑**：断言「任何探针都不是宋/明体族 + 空态/设备行/弹窗提示/等宽里的中文与正文同字体 + MAC 仍是等宽」，漏一个就 exit 1（两种回归都注入验证过）。
 - **待审核设备（2026-11-09）**：`autoProvision: false`（默认）时，陌生 OTA/WS 请求不再直接建档，而是 `src/pending.js` 的 `PendingStore` 写入 `~/.dsh-xiaozhi/pending.json`，返回 `403 device-pending`。控制台「智能体」页顶部显示「待审核设备」，每行可选一个智能体后「批准」（`POST /pending/approve`，`agentId` 为空则自动新建），或「拒绝」（`POST /pending/reject`）。批准后 `DeviceStore.ensureDevice` 建档并 `setAgentId`，设备下一次 OTA/WS 即通过；`GET /state` 带 `pending` 数组，`GET /pending` 单独可查。`autoProvision: true` 恢复旧的零接触自动登记。批准后设备下一次请求才放行；若手表停在错误页，重启/重新唤醒一次。**UI 注意**：待审核卡用 `.xz-pending-card` 关掉 `backdrop-filter`——卡片一旦有毛玻璃就会成为 `PillSelect` 的 fixed 包含块，把下拉菜单裁在卡片底边（2026-11-09 实测只显示一个智能体）。
 - **TTS 归属（2026-11-08）**：全局设置 → TTS 合成只配「厂商 + 凭据」（volc = API Key；xunfei = APPID/APIKey/APISecret；edge 免密钥），不配音色 / 模型 / Resource ID / API URL——全局保存时这三项显式清空。音色（= TTS 模型族）只在「智能体 → 配置 → 角色」按智能体选，首项「默认音色」= 不覆盖，留空 = 厂商默认（`src/voice/voices.js` 的 `DEFAULT_TTS_VOICES`：火山 `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan`）；`resolveTtsVoice` 负责空音色→厂商默认、跨厂商残留→回落本厂商默认、自定义 ID 原样保留。智能体级音色只覆盖主用，备用 TTS 条目只存凭据、运行时用各自厂商默认音色。**输出语种同样只在智能体「角色」页**（全局设置里的那一项已删除，2026-11-08），同一智能体的设备共用；`cordis.patch.yml` 的 `voice.tts.language` 仅作服务端兜底。
+  **TTS = 服务商池 + 智能体级选择（2026-11-14 定稿）**：全局 TTS **不再分主用/备用、不排序**，只是一个
+  平铺的「已配置服务商」清单（添加/编辑/删除；第一行仍是「智能体没选时的默认」，但不叫主用）。
+  用哪家、哪个音色在「智能体 → 配置 → 角色」选（`overrides.ttsProvider` + `overrides.voice`）；其余已配置
+  服务商自动按列表顺序做降级。运行时由 `prioritizeTtsProvider()` 在**条目层**重排：把该厂商条目的整套
+  凭据提为首选、原默认整套降为备用（只改 `provider` 字段会变成「厂商对、Key 是别家的」）。保存边界
+  校验厂商确已配置（400 `invalid-tts-provider`），换服务商时前端把音色重置为默认，避免跨厂商残留。
+  LLM / ASR 仍是「主用 + 备用 + 上移/下移/设为主用」的旧形态，不要顺手改掉。
+  服务商池的**视觉**：一张白卡里排「首字徽标 + 名称/密钥 + 文字链（编辑/测试/删除）」，
+  不用三颗描边按钮；TTS 弹窗带 `is-pool` 类，高度随内容收缩（`height:auto;max-height:min(640px,88vh)`），
+  避免几行下面一大片空白；池内不再渲染第二行 `ttsVoicePerDevice` 提示（顶部 `xz-pool-hint` 已覆盖）。
 - **设备侧 MCP / IoT（2026-11-08 首阶段）**：`src/voice/device-mcp.js` 在 hello 的
   `features.mcp===true` 后发 `{type:'mcp',payload:{jsonrpc,id,method}}`（initialize id=1、
   tools/list id=2、tools/call 从 3 起），工具名按官方 `sanitize_tool_name` 清洗并映射回原名；
@@ -244,11 +283,13 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   播放前先用 TTS 说「正在为您播放《…》」，文件帧与 TTS 共用同一条 player/`tts stop` 收尾。
   目录不存在时**不注册**；单曲上限 300 秒。`test/music.test.mjs` 用 ffmpeg 解码一段生成的 WAV
   验证 PCM 通道（真实手表播放未实测）。
-- **音色列表来源（2026-11-08）**：`GET /voices?provider=volc&resourceId=...` 在火山 TTS 主用配置了
-  `appId`（AccessKey ID）/ `apiSecret`（SecretAccessKey）时调官方 **`ListSpeakers`**（AK/SK HMAC 签名，
-  `src/voice/volc-sign.js` + `src/voice/volc-speakers.js`，分页 + 10 分钟缓存）；没配或调用失败时回
-  `src/voice/voices.js` 的内置清单，响应带 `source:'catalog'`（失败还带 `error`），前端在音色下拉下标注。
-  AK/SK 只用于拉列表，**合成仍用 `apiKey`**；签名按官方 GET/POST 向量单测，真实 AK/SK 线上调用未实测。
+- **音色列表来源（2026-11-13 定稿：只有内置清单）**：`GET /voices?provider=…` 直接回
+  `src/voice/voices.js` 的 `VOICE_OPTIONS`（2026-11-14 按各家官方清单重建：火山 241 = 2.0 146 + 1.x 95 / Edge 14 / 讯飞 11 / 百智云 10 / DeepSeek 2），`source:'catalog'`；
+  前端再按资源族过滤（`voicesForResource`，1.x/2.0 混选会 55000000）。
+  **官方 `ListSpeakers` 已整段删除**（`volc-sign.js` / `volc-speakers.js` 与两个测试一起删）：它要的是
+  AccessKey（`AKLT…`），与语音控制台 10 位数字 **AppID**、以及合成用的 `X-Api-Key` 是三套不同的凭据；
+  把 AppID 填进 AK 字段只会得到网关错误 `InvalidClientTokenId 100009 / The security token[...] is invalid`。
+  **不要再加回来**，除非同时解决「AK / AppID / API Key 三者的字段区分」。
 - **ASR/TTS 表单必填项（2026-11-08 核对官方鉴权）**：火山新版控制台 TTS/ASR 只需 **`X-Api-Key` +
   `X-Api-Resource-Id`**（TTS 默认 `seed-tts-2.0`、ASR 默认 `volc.seedasr.sauc.duration`），不需要
   APPID/AccessKey；讯飞 = **APPID + APIKey + APISecret**（三者都必填）；Edge / 本地 SenseVoice 免密钥。
@@ -258,6 +299,68 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 - **死代码**：`src/client/views/CapabilitiesView.js`（原独立「能力」页）仍存在但**已无渲染点**，`navCapabilities` 文案同样未接（页签已并入「智能体 → 配置 → 扩展能力」）。按"未接入模块不默认删"处理：保留原状并登记为待评估，清理要单独确认。
 - 手表固件当前的本地改动：设备端判停（`application.cc/h`）、OTA 候选顺序 + mDNS（`ota.cc/h`、`Kconfig.projbuild`、`idf_component.yml` 里的 `espressif/mdns` 依赖）、以及 `sdkconfig` 里的 `CONFIG_OTA_URL_LAN`（已置空）。
 - DSH 自己每次重启会换 GUI 端口，但设备入口始终是 8989；控制 API 前缀跟着插件配置走，不跟着 GUI 端口走。
+- **表情跟随（2026-11-14）**：设备端 21 张表情图（`custom/emoji/chibi-maid_240/*.png`，名字与
+  `noto_emoji.h` 的规范名一致）本来就支持服务端下发情绪，缺的是我们不发。现在按原服务端的做法补上：
+  ① 系统提示词（`index.js` 的 `SHORT_REPLY_RULE`）要求**每条回复第一个字符**是 21 个之一的表情符号；
+  ② `src/voice/emotion.js` 的 `EmotionFilter` 在流式文本里取出开头 emoji（能接住被 SSE 拆成
+  `\uD83D` / `\uDE42` 两半的 emoji），映射成规范名，并把正文里的 emoji 全部清掉（不进 TTS、不进历史）；
+  ③ `src/voice/session.js` 的 `#answer` 每轮只在第一次识别到时 `sendJson({type:'llm',emotion})`，
+  固件 `application.cc` 的 `llm` 分支收到后 `SetEmotion()`，表情和 TTS 一起出来；
+  ④ 模型没按约定开头时**不发** emotion（设备保持当前表情），不做关键词猜测；trace 记 `emotion.send`。
+  生效：改代码重启 DSH，改提示词只影响下一轮。验收：`test/emotion.test.mjs` 6 项 + `voice.log` 的 `emotion.send` + 手表屏幕表情。
+- **空回合后继续捕获（2026-11-15 实测修）**：设备判停模式下，设备发完 `listen stop` 仍停在
+  Listening，**不一定重发 `listen start`**；旧逻辑在这个空回合（或 ASR 失败）后把 `capturing`
+  关掉，用户接着说的话被整段丢弃，表现成「有时候说话触发不了」。现在 `#resumeCaptureAfterEmpty()`
+  在空回合/ASR 失败后重新开捕获（trace `capture.reopen`）。注意：**正常回答**之后不要这样做——
+  那时设备会进 Speaking，继续捕获会把 TTS 回声喂给 ASR。
+  实测证据：12.6s 的采集里前 10s 是 -60dB 底噪、末尾几处敲击声，DeepSeek ASR 返回空（`duration 0`）；
+  这是**音频里确实没有语音**，不是阈值被调高。
+- **工具提示与失败兜底（2026-11-15）**：① 每次工具调用前发 `{type:'tts',state:'sentence_start',text:'% <工具名>'}`，
+  固件 `application.cc` 的 `ToolCallNoticeLabel` 会把它转成「联网搜索中... / 调音量中...」的系统气泡（不朗读）；
+  trace 记 `tool.notice`。② 工具抛错（参数缺 `query`、超时等）不再让整轮哑掉：错误作为 `role:"tool"` 回灌给模型，
+  下一轮它可以改参数或换说法，trace 记 `tool.error`。③ 模型只回一个 emoji（或被过滤后没有正文）时用
+  「嗯？我在呢，你再说一遍？」兜底，trace 记 `llm.empty`；LLM 抛异常时也播一句「抱歉，我这边出了点问题…」。
+  回归：`test/turn-guard.test.mjs` 8 项。生效：重启 DSH（服务端改动，固件不动）。
+- **唤醒开场白 + 播放中打断（2026-11-15）**：① 固件唤醒后本来就会发
+  `{type:"listen", state:"detect", text:<唤醒词>}`（`application.cc` 的
+  `SendWakeWordDetected`，Kconfig `SEND_WAKE_WORD_DATA` 默认 y）；原服务端把它当用户
+  第一句话直接回答。现在 `session.js` 的 `handleListen` 收到 detect 且有 text 就
+  `#answer(text)` 回一句开场白，不需要用户说唤醒词后再说第二句；开场白期间设备补发的
+  `listen start` 记为 `pendingListenStart` 并压下（trace `listen.start.skipped`），
+  结束后再开 ASR，避免把 TTS 回声当用户说话。② 播放/思考中插话：VAD 判到说话会
+  `#interrupt(barge-in)`，现在同时把 `capturing` 置 true 并立刻开 ASR 流——旧逻辑
+  只开流不开捕获，打断后的音频会被 `#onPcm` 丢掉（表现成「它说话时我说不进去」）。
+- **TTS 流式下发（2026-11-16）**：以前 `#speakSentence` 等整句 TTS 收齐再 `encodeSpeech`，
+  首包 = 整句合成时间（实测 Edge 1.28–1.50s，是端到端预算主要项）。现在：① `codec.js`
+  新增 `createOpusStreamEncoder`（一句一个 ffmpeg，`-page_duration 60000` + `-flush_packets 1`，
+  否则 Ogg 页默认攒 1s 才吐）；② `ogg.js` 新增 `createOggOpusStreamDemuxer`（跨页/任意字节切分的
+  增量解复用）；③ `session.js` 的 `#speakSentenceStreaming` 在第一个 Opus 包到达时才发
+  `sentence_start`，边收边入队；④ `adapters/failover.js` 的 TTS 从「整句缓冲」改成「流式放行、
+  首包前可换家」——已出过音频再换家会重念半句，所以带 `dshNoSwitch` 直接抛给会话层（与 LLM 契约一致）。
+  没有 `createStreamEncoder` 的注入/测试仍走旧的整句路径。trace：`tts.stream.first` /
+  `tts.stream.done` / `tts.stream_error`。实测（本地，真实 ffmpeg + 20ms/包的模拟 TTS）：首帧 254ms。
+- **OTA 固件升级通道（2026-11-16）**：① `src/firmware.js` 管 `~/.dsh-xiaozhi/firmware/`（`index.json`
+  + 一个现役 `.bin`，上限 16 MiB，只保留最新一份；非法名/路径穿越在仓库层拒绝）。② 控制台上传
+  `POST /firmware/upload`（原始二进制体，`x-firmware-name` / `x-firmware-version` 头，CSRF），
+  带版本号时顺手写进 `settings.firmware.version`；`GET /firmware` 返回文件信息与各设备当前版本；
+  `POST /firmware/remove` 删除。③ 设备面 `GET /firmware/<name>` 返回 `application/octet-stream`；
+  OTA 响应的 `firmware.url` 按请求 `Host` 拼绝对地址（换网段不用改配置）。④ `handleOta` 会读请求体
+  `application.version` 写进设备名册（头里通常没有），没有升级包时版本回落为设备当前版本/0.0.0，
+  避免「提示有新版本但 URL 为空」的升级失败。⑤ **`force` 必须发数字 `1/0`**：固件 ota.cc 用
+  `cJSON_IsNumber(force) && valueint == 1` 判定，JSON 布尔 `true` 会被忽略。
+  验证：`test/firmware.test.mjs` + `test/http.test.mjs` 的 OTA/上传/下载/force 用例；真机升级流程未实测。
+- **错误气泡 + session_id（2026-11-16）**：① ASR / LLM / TTS 失败不再发 `stt {text:''}`（固件会按用户
+  消息建一个空气泡），改发 `{type:'alert', status, message, emotion}`——固件 `application.cc` 的
+  `Alert()` 会显示系统气泡 + 表情 + 状态栏文字（不是朗读内容）。ASR 失败后照旧重开捕获
+  （`#resumeCaptureAfterEmpty`），TTS 失败每轮只提示一次。② `VoiceSession` 的 sink 给所有下行 JSON
+  自动补 `session_id`（值 = hello 里下发的会话 id）；测试里没传 `sessionId` 的会话不加，避免旧断言
+  被迫改写。回归：`test/turn-guard.test.mjs` 3 项。
+- **设备工具可见性（2026-11-16）**：设备侧 MCP 工具以前只在 LLM 工具表里，控制台看不到。现在
+  `DeviceMcpClient.catalog()` 暴露只读目录（清洗后的 `name` / `originalName` / `description` /
+  `parameters`），`VoiceSession.deviceTools()` 返回 `{ ready, tools }`；控制台 `GET /devices/tools?deviceId=`
+  按需拿在线会话的目录（离线返回 `online:false` + 空数组，缺 `deviceId` 400、未知设备 404）。
+  「管理设备」弹窗每台绑定设备多一个「设备工具 ▼」按钮，展开显示 MCP 上报的工具；执行仍走
+  `callTool` 的原始名映射，目录不参与执行。真机工具列表未实测（依赖设备在线完成 MCP 握手）。
 
 ## 九、多服务商冗余（2026-11-06）
 
@@ -275,7 +378,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 | 环节 | 位置 |
 |---|---|
 | 数据与掩码 | `src/settings.js`：`BACKUP_SPEC` / `normalizeBackups` / `publicBackups`，逐条「留空=保留」按 id + provider |
-| 控制 API | `src/control.js`：`POST /test/provider`（`{kind, source, index}`，只测已保存配置） |
+| 控制 API | `src/control.js`：`POST /test/provider`（`{kind, source, index}`，只测已保存配置）、`POST /settings/provider/promote`（`{kind, index}`，主用 ⇄ 备用互换，2026-11-14）、`POST /settings/provider/remove`（`{kind, index}`，扁平列表下标；删第一行时下一条连同凭据顶上，TTS 池用，2026-11-14） |
 | 运行时装配 | `index.js`：`applyRuntimeSettings()` 下发 `backups`，`createVoiceAdapters(...)` 建候选链，缓存 key 覆盖三段全量配置 |
 | 候选链 | `src/voice/adapters/failover.js` + `adapters/index.js`：构建失败跳过、主用坏时备用顶上、全部失败才抛主用原始错误 |
 | 控制台 | `src/client/settings/ConfigWizard.js`（三张概览卡 + `xz-stage-modal`）、`ProviderSection.js`（主用卡 + 备用纵向列表 + 添加行）、`ProviderDialog.js`（主用/备用共用的编辑弹窗）、`src/client/ui/PillSelect.js`（分组/禁用行/徽标） |
@@ -287,8 +390,8 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
    `GET /providers` 拿这份数据（client.js 里也打包一份首屏兜底），`settings.js` 的
    `BACKUP_SPEC.providers` 由 `allProvidersForStage()` 自动派生——**加厂商不再需要改前端、
    也不需要改 `BACKUP_SPEC`**。当前控制台列出：LLM = **DSH 已配置**（`host`，复用 DSH profile 里已配置的厂商+凭据，
-   免密钥）/ DeepSeek / 小米 MiMo（2026-11-09 移除 OpenAI / 火山 / 星火；火山与讯飞仍保留 TTS/ASR）；TTS = 火山引擎豆包 / 讯飞语音合成 / 百智云语音合成 / 微软 Edge（免密钥）；
-   ASR = 火山引擎豆包 / 讯飞语音听写 / 百智云语音识别 / 本地 SenseVoice（免密钥，Harness 内置识别）。
+   免密钥）/ DeepSeek / 小米 MiMo（2026-11-09 移除 OpenAI / 火山 / 星火；火山与讯飞仍保留 TTS/ASR）；TTS = 火山引擎豆包 / 讯飞语音合成 / 百智云语音合成 / DeepSeek 语音合成 / 微软 Edge（免密钥）；
+   ASR = 火山引擎豆包 / 讯飞语音听写 / 百智云语音识别 / DeepSeek 语音识别 / 本地 SenseVoice（免密钥，Harness 内置识别）。
    `mock` 不列出（`host` **列出**，它是 LLM 段的可选来源）；`funasr` 标 `hidden`（存储白名单保留、控制台不展示）。
    **小米 MiMo 的认证头是 `api-key`，不是 Bearer**；语音场景默认
    `thinking:{type:'disabled'}`；**模型清单从厂商 `GET /v1/models` 实时拉取，代码不内置任何模型 id**（控制台选不到时手填）。
@@ -304,7 +407,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
    `hostProvider` 是否在当前 profile 注册**（`hostProviderIssue`），坏值直接 400——否则会先落盘、等用户说完
    第一句话才以 `no adapter registered` 失败，表现为「设备一直聆听中」。直连（deepseek/mimo + 自带 Key）
    保留，用于额度分流或 DSH 厂商不可用时回退；`STAGE_META.llm.storageFields` 因此多了 `hostProvider`。
-1. **切换粒度不同**：LLM 只在未出字前切；TTS 每句话整句重缓冲重试；ASR 在整段结束时回放 PCM
+1. **切换粒度不同**：LLM 只在未出字前切；TTS 只在首包前切（出过音频后不换家，避免重念半句）；ASR 在整段结束时回放 PCM
    重试（缓存上限 60s，回放不推 partial）。主动打断不算失败。
 2. **粘性**：切到备用并成功后先继续用它，`cooldownMs`（默认 5 分钟）后才重新先试主用；
    每个会话的 adapter 实例各有一份，配置改动仍是下一次连接生效。
@@ -362,10 +465,67 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
       （会话下行固定 24k，直接透传）。首帧延迟 = 整句合成时间（不是流式），这是选 HTTP 而不是 WSS 实时合成的代价。
     - **语速**只对音色目录里声明 `speed: true` 的音色下发（`voiceSupportsSpeed`）：服务端对不支持 speed 的音色
       回 `invalid_request` 且整句没声，所以未知/自定义音色一律不带 speed。
-    - **音色**：`VOICE_OPTIONS.baizhi = vivi / xiaohe`，默认 `vivi`（`DEFAULT_TTS_VOICES`）；控制台「智能体 →
-      配置 → 角色」的音色下拉走 `GET /voices?provider=baizhi`（内置清单，无官方接口）。
+    - **音色**：`VOICE_OPTIONS.baizhi` = 官方 `GET /openapi/v1/voices?type=tts` 的 10 个（微澜/若禾/知夏/逸飞/
+      清歌/苏晴/朗天/砚舟/景舟/梓辰，全部 `supports_speed_control`），默认 `vivi`（`DEFAULT_TTS_VOICES`）；控制台「智能体 →
+      配置 → 角色」的音色下拉走 `GET /voices?provider=baizhi`（内置清单；官方接口只在人工核对时用）。
     - **未实测**：协议与节奏由 `test/baizhi.test.mjs`（本地假服务端）覆盖；**真实 Key 的合成/识别没有跑过**。
       文件转写（`POST /audio` 异步任务）、`/pricing` 计费查询、WSS 实时合成都没有接入。
+15. **主用 ⇄ 备用随时互换（2026-11-14）**：用户要求「我可以随时替换」。备用行 `⋯` 的第一条是
+    「设为主用」：这条上来当主用、原主用**按原位置**降为备用（顺序不变）。实现分两层：
+    - `src/settings.js` 的 `SettingsStore.promote(stage, index)`：在内存里 `structuredClone` 后整段互换，
+      只搬 `BACKUP_SPEC[stage]` 声明的字段（`llm.maxTokens` 这类全局项留在主用）；降级的主用拿**新 id**；
+      主用从未配置过（`provider` 为空）时不生成空壳条目。校验通过才替换状态并落盘（失败不留半份配置）。
+    - `src/control.js` 的 `POST /settings/provider/promote`（`{kind,index}`，CSRF）：**必须在服务端做**——
+      备用条目在浏览器里只有掩码，前端把它当主用提交会把 `sk-••••ab` 存成密钥；服务端互换则明文不过 HTTP。
+      `provider: 'host'` 的备用提升前走同一套 `hostProviderIssue` 校验（坏值 400 `invalid-host-provider`）。
+    - 控制台：`ProviderSection` 菜单加「设为主用」，主用卡加一行灰字提示；`ConfigWizard.promoteBackup`
+      在本地 dirty 时先 `save()` 再调用（否则换的是磁盘上的旧配置），成功后用响应快照覆盖本地并清掉该段的
+      主用测试结果。回归：`test/settings.test.mjs` 3 项 + `npm run check:ui`（断言点击后 POST 到 promote）。
+16. **官方音色目录 + 智能体级 TTS 服务商（2026-11-14）**：用户要求「所有服务商的音色都能在智能体页面直接下拉选」。
+    音色目录**逐家按官方清单重建**（不靠记忆，见 `src/voice/voices.js` 顶部表格）：
+    - 火山 2.0：官方音色列表（`docs.volcengine.com/docs/doubao-voice/tone-list-3`，2026.11.06 更新）的
+      全部 zh/en `*_uranus_bigtts`（146 条，`languages`/方言逐字取官方「语种/方言」列）；1.x 的 95 条保留
+      作 legacy（需 `seed-tts-1.0`）。**官方 2.0 表里没有的旧条目（saturn 系）已删除**——没有官方依据的
+      id 选中就是 55000000（有字没声）。
+    - Edge：官方 readaloud `voices/list` 实时抓取，中文 14 条（含东北话/陕西话/粤语/台湾国语）。
+    - 百智云：官方 `GET /openapi/v1/voices?type=tts` 实时查询，10 条（全部支持语速）。
+    - DeepSeek：官方文档固定 stella / tide（2 条，无语种/语速参数）；讯飞保持官方 vcn 11 条（官方无列表
+      接口，账号需在控制台开通，否则 11200）。
+    - `voiceTierOf()` 对目录外的自定义 id 保留命名规则兜底（uranus/saturn → 2.0，moon/mars/jupiter/multi → 1.x），
+      只为资源族过滤，**不代表该 id 一定有效**。
+    全局 TTS = **服务商池**：`ProviderSection` 的 `pool` 模式只渲染平铺列表（无主用卡、无序号、无上移/下移/
+    设为主用），底部「添加服务商」；删第一行走 `POST /settings/provider/remove`（服务端把下一条连同凭据顶上），
+    删其余行只改本地列表（防抖自动保存）。LLM / ASR 仍走原来的主用 + 备用 + promote。
+    智能体级 TTS 服务商：`overrides.ttsProvider`（`/agents/update` 接受，空串删除），控制台「角色」页新增
+    「TTS 服务商」下拉（只列全局已配条目）+ 音色下拉（随所选厂商切换、换厂商重置音色）；运行时
+    `src/voice/adapters/index.js` 的 `prioritizeTtsProvider(ttsSpec, provider)` 在条目层重排候选链，
+    `index.js` 的 `adaptersFor` 在合并后调用；adapter 缓存 key 已含 agent overrides，改完设备重连即生效。
+    回归：`test/tts-provider-pin.test.mjs` 5 项 + `test/http.test.mjs`（未配置厂商 400 / 空串清除）+
+    `test/settings.test.mjs` 2 项（删第一行顶上 / 删最后一家清空）+ `npm run check:voice`（4 家清单、换厂商重置、
+    保存带 ttsProvider）+ `npm run check:ui`（TTS 池无主备、删除走服务端）。
+17. **DeepSeek 语音（2026-11-14）**：`id=deepseek`，在原有 LLM 段之外新增 **ASR + TTS** 两段，
+    三段共用同一把 API Key（DeepSeek 控制台）。端点在适配器里内置，描述符只声明「要填 Key」。
+    - **识别** `POST https://api.deepseek.com/v1/tools/asr`，代码 `src/voice/adapters/deepseek-asr.js`。
+      官方是**整段批处理**（不支持流式、没有中间结果）：适配器缓存上行 PCM，`finish()` 时封 16-bit
+      PCM WAV、以 `multipart/form-data` 的 `file` 字段一次上传，读回 `{request_id,text,duration_ms}`。
+      四条硬约束：① 只收 16-bit PCM WAV / Ogg Opus，WAV 采样率必须是 8000/16000/22050/24000/32000/
+      44100/48000——上行采样率不在其中时适配器先线性插值归一到 16k（否则整段 400）；② 单次 ≤120 秒、
+      ≤8 MiB，超了**截断到上限再传**并记 `deepseek.asr.request` 的 `truncated`；③ **没有语种参数**，
+      语种按音频自动识别（描述符不提供「识别语种」，智能体级 `language` 在这里被忽略）；④ 错误码
+      400/408/413/429/503/504 直接映射成中文原因，失败返回 `{text:'', error}`（failover 会换下一家）。
+    - **合成** `POST https://api.deepseek.com/v1/tools/tts`，代码 `src/voice/adapters/deepseek-tts.js`。
+      请求 `{text, voice_id, format:'wav', filter_markdown:true}`，响应是整段 `audio/wav`；WAV 头在
+      JS 里剥掉（`src/voice/wav.js` 的 `parseWav16`），**不需要 ffmpeg**。**音色只有 `stella`（海星，
+      默认）/ `tide`（暗潮）**，在「智能体 → 配置 → 角色」选；**没有语种参数**（按文本自动识别）、
+      **不支持调节语速**（`voice.speed` / `rate` 不下发）。上限：单次 10,000 个计费字符（汉字算 2，
+      `billedChars()` 在发请求前判定）+ 请求体 64 KiB；400 通常是内容审核（`Content Exists Risk`）。
+      官方明确「音频已开始返回后失败会中途断开」——`arrayBuffer()` 读不满即按失败处理，不拿半段音频当成功。
+    - **为什么不边下边播**：会话侧本来就把一整句 PCM 收齐才做 Opus 编码（`session.js` 的
+      `#speakSentence`），流式解析不会让首帧更早到设备，只会多一份失败面。首帧延迟 = 该句合成时间。
+    - **生效时机与验收**：控制台保存配置 → 设备重连即生效；改代码 → 重启 DSH。回归
+      `test/deepseek.test.mjs` 18 项（描述符/音色/WAV 编解码与下混/multipart 上传/采样率归一/
+      120s 与 8 MiB 截断（含写入期缓存上限）/空音频不发请求/abort 丢弃在途请求/200 缺 text 判失败/TTS 请求体与重采样/截断 WAV 判失败/计费字符口径/缺 Key）。
+      **未实测**：真实 Key 的识别与合成都没有跑过（协议由假 fetch 覆盖）。
 
 ## 十、智能体（agent）与设备绑定（2026-11-08）
 
@@ -397,13 +557,19 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 - **智能体「模型」字段**：`overrides.model` 只是 **LLM 模型名**覆盖（如 `deepseek-chat`），
   provider / Key / 端点仍由全局设置决定；下拉选项来自全局 LLM 已保存配置的 `/models`，拉不到则手填，
   空 = 全局默认（`settings.voice.llm.model`）。不是 TTS 音色，也不是「智能体类型」。
-- **设备矩阵 / 绑定语义（2026-11-09）**：正确模型是 **N 台设备 : 1 个智能体**——设备是智能体的麦克风/扬声器，多台设备绑到同一智能体就是不同区域的矩阵；一台设备同一时刻只属于一个智能体（`devices.agentId` 单值，移动绑定）。「设备(N)」弹窗把非本智能体设备标成「其他设备（可移入本智能体）」并显示 `当前：<智能体>`，按钮是「移入本智能体」，避免把「未绑定到本智能体」误读成「只能一对一」。**布局（2026-11-09 修）**：头部 `.xz-devices-head` 用 `flex:1;min-width:0` 的标题块 + 右上 `.xz-modal-close`（不再用会换行的 `.xz-row`）；弹窗高度随内容、`max-height:min(560px,86vh)`；其他设备行用 `.xz-device-row-inline` 单行展示，按钮靠右；页脚关闭按钮已去掉（右上角关闭即可）。设备名用 `.xz-device-rename` 透明内联输入（26px 高、按字数 88–180px、悬停/聚焦才显边框），不要用固定 180px 的表单输入框。不要改成设备↔智能体多对多，除非另做会话路由。
+- **设备矩阵 / 绑定语义（2026-11-09）**：正确模型是 **N 台设备 : 1 个智能体**——设备是智能体的麦克风/扬声器，多台设备绑到同一智能体就是不同区域的矩阵；一台设备同一时刻只属于一个智能体（`devices.agentId` 单值，移动绑定）。「设备(N)」弹窗把非本智能体设备标成「其他设备（可移入本智能体）」并显示 `当前：<智能体>`，按钮是「移入本智能体」——
+  **点它会先弹确认（2026-11-13 用户反馈「过于草率」）**：属于别家时正文写「从「甲」移入「小智」」并说明原智能体不再使用，
+  未绑定时写「绑定到「小智」」；取消不发请求，确认才 `POST /agents/bind`。回归 `npm run check:devices`。换个说法：避免把「未绑定到本智能体」误读成「只能一对一」。**删除设备入口已移除（2026-11-13 用户要求）**：设备行只留 OTA / 断开 / 解绑，`onDeviceAction` 的 `remove` 分支与 i18n `agentRemoveDevice` 一并删除；
+  后端 `POST /devices/remove` 仍在（脚本/API 用，`test/http.test.mjs` 覆盖），只是控制台不再暴露——误操作会连历史一起丢。
+  **布局（2026-11-09 修）**：头部 `.xz-devices-head` 用 `flex:1;min-width:0` 的标题块 + 右上 `.xz-modal-close`（不再用会换行的 `.xz-row`）；弹窗高度随内容、`max-height:min(560px,86vh)`；其他设备行用 `.xz-device-row-inline` 单行展示，按钮靠右；页脚关闭按钮已去掉（右上角关闭即可）。设备名用 `.xz-device-rename` 透明内联输入（26px 高、按字数 88–180px、悬停/聚焦才显边框），不要用固定 180px 的表单输入框。不要改成设备↔智能体多对多，除非另做会话路由。
 - **删智能体是级联删除**：绑定设备、它们的历史与记忆一起删（对齐参考 `deleteAgent`），
-  控制台做成二次确认（第一次点击变「再次点击删除」）。
-- 控制台：三个平级视图 **概览 / 智能体 / 全局设置**。卡片 = 智能体（名字/在线/绑定设备列表/音色/设备数/最近在线 +
-  配置/设备(N)/历史/播报/删除）；「设备(N)」弹窗里绑定/解绑、改设备别名、OTA/断开/删除设备；
+  控制台做成**确认弹窗**（2026-11-13：点「删除智能体」直接弹窗，标题 + 带名字的后果说明 + 取消/删除，
+  不再用「再次点击删除」——菜单每点一次都要重开，体验差且容易误删）。
+- 控制台：三个平级视图 **概览 / 智能体 / 全局设置**。卡片 = 智能体（徽标 + 名字/状态徽标 + `⋯` 菜单
+  [播报/重命名/删除智能体] + 角色·模型·最近对话三格 + 配置/历史/设备(N) 三按钮）；
+  「设备(N)」弹窗里绑定/解绑、改设备别名、OTA/断开（**没有删除设备入口**）；
   「播报」发给该智能体所有在线设备（一台都不在线时提示「这个智能体没有在线设备」）。
-- 验证：`node --test "test/*.test.mjs"`（254 项，含 `test/agents.test.mjs` 7 项）。
+- 验证：`node --test "test/*.test.mjs"`（294 项，含 `test/agents.test.mjs` 7 项、`test/deepseek.test.mjs` 18 项、主用/备用互换 3 项、智能体服务商/官方音色 6 项）。
 
 ## 十一、改代码时最容易漏的几处
 
@@ -430,7 +596,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
    `devices.json` 的 `agentId` 全为空 → 说明迁移还没跑（推测：正在跑的 DSH 仍是智能体改造前的实例，
    未直接验证进程内代码版本）；重启后 `adoptLegacyDevices` 会给每台旧设备各建一个智能体并复制记忆
    （幂等，重复重启不会重复建）。
-8. **改完的验收底线**：`node --test "test/*.test.mjs"` 254 项全绿 + `npm run build` 成功 + `npm run smoke` 通过 + `npm run check:ui` 通过 + `npm run check:fonts` 通过（只改了样式才必跑）+ `npm run check:role` 通过（只改了角色页才必跑）+ `node --check client.js` 通过 +
+8. **改完的验收底线**：`node --test "test/*.test.mjs"` 294 项全绿 + `npm run build` 成功 + `npm run smoke` 通过 + `npm run check:ui` 通过 + `npm run check:fonts` 通过（只改了样式才必跑）+ `npm run check:role` 通过（只改了角色页才必跑）+ `npm run check:card` 通过（只改了智能体卡片才必跑）+ `node --check client.js` 通过 +
    需要时 `curl http://127.0.0.1:8989/healthz` 看设备面是否还活着。
 
 ## 十二、文档地图
@@ -444,7 +610,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
 | `docs/backup-providers.md` | 主用 + 备用服务商的存储格式、`/test/provider`、failover 语义与验收 |
 | `docs/history.md` | 历史会话 / 消息 / 音频的数据布局、保留策略、控制 API、失败降级 |
 | `docs/pill-popover.md` | PillSelect 胶囊浮层规范（fixed 定位、视口 clamp、向上翻转、复用清单） |
-| `docs/voice-role-language.md` | 官方「角色 ↔ 音色 ↔ 语种」查证、101 条 volc 音色对照、已落地的改动 |
+| `docs/voice-role-language.md` | 官方「角色 ↔ 音色 ↔ 语种」查证、241 条 volc 音色对照（2026-11-14 按官方 2.0 表重建）、已落地的改动 |
 | `docs/config-diff-vs-official.md` | 与官方 `xiaozhi-esp32-server` 的配置逐项审计（含未确认项清单） |
 | `systemmap/overview.md` | 认知地图：入口点、数据模型、状态机、关键决策与原因（比本文更贴代码） |
 
@@ -461,7 +627,10 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   添加 → ⋯ 菜单 → 删除二次确认 → 模型回显 → 自动保存 → ASR 测试识别）；
   `npm run check:fonts`（`scripts/check-fonts.mjs`，真浏览器 + CDP 读实际命中的字体，防中文落回宋体）；
   `npm run check:role`（`scripts/check-role-preset.mjs`，jsdom 点「角色模板」下拉：选模板填充人设、
-  与 `test/fixtures/role-presets.json` 逐字比对、手改后回落「自定义」、无 i18n 缺键）。
+  与 `test/fixtures/role-presets.json` 逐字比对、手改后回落「自定义」、无 i18n 缺键）；
+  `npm run check:card`（`scripts/check-agent-card.mjs`，jsdom 点智能体卡片 `⋯` 菜单：相对卡片定位、Esc/点项关闭、
+  重命名入口；删除走确认弹窗（取消不删 / 确认发 `POST /agents/remove` 带 agentId）；并断言 `.xz-agent-card`
+  不再 `overflow:hidden`、`.xz-agent-menu` 必须是 `absolute`）。
 - **生效**：build 后刷新控制台；仍加载旧产物就重启 DSH（未实测 refresh 是否足够）。
 - **不要**：手改 `client.js`；组件里直接 `import react`（统一走 `src/client/react.js`）。
 - **加组件**：放 `src/client/{views,agents,settings}/`，从 `core.js` 取 `t` / `callApi` / 常量，

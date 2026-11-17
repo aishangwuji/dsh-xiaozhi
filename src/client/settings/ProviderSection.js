@@ -18,7 +18,10 @@ import { t, stageProviderLabel, stageDescriptor, backupKeyState, backupSummaryTe
 function ProviderSection({
   stage, primary, entries, providersDirty, primaryTest, testingPrimary,
   testResults, testingId, confirmDelete,
-  onEditPrimary, onAdd, onEdit, onMove, onDelete, onTest, onTestPrimary
+  onEditPrimary, onAdd, onEdit, onMove, onDelete, onTest, onTestPrimary, onPromote,
+  // 2026-11-14：全局 TTS 改成「服务商池」——只添加/编辑/删除，不再分主用/备用、不排顺序；
+  // 用哪家由「智能体 → 配置 → 角色」选，其余按本列表顺序自动降级。
+  pool = false,
 }) {
   // 浮层菜单：{ index, top, right }。关闭时 null。
   const [menu, setMenu] = useState(null)
@@ -83,11 +86,12 @@ function ProviderSection({
     })
   }
 
-  const menuItem = (label, onClick, { disabled = false, danger = false, confirm = false } = {}) =>
+  const menuItem = (label, onClick, { disabled = false, danger = false, confirm = false, title = '' } = {}) =>
     h('button', {
       type: 'button',
       role: 'menuitem',
       disabled: disabled || undefined,
+      title: title || undefined,
       className: `xz-provider-menu-item${danger ? ' is-danger' : ''}${confirm ? ' confirm' : ''}`,
       onClick: disabled ? undefined : onClick,
     }, label)
@@ -95,6 +99,86 @@ function ProviderSection({
   const openEntry = menu ? entries[menu.index] : null
   const openKey = openEntry ? (openEntry.id || `draft-${menu.index}`) : ''
   const openProbe = openEntry ? (stageDescriptor(openEntry.provider, stage)?.probe || { kind: 'none' }) : null
+
+  // ---------------------------------------------------------------- 服务商池（TTS）
+  // 每行都是平等的「一家服务商」：没有主用/备用徽标、没有序号、没有上移/下移/设为主用。
+  // 行序仍决定降级顺序（智能体没选时用第一家），但那是列表的自然顺序，不是需要用户维护的排序。
+  if (pool) {
+    // 第一行 = 主用位（智能体没选时的默认），其余是普通条目；主用位没配置过时不渲染空行。
+    // 回调统一换算成「服务端扁平列表下标」（0 = 主用位，1.. = 备用），与 remove() 对齐。
+    const hasPrimary = Boolean(primary?.provider)
+    const rows = [
+      ...(hasPrimary ? [{ ...primary, __poolPrimary: true }] : []),
+      ...entries,
+    ]
+    const entriesIndex = (index) => index - (hasPrimary ? 1 : 0)
+    const serverIndex = (index) => (hasPrimary ? index : index + 1)
+    const isPrimaryRow = (index) => hasPrimary && index === 0
+    // 首字徽标：沿用智能体卡片的语言（一块浅色圆角方块 + 首字），比纯文字行更有层次。
+    const avatarOf = (provider) => {
+      const label = stageProviderLabel(stage, provider || '').trim()
+      return (label[0] || '?').toUpperCase()
+    }
+    return h('div', { className: 'xz-backup-section xz-provider-pool' },
+      h('p', { className: 'xz-pool-hint' }, t('ttsPoolHint')),
+      h('div', { className: 'xz-pool-list' },
+        rows.length === 0
+          ? h('p', { className: 'xz-pool-empty' }, t('ttsPoolEmpty'))
+          : rows.map((entry, index) => {
+              const rowKey = isPrimaryRow(index) ? 'pool-primary' : (entry.id || `pool-draft-${index}`)
+              const keyState = backupKeyState(stage, entry)
+              const probe = stageDescriptor(entry.provider, stage)?.probe || { kind: 'none' }
+              const result = isPrimaryRow(index) ? primaryTest : (entry.id ? testResults[entry.id] : null)
+              const isTesting = isPrimaryRow(index) ? primaryTesting : isTestingId(entry.id, testingId)
+              const testLabel = providersDirty
+                ? t('saveAndTest')
+                : (probe.labelKey ? t(probe.labelKey) : t('backupTest'))
+              const confirm = confirmDelete === rowKey
+              // 掩码前面补「密钥」二字；「无需密钥 / 未配置」这类状态原样显示，不然会读成「密钥 无需密钥」。
+              const keyText = keyState.text.includes('•') ? `${t('backupSecret')} ${keyState.text}` : keyState.text
+              return h('div', { key: rowKey, className: 'xz-pool-row' },
+                h('span', { className: 'xz-pool-avatar', 'aria-hidden': 'true' }, avatarOf(entry.provider)),
+                h('div', { className: 'xz-pool-title' },
+                  h('div', { className: 'xz-pool-name' },
+                    h('strong', null, stageProviderLabel(stage, entry.provider || '')),
+                    h('span', { className: `xz-dot ${keyState.ok ? 'on' : ''}`, title: keyState.text }),
+                    providersDirty && isPrimaryRow(index) ? h('span', { className: 'xz-chip mute' }, t('backupDraft')) : null
+                  ),
+                  h('div', { className: 'xz-pool-meta' },
+                    h('span', { className: 'xz-pool-key', title: keyState.text }, keyText),
+                    result
+                      ? h('span', { className: 'xz-pool-meta-sep', 'aria-hidden': 'true' })
+                      : null,
+                    result ? h('span', { className: 'xz-pool-test' }, backupTestText(stage, result)) : null
+                  )
+                ),
+                h('div', { className: 'xz-pool-actions' },
+                  h('button', {
+                    type: 'button',
+                    className: 'xz-pool-link',
+                    onClick: () => (isPrimaryRow(index) ? onEditPrimary() : onEdit(entriesIndex(index))),
+                  }, t('backupEdit')),
+                  probe.kind === 'none' ? null : h('button', {
+                    type: 'button',
+                    className: 'xz-pool-link',
+                    disabled: isTesting,
+                    onClick: () => (isPrimaryRow(index) ? onTestPrimary() : onTest(entriesIndex(index))),
+                  }, isTesting ? t('backupTesting') : testLabel),
+                  h('button', {
+                    type: 'button',
+                    className: `xz-pool-link danger${confirm ? ' is-confirm' : ''}`,
+                    onClick: () => onDelete(serverIndex(index), rowKey),
+                  }, confirm ? t('backupDeleteConfirm') : t('remove'))
+                )
+              )
+            })
+      ),
+      h('button', { type: 'button', className: 'xz-pool-add', onClick: onAdd },
+        h('span', { className: 'xz-pool-add-plus', 'aria-hidden': 'true' }, '+'),
+        t('providerPoolAdd')
+      )
+    )
+  }
 
   return h('div', { className: 'xz-backup-section' },
     // ---------------------------------------------------------------- 主用
@@ -124,6 +208,10 @@ function ProviderSection({
         summaryOf(primary) ? fact(summaryOf(primary).label, summaryOf(primary).value) : null,
         fact(t('backupSecret'), primaryKey.text)
       ),
+      // 「随时替换」的入口提示：主用/备用不是固定关系，备用行 ⋯ 里一键设为主用。
+      entries.length > 0
+        ? h('p', { className: 'xz-hint xz-provider-swap-hint' }, t('promoteHint'))
+        : null,
       primaryTest ? h('div', { className: 'xz-backup-test' }, backupTestText(stage, primaryTest)) : null
     ),
 
@@ -186,6 +274,8 @@ function ProviderSection({
           role: 'menu',
           style: { top: `${menu.top}px`, right: `${menu.right}px`, left: 'auto' }
         },
+          menuItem(t('promoteToPrimary'), () => { setMenu(null); onPromote(menu.index) },
+            { title: t('promoteToPrimaryHint') }),
           menuItem(t('backupMoveUp'), () => { setMenu(null); onMove(menu.index, -1) }, { disabled: menu.index === 0 }),
           menuItem(t('backupMoveDown'), () => { setMenu(null); onMove(menu.index, 1) }, { disabled: menu.index === entries.length - 1 }),
           menuItem(isTestingId(openEntry.id, testingId) ? t('backupTesting') : (providersDirty ? t('saveAndTest') : (openProbe.labelKey ? t(openProbe.labelKey) : t('backupTest'))), () => {

@@ -84,7 +84,7 @@
 
 字段级可选：`placeholder`、`placeholderKey`（i18n）、`note`（i18n）、`required`（表单显示 `*`，
 `commitEditor` 会拦下空值）、`showWhen: { key, equals }`（同表单条件显示）、`primaryOnly: true`
-（只在主用编辑弹窗出现，备用条目编辑时隐藏——火山 AK/SK 拉音色就属于这种）。
+（只在主用编辑弹窗出现，备用条目编辑时隐藏；原例子是火山 AK/SK 拉音色，已于 2026-11-13 删除）。
 
 **备用 LLM 的模型字段**：`ProviderDialog` 在 `mode==='backup' && stage==='llm'` 且厂商有
 `modelHint` 时隐藏 `model` 字段，并在打开/换厂商时自动填入该默认；MiMo 没有 `modelHint`
@@ -163,9 +163,9 @@
 ## 8. 验收
 
 ```powershell
-node --test "test/*.test.mjs"   # 251 项，含 test/providers.test.mjs 7 项 + /providers 路由
+node --test "test/*.test.mjs"   # 275 项，含 test/providers.test.mjs 7 项 + /providers 路由
 npm run build
-npm run smoke                   # 描述符表单矩阵：llm/deepseek、tts/xunfei、tts/edge、asr/volc、asr/xunfei、asr/local
+npm run smoke                   # 描述符表单矩阵：llm/deepseek、tts/xunfei、tts/edge、tts/deepseek、asr/volc、asr/xunfei、asr/deepseek、asr/local
 npm run check:ui                # 全局设置交互
 node --check client.js
 ```
