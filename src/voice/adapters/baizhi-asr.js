@@ -131,11 +131,15 @@ export class AudioPacer {
     return new Promise((resolve) => {
       const waiter = { resolve, timer: null }
       if (timeoutMs > 0) {
+        // 这里**不能** unref：drain 的语义是「等到发完或超时」，而节拍器的
+        // 定时器是 unref 的（不替调用方吊住进程）。两个都 unref 时，事件循环
+        // 会认为没事可做直接退出，await 的 promise 永远不 settle——CI 上实测
+        // 报 "Promise resolution is still pending but the event loop has
+        // already resolved"。超时器 ref 住，上限就是调用方给的这个时间。
         waiter.timer = setTimeout(() => {
           this.waiters = this.waiters.filter((item) => item !== waiter)
           resolve(false)
         }, timeoutMs)
-        waiter.timer.unref?.()
       }
       this.waiters.push(waiter)
     })
