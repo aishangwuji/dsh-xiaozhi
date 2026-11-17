@@ -341,6 +341,13 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   结束后再开 ASR，避免把 TTS 回声当用户说话。② 播放/思考中插话：VAD 判到说话会
   `#interrupt(barge-in)`，现在同时把 `capturing` 置 true 并立刻开 ASR 流——旧逻辑
   只开流不开捕获，打断后的音频会被 `#onPcm` 丢掉（表现成「它说话时我说不进去」）。
+- **播放期打断真正生效（2026-11-17）**：以前 `#answer` 把句子排进播放队列后立刻把
+  `state` 置回 `listening`，而队列比播放快得多；结果**播放期间**收到的 `abort` 与 VAD
+  barge-in 都被 `#interrupt` 的「state 必须是 speaking/thinking」门挡掉，设备把已排队的
+  音频播完（表上表现为「按了停还是说个不停」）。现在收尾链 `await player.whenDrained()`
+  再回落状态，`AudioPlayer.abort()` 也 `#resolveDrained()`（否则队列被清空后那条
+  `tts stop` 永不发出，等待方会永远挂住）。回归：`test/voice-e2e.test.mjs` 的 abort 用例
+  断言 stop 的 `reason === 'client abort'`（自然收尾不带 reason），不再依赖墙钟。
 - **TTS 流式下发（2026-11-16）**：以前 `#speakSentence` 等整句 TTS 收齐再 `encodeSpeech`，
   首包 = 整句合成时间（实测 Edge 1.28–1.50s，是端到端预算主要项）。现在：① `codec.js`
   新增 `createOpusStreamEncoder`（一句一个 ffmpeg，`-page_duration 60000` + `-flush_packets 1`，

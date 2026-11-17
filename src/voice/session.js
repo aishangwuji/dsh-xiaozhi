@@ -884,7 +884,7 @@ export class VoiceSession {
     }
 
     const closing = this.synthesisChain
-      .then(() => {
+      .then(async () => {
         const answer = queued.join('')
         if (controller.signal.aborted) {
           // 被打断也记这一轮：用户确实说了话，助手也确实播了一部分。
@@ -892,6 +892,11 @@ export class VoiceSession {
           return
         }
         this.player.push(controlElement(KIND.TTS_STOP, { generation }))
+        // 状态必须跟「真正播完」走，而不是「句子已经排进队列」。队列比播放快得多，
+        // 排完就回 listening 会让播放期间的 abort / barge-in 被 #interrupt 的
+        // state 门判成「没在说话」直接忽略：设备继续把已排队的音频播完。
+        await this.player.whenDrained()
+        if (this.generation.current !== generation) return
         this.state = this.capturing ? 'listening' : 'idle'
         this.history.push({ role: 'user', content: userText })
         this.history.push({ role: 'assistant', content: answer })

@@ -206,6 +206,9 @@ export class AudioPlayer {
         // The socket is gone; nothing left to silence.
       }
     }
+    // 打断同样意味着这一轮的音频通道走到头：会等的调用方（会话收尾里的
+    // whenDrained）不能被永久挂住——队列已经被清空，那条 tts stop 元素再也不会发出去。
+    this.#resolveDrained()
     return dropped
   }
 
