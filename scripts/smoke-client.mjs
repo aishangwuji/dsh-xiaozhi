@@ -44,7 +44,7 @@ const sandbox = {
 }
 vm.createContext(sandbox)
 vm.runInContext(bundle, sandbox)
-if (!loaded || loaded.id !== '@aishangwuji/dsh-xiaozhi') throw new Error('module not registered')
+if (!loaded || loaded.id !== 'dsh-xiaozhi-server') throw new Error('module not registered')
 const plugin = loaded.factory((id) => {
   if (id === 'react') return React
   throw new Error(`unexpected require(${id})`)

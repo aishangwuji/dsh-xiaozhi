@@ -9,7 +9,7 @@
 
 ```js
 window.__ModuleLoader__.load({
-  id: '@aishangwuji/dsh-xiaozhi',
+  id: 'dsh-xiaozhi-server',
   factory(require) {
     // ...
     return DshXiaozhi   // { inject: [...], apply(ctx) }

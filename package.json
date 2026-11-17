@@ -1,14 +1,14 @@
 {
-  "name": "@aishangwuji/dsh-xiaozhi",
+  "name": "dsh-xiaozhi-server",
   "version": "0.2.0",
   "type": "module",
   "description": "Xiaozhi (小智) ESP32 device ingress for DeepSeek Harness: zero-touch OTA bootstrap, LAN discovery, device approval, and a realtime voice pipeline (VAD / ASR / LLM / TTS) with a management console.",
   "license": "MIT",
   "author": "aishangwuji",
-  "homepage": "https://github.com/aishangwuji/dsh-xiaozhi#readme",
+  "homepage": "https://github.com/aishangwuji/dsh-xiaozhi-server#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/aishangwuji/dsh-xiaozhi.git"
+    "url": "git+https://github.com/aishangwuji/dsh-xiaozhi-server.git"
   },
   "keywords": [
     "dsh",

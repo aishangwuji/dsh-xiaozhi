@@ -1,4 +1,4 @@
-# dsh-xiaozhi
+# dsh-xiaozhi-server
 
 把 ESP32 小智设备（手写固件 v2.5.3 分支）接进 DeepSeek Harness：
 
@@ -18,23 +18,24 @@ Node 20 以上，pnpm 在 `PATH` 里（DSH 自带）。插件运行在 DSH 主�
 ### 方式一：Plugins 页面（推荐）
 
 1. 侧边栏 → **Plugins** → **Add plugin**；
-2. 在包名输入框粘贴仓库地址 `https://github.com/aishangwuji/dsh-xiaozhi`；
-3. **Install**，装完在 **Installed plugins** 里把 `@aishangwuji/dsh-xiaozhi` 打开；
+2. 在包名输入框粘贴仓库地址 `https://github.com/aishangwuji/dsh-xiaozhi-server`；
+3. **Install**，装完在 **Installed plugins** 里把 `dsh-xiaozhi-server` 打开；
 4. 侧边栏出现「小智设备接入」入口，点开就是控制台。
 
 ### 方式二：命令行
 
 ```powershell
-dsh plugin --profile <你的 profile> add github:aishangwuji/dsh-xiaozhi
+dsh plugin --profile <你的 profile> add github:aishangwuji/dsh-xiaozhi-server
 ```
 
 `dsh plugin add` 会把包装进 profile 并选中 bundle；装完刷新页面，若 **Plugins** 列表里没出现，去该页面确认它的开关。
 
 - **升级**：在 Plugins 页面卸载后重装，或再跑一次上面的 `add`（Git 安装按默认分支打包，
-  没有版本列表；要固定版本就用 `github:aishangwuji/dsh-xiaozhi#<commit>`）。
+  没有版本列表；要固定版本就用 `github:aishangwuji/dsh-xiaozhi-server#<commit>`）。
 - **卸载**：Plugins 页面 → 该 bundle → **Remove**。设备面 8989 会随之停止监听。
-- **npm 上找不到本插件**：`dsh-xiaozhi` 这个 npm 包名已被另一个无关项目占用（「旗驭小智 AI 网关」），
-  本插件只从 GitHub 分发，拖 git 地址或上面的命令安装，**不要** `dsh plugin add dsh-xiaozhi`。
+- **npm 上还没有发布**：包名 `dsh-xiaozhi-server` 目前空着，本插件只从 GitHub 分发，
+  用上面的 git 地址安装。注意别和 npm 上另一个叫 `dsh-xiaozhi` 的项目（「旗驭小智 AI 网关」）
+  搞混——`dsh plugin add dsh-xiaozhi` 装到的是它，不是本插件。
 
 ### 装好之后
 
