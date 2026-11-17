@@ -19,7 +19,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: unit tests
-        run: node --test test/
+        run: node --test test/*.test.mjs
       - name: build console bundle
         run: node build.mjs
       - name: committed client.js must match src/client

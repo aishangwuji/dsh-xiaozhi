@@ -38,6 +38,16 @@
 
 两边只通过 WebSocket 说话：OTA 拿地址 → 唤醒时建连 → hello 交换 → 音频上下行。
 
+### 1.1 分发（2026-11-17 起公开）
+
+| 项 | 值 |
+|---|---|
+| GitHub | `aishangwuji/dsh-xiaozhi`（public，默认分支 `main`） |
+| 包名 | `@aishangwuji/dsh-xiaozhi`。**不是** `@local/*`：`@local` 是本地开发约定；npm 上的 `dsh-xiaozhi` 已被一个无关项目（「旗驭小智 AI 网关」）占用，所以只从 GitHub 分发，别在文档里教人 `dsh plugin add dsh-xiaozhi` |
+| 别人怎么装 | `dsh plugin --profile <p> add github:aishangwuji/dsh-xiaozhi`，或 Plugins → Add plugin 贴仓库地址；装完刷新页面 |
+| 本机 | profile `desktop` 里是 `link:D:/Demo/esp-xiaozhi/dsh-xiaozhi`（开发用）。改完 `npm run build` 再重启 DSH；**只改 cordis.patch.yml 的默认值不重装也生效，改 index.js/src 必须重启** |
+| 发布注意 | push 前扫密钥；2026-11-17 首次推送被 GitHub 拦下——历史里 `test/volc-sign.test.mjs`（已删）带着 Volcengine **官方文档示例**的 AK/SK，被 push protection 当真实密钥。已用 `git filter-repo --replace-text` 把这几个历史 blob 换成 `EXAMPLE_*` 占位值；真机 MAC 也换成了 `02:DE:AD:BE:EF:xx` 例示值。**不要把任何「看起来像真 Key」的串写进测试文件**，哪怕是文档抄来的 |
+
 ## 二、一次完整对话在两端各是什么样子
 
 1. 手表开机 → `Ota` 按顺序试地址（NVS `ota_url` → mDNS 发现 → 编译期 LAN → 云端），拿到 `websocket.url` 和 `token`。

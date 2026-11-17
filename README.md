@@ -11,7 +11,7 @@
 
 ## 安装
 
-**环境**：DeepSeek Harness 0.2.1 及以上（Desktop / Web 均可，本插件在 Desktop 0.2.1-rc.2 上开发验证），
+**环境**：DeepSeek Harness 0.2.2 及以上（Desktop / Web 均可；本插件在 Desktop 0.2.2-rc.3 上实测安装与运行），
 Node 20 以上，pnpm 在 `PATH` 里（DSH 自带）。插件运行在 DSH 主进程内，**没有独立安装包，
 也没有构建步骤**——`client.js` 已随仓库提交，装完重启 DSH 即生效。
 
@@ -28,7 +28,7 @@ Node 20 以上，pnpm 在 `PATH` 里（DSH 自带）。插件运行在 DSH 主�
 dsh plugin --profile <你的 profile> add github:aishangwuji/dsh-xiaozhi
 ```
 
-安装后仍需在 **Plugins** 页面把它打开（CLI 只装包，不选中 bundle）。
+`dsh plugin add` 会把包装进 profile 并选中 bundle；装完刷新页面，若 **Plugins** 列表里没出现，去该页面确认它的开关。
 
 - **升级**：在 Plugins 页面卸载后重装，或再跑一次上面的 `add`（Git 安装按默认分支打包，
   没有版本列表；要固定版本就用 `github:aishangwuji/dsh-xiaozhi#<commit>`）。
