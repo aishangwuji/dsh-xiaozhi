@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: 'dsh-xiaozhi-server',
+  id: '@aishangwuji/dsh-xiaozhi',
   factory(require) {
 var DshXiaozhi = (() => {
   var __create = Object.create;
