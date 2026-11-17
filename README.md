@@ -9,6 +9,45 @@
 
 两端怎么各自验证、怎么联动、踩过的坑长什么样，记在 [AGENTS.md](AGENTS.md)（现状笔记，不是规范）。
 
+## 安装
+
+**环境**：DeepSeek Harness 0.2.1 及以上（Desktop / Web 均可，本插件在 Desktop 0.2.1-rc.2 上开发验证），
+Node 20 以上，pnpm 在 `PATH` 里（DSH 自带）。插件运行在 DSH 主进程内，**没有独立安装包，
+也没有构建步骤**——`client.js` 已随仓库提交，装完重启 DSH 即生效。
+
+### 方式一：Plugins 页面（推荐）
+
+1. 侧边栏 → **Plugins** → **Add plugin**；
+2. 在包名输入框粘贴仓库地址 `https://github.com/aishangwuji/dsh-xiaozhi`；
+3. **Install**，装完在 **Installed plugins** 里把 `@aishangwuji/dsh-xiaozhi` 打开；
+4. 侧边栏出现「小智设备接入」入口，点开就是控制台。
+
+### 方式二：命令行
+
+```powershell
+dsh plugin --profile <你的 profile> add github:aishangwuji/dsh-xiaozhi
+```
+
+安装后仍需在 **Plugins** 页面把它打开（CLI 只装包，不选中 bundle）。
+
+- **升级**：在 Plugins 页面卸载后重装，或再跑一次上面的 `add`（Git 安装按默认分支打包，
+  没有版本列表；要固定版本就用 `github:aishangwuji/dsh-xiaozhi#<commit>`）。
+- **卸载**：Plugins 页面 → 该 bundle → **Remove**。设备面 8989 会随之停止监听。
+- **npm 上找不到本插件**：`dsh-xiaozhi` 这个 npm 包名已被另一个无关项目占用（「旗驭小智 AI 网关」），
+  本插件只从 GitHub 分发，拖 git 地址或上面的命令安装，**不要** `dsh plugin add dsh-xiaozhi`。
+
+### 装好之后
+
+- **设备入口固定**：`0.0.0.0:8989`（配置项 `host` / `port`），跟 DSH GUI 端口无关；
+  手表/开发板配网页面填 `http://<本机 LAN IP>:8989/xiaozhi/ota/`。
+- **数据目录**：`~/.dsh-xiaozhi/`（设备名册、待审核队列、智能体、设置、历史、固件包、`voice.log`），
+  换目录改配置项 `dataRoot`。
+- **首次连入的设备不会自动放行**：`autoProvision` 默认 `false`，陌生设备进控制台「待审核设备」，
+  选一个智能体批准后才建档（想恢复零接触，把它设成 `true`）。
+- **语音默认是 mock**：装完就能跑通链路，但要真听懂人话，得在「全局设置 → 服务商」里配
+  ASR / LLM / TTS 的凭据；默认 LLM `provider: 'mock'` 只会照 `asr.plan` 里的台词回答。
+- **改代码之后**：`npm run build` 重新生成 `client.js`，再重启 DSH。
+
 ## 多设备怎么管
 
 一个家不会只有一台。配置只有两层，没有第三层：
@@ -56,6 +95,17 @@
 `activation` 恒为 `null`：激活码 + 挑战应答是云控制台的产品流程，家用局域网里没有那套账号，硬套只会让手表卡在"等待绑定"。
 `autoProvision: true` 可恢复“首次见到直接建档”的旧行为；默认 `false`，走待审核。批准后设备下一次 OTA/WS 请求才放行；如果手表停在错误页，重启或重新唤醒一次即可。
 
+### 固件升级
+
+控制台「全局设置 → 接入与网关」里填好**固件版本**（要比手表当前版本大，例如手表 2.5.3 → 填 2.6.0），
+再选择 `.bin` 点「上传固件」。文件落在 `~/.dsh-xiaozhi/firmware/`，设备下一次 OTA 会拿到
+`firmware { version, url, force }` 并从 `http://<本次请求的 Host>/firmware/<文件名>` 下载。
+
+- 只保留最新一份固件；上限 16 MiB，文件名必须是 `.bin`（拒绝路径穿越）。
+- `force`（强制升级）在版本号相同/更旧时也会推：**固件只认数字 `1`**，控制台开关会转成 `1/0`。
+- 手填「固件地址」走外部 URL（不上传文件时使用）；两者同时存在时本地上传优先。
+- 设备当前固件版本来自 OTA 请求体的 `application.version`，在「管理设备」弹窗里能看到。
+
 ## 端点
 
 ### 设备入口（`0.0.0.0:8989`）
@@ -65,6 +115,7 @@
 | POST/GET | `/xiaozhi/ota/` | 自引导：已知设备下发 WS 地址；未知设备（`autoProvision:false`）→ 403 `device-pending` 并进待审核；缺 `Device-Id`/`Client-Id` → 400 |
 | POST | `/xiaozhi/ota/activate` | 兼容占位：恒返回 200（从别的服务端切过来的表可能还留着旧挑战） |
 | GET | `/xiaozhi/v1/` | WS 升级；`Device-Id` 缺失 400；未知设备 → 403 `device-pending`；同设备新连接以 4001 踢掉旧连接 |
+| GET | `/firmware/<name>` | 下载控制台上传的固件（`application/octet-stream`；不鉴权，局域网 OTA 协议要求） |
 | GET | `/health` | 网关存活（无鉴权，供手表排错） |
 | GET | `/commands` | 命令清单（Bearer） |
 | POST | `/exec` | `{"cmd":"disk"}` / `{"cmd":"echo","args":{"word":"alpha"}}`（Bearer） |
@@ -87,9 +138,14 @@
 | POST | `/agents/remove` | `{agentId}` 删智能体，**级联删除绑定设备、历史与记忆** |
 | GET | `/settings` | 设置快照（密钥掩码）+ 插件配置里的默认人设/静音收口；三段各带 `backups`（备用服务商） |
 | POST | `/settings` | 保存设置（端点、固件、网关、人设、静音收口、各段 provider 与 `backups`） |
+| GET | `/firmware` | 固件文件信息（文件名/大小/sha256/版本）+ 各设备当前固件版本 |
+| POST | `/firmware/upload` | 原始 `.bin` 请求体；`x-firmware-name` / `x-firmware-version` 头；需 CSRF 头 |
+| POST | `/firmware/remove` | 删除已上传固件（设备回落到「已是最新」） |
+| POST | `/settings/provider/promote` | `{kind, index}`：把第 index 条备用提升为主用、旧主用降到该位置（服务端整段互换，密钥不过 HTTP；2026-11-14） |
 | POST | `/test/provider` | `{kind, source:'primary'\|'backup', index?}`：逐条测已保存的 LLM / TTS 服务商 |
 | POST | `/devices/settings` | `{deviceId, nickName?, notes?}` |
 | POST | `/devices/rename` | `{deviceId, nickName}` |
+| GET | `/devices/tools` | `?deviceId=`：只读返回该设备侧 MCP 上报的工具（离线时 `online:false` + 空数组） |
 | POST | `/devices/config` | 兼容入口：按设备反查智能体后写同一份配置（新页面用 `/agents/update`） |
 | POST | `/devices/disconnect` | 踢掉当前连接 |
 | POST | `/devices/remove` | 删记录（下次上电会重新自入网） |
@@ -108,8 +164,8 @@
 | 视图 | 内容 |
 |---|---|
 | 概览 | 设备/在线/语音/网关四张指标卡；OTA、WebSocket、网关三个地址一键复制；**OTA 连通性测试**（服务端回环探针，结果以 JSON 展示）；最近事件 |
-| 智能体 | 卡片 = 智能体（配置单位），一台智能体可以绑定多台设备（对齐参考服务端 `ai_agent` / `ai_device`，契约 `docs/agent-device.md`）。卡片：名称（点名字就地改名，回车或失焦确认、Esc 退出）、在线呼吸灯（任一绑定设备在线）、播报、绑定设备列表（`序号. 名称 ●`），音色 / 设备数 / 最近在线，底部 **配置** / **设备(N)** / **历史** / **删除**。**配置**弹窗三个页签（角色 / 模型与记忆 / 扩展能力）改的是智能体 `overrides`，同一智能体的设备共用；「角色」页的「人设」右侧还有 **角色模板** 下拉（湾湾小何 / 星际游子 / 英语老师 / 好奇男孩 / 汪汪队长，文案逐字取自原服务端 `xiaozhi-esp32-server` 的 `ai_agent_template`，选中整段填进人设，手改后回落「自定义」，纯前端不回传）；其中「模型」是 **LLM 模型名**（空 = 全局默认，厂商/Key/端点仍用全局设置，下拉来自全局 LLM 的 `/models`）；**设备(N)** 弹窗里绑定/解绑、改设备别名、OTA 开关、断开、删除设备；一台智能体可绑定多台设备（不同区域的麦克风/扬声器矩阵），一台设备同一时刻只属于一个智能体，其他智能体的设备会显示当前归属并以「移入本智能体」移动；**历史**合并该智能体所有设备的会话（列表项带设备名）；**播报**发给所有在线设备；**删除**是二次确认（第一次点击变「再次点击删除」），确认后级联删除绑定设备与历史。新设备默认先进「待审核设备」，管理员选智能体并批准后才建档；`autoProvision: true` 才恢复自动建智能体 |
-| 全局设置 | **三个环节概览卡 + 二级弹窗，无侧边栏**：① **服务商**（页面主体：ASR 识别 / LLM 模型 / TTS 合成 三张概览卡，每张 = 主用厂商 + 摘要 + 密钥/备用数/降级链 + 状态点，点「管理」进弹窗；弹窗里主用卡一整行、备用纵向列表、底部「+ 添加备用服务商」；失败按顺序自动切换）；**TTS 块只配「厂商 + 凭据」，没有音色/模型/Resource ID**（音色在「智能体 → 配置 → 角色」按智能体选，2026-11-08）**LLM 备用条目不要求选模型**：DeepSeek 有厂商默认（`deepseek-chat`）自动填默认并隐藏模型字段，
+| 智能体 | 卡片 = 智能体（配置单位），一台智能体可以绑定多台设备（对齐参考服务端 `ai_agent` / `ai_device`，契约 `docs/agent-device.md`）。卡片：左侧名字首字徽标 + 名字（点名字就地改名，回车或失焦确认、Esc 退出）+ 状态徽标（**未绑定** / 在线 / 离线），右上 **⋯** 菜单（播报 / 重命名 / 删除智能体，二次确认后级联删除绑定设备与历史），中间三格 **角色**（人设命中的角色模板名，否则「自定义」）/ **模型** / **最近对话**，底部 **配置** / **历史** / **设备(N)** 三个按钮（设备明细在「设备(N)」弹窗里）。**配置**弹窗三个页签（角色 / 模型与记忆 / 扩展能力）改的是智能体 `overrides`，同一智能体的设备共用；「角色」页的「人设」右侧还有 **角色模板** 下拉（湾湾小何 / 星际游子 / 英语老师 / 好奇男孩 / 汪汪队长，文案逐字取自原服务端 `xiaozhi-esp32-server` 的 `ai_agent_template`，选中整段填进人设，手改后回落「自定义」，纯前端不回传）；其中「模型」是 **LLM 模型名**（空 = 全局默认，厂商/Key/端点仍用全局设置，下拉来自全局 LLM 的 `/models`）；**设备(N)** 弹窗里绑定/解绑、改设备别名、OTA 开关、断开（**不再提供「删除设备」**，避免误操作；后端 `/devices/remove` 仅供脚本/API）；一台智能体可绑定多台设备（不同区域的麦克风/扬声器矩阵），一台设备同一时刻只属于一个智能体，其他智能体的设备会显示当前归属并以「移入本智能体」移动；**历史**合并该智能体所有设备的会话（列表项带设备名）；**播报**发给所有在线设备；**删除**点开即弹确认弹窗（标题 + 「确定删除“<名字>”吗？…」后果说明 + 取消/删除，删除为红色危险按钮），确认后级联删除绑定设备与历史。新设备默认先进「待审核设备」，管理员选智能体并批准后才建档；`autoProvision: true` 才恢复自动建智能体 |
+| 全局设置 | **三个环节概览卡 + 二级弹窗，无侧边栏**：① **服务商**（页面主体：ASR 识别 / LLM 模型 / TTS 合成 三张概览卡，每张 = 主用厂商 + 摘要 + 密钥/备用数/降级链 + 状态点，点「管理」进弹窗；弹窗里主用卡一整行、备用纵向列表、底部「+ 添加备用服务商」；失败按顺序自动切换）；**TTS 块是「服务商池」：只添加/编辑/删除服务商与凭据，没有主用/备用、不排序**（用哪家在「智能体 → 配置 → 角色」选，其余自动降级；2026-11-14）**LLM 备用条目不要求选模型**：DeepSeek 有厂商默认（`deepseek-chat`）自动填默认并隐藏模型字段，
 MiMo 无默认仍要选（模型清单走 `/v1/models`）；**LLM 可选「DSH 已配置」（复用 DSH 里已配置的厂商与凭据、
 不用再填 Key，2026-11-10 起排在首位）/ DeepSeek / 小米 MiMo**（OpenAI / 火山 / 星火已从 LLM 段移除，
 火山与讯飞仍保留 TTS/ASR）；主用模型仍是全局默认，智能体「模型」可覆盖 ② **语音默认参数**（静音收口 / 回复长度上限 / 回复速度）③ **接入与网关**（默认折叠：LAN/WAN WS、OTA Token、固件版本/URL、强制升级、网关 Token）④ **没有保存按钮**：改动防抖 700ms 自动落盘，底部只显示「保存中… / 已自动保存 / 失败重试」，设备下次连接生效；未落盘时测试按钮变「保存并测试」。**人设不在这里**——按智能体在「智能体 → 配置 → 角色」里设置。所有下拉都是**胶囊式浮层**（`docs/pill-popover.md`）：`position:fixed`、不参与页面布局，展开时不会撑出滚动条或让页面内容位移，下方空间不足自动向上翻转 |
@@ -134,16 +190,25 @@ MiMo 无默认仍要选（模型清单走 `/v1/models`）；**LLM 可选「DSH �
 
 - 弹窗里最上面一张「主用」卡（淡蓝描边 + 主用徽标），下面按优先级排列备用**纵向列表**（备用 1、备用 2…），
   末尾是整行「+ 添加备用服务商」；
-- 备用行右侧只有 `[编辑]` 和 `⋯`；`上移 / 下移 / 测试 / 删除` 收进**浮层菜单**（贴着按钮弹出、
+- 备用行右侧只有 `[编辑]` 和 `⋯`；`设为主用 / 上移 / 下移 / 测试 / 删除` 收进**浮层菜单**（贴着按钮弹出、
   不撑高行，点空白或 Esc 关闭）；删除仍是二次确认；主用的 `[编辑][测试]` 也在标题行右侧（2026-11-09 排版收敛）；
+- **主用 ⇄ 备用随时互换**（2026-11-14）：备用行 `⋯` 的第一条是「设为主用」——点了这条上来当主用、原主用按
+  原位置降为备用，顺序不变。互换由**服务端**整段完成（`POST /settings/provider/promote`），密钥不经过浏览器：
+  备用条目在控制台里只有掩码，走普通保存会把 `sk-••••ab` 写成密钥。主用卡上有一行灰字提示这个入口。
 - 所有条目都走**同一个编辑弹窗**：先选厂商，再只显示该厂商需要的字段；不再有「上面一个
   provider 下拉、下面又一个添加服务商」两套入口；
-- **TTS 卡只有「厂商 + 凭据」**（2026-11-08）：编辑弹窗不出现音色 / 模型 / Resource ID / API URL；
-  音色（= TTS 模型族）在「智能体 → 配置 → 角色」按智能体选，留空 = 厂商默认（火山
-  `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan` / 百智云 `vivi`，见
+- **TTS 卡是服务商池**（2026-11-14）：只列出已添加的服务商（添加/编辑/删除），**不分主用/备用、没有上下移**；
+  编辑弹窗不出现音色 / 模型 / Resource ID / API URL。用哪家在「智能体 → 配置 → 角色」选（同一行选服务商 + 音色），
+  其余已配置服务商自动按列表顺序降级；智能体没选时用列表第一家；音色留空 = 厂商默认（
+  只列全局已配置的主用/备用，换服务商自动重置音色，2026-11-14）（火山
+  `zh_female_vv_uranus_bigtts` / Edge `zh-CN-XiaoxiaoNeural` / 讯飞 `xiaoyan` / 百智云 `vivi` / DeepSeek `stella`，见
   `src/voice/voices.js` 的 `DEFAULT_TTS_VOICES`）；备用条目运行时也用各自厂商默认音色；
-  **火山 TTS 主用可另填 AccessKey ID / SecretAccessKey（可选）**：只用于调官方 `ListSpeakers`
-  拉真实可用音色，合成仍用 API Key；不填时智能体「角色」页显示内置清单并标注「可能含未开通音色」；
+  **音色清单逐家来自官方目录**（2026-11-14 重建）：火山 241（2.0 146 / 1.x 95）、Edge 14、讯飞 11、
+  百智云 10、DeepSeek 2；来源与日期见 `src/voice/voices.js` 顶部表格；
+  **火山 TTS 不再要 AccessKey/SecretKey**（2026-11-13）：音色列表固定用插件内置清单
+  （`src/voice/voices.js`），不联网拉取，也不再要求填 AK/SK——官方 `ListSpeakers` 要的是 AccessKey
+  （`AKLT…`），与语音控制台的 10 位数字 AppID 是两套东西，填错只会得到
+  `InvalidClientTokenId / security token` 网关错误；
 - 同一家可以填多条（多账号/多把 Key），顺序即优先级；备用条数**不设上限**（2026-11-08 起）；
 - 改动**自动保存**（2026-11-08 起）：任何字段改完防抖 700ms 落盘，底部只显示「保存中… / 已自动保存 /
   自动保存失败（可重试）」；保存中又有改动会等下一轮，服务端回写不会覆盖刚输入的内容。未落盘时测试按钮
@@ -154,8 +219,8 @@ MiMo 无默认仍要选（模型清单走 `/v1/models`）；**LLM 可选「DSH �
 | 环节 | 可选服务商 |
 |---|---|
 | LLM | **DSH 已配置**（复用 DSH 的厂商与凭据，免密钥）/ DeepSeek / 小米 MiMo |
-| TTS | 火山引擎豆包 / 讯飞语音合成 / 百智云语音合成 / 微软 Edge（免密钥） |
-| ASR | 火山引擎豆包 / 讯飞语音听写 / 百智云语音识别 / 本地 SenseVoice（免密钥，用 Harness 内置识别） |
+| TTS | 火山引擎豆包 / 讯飞语音合成 / 百智云语音合成 / DeepSeek 语音合成 / 微软 Edge（免密钥） |
+| ASR | 火山引擎豆包 / 讯飞语音听写 / 百智云语音识别 / DeepSeek 语音识别 / 本地 SenseVoice（免密钥，用 Harness 内置识别） |
 
 `mock`（仅桌面联调）、`host`（Harness 自带厂商，没有服务商 Key）、`funasr`（需本机额外部署
 FunASR 服务）不出现在下拉里；其中 FunASR 适配器仍保留在服务端，手工写配置可用，只是控制台不列。
@@ -177,7 +242,7 @@ FunASR 服务）不出现在下拉里；其中 FunASR 适配器仍保留在服�
 | 环节 | 何时切换 | 说明 |
 |---|---|---|
 | LLM | 只在还没吐出任何 token 之前 | 已经出字再换会把同一句话念两遍；此时按原 `llm_failed` 路径收尾 |
-| TTS | 每句话整句重试 | 候选音频先收齐再放行，不产生半句「幽灵音频」 |
+| TTS | 首包前可换，出过音频不换 | 边合成边编码下发；放弃整句缓冲后避免重念半句 |
 | ASR | 整段话音结束时回放重试 | 已写入的 PCM 缓存一份（上限 60s），换下一家重放且不重复推字幕 |
 
 切到备用并成功后，这个会话会先继续用它（粘性），5 分钟后重新先试主用；主动打断不算失败、不触发切换。
@@ -356,6 +421,8 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 | TTS | `xunfei` | 讯飞在线合成 `wss://tts-api.xfyun.cn/v2/tts`，`aue=raw` 直出 PCM16 | 已实现（单测覆盖请求/响应帧） |
 | TTS | `volc`（豆包） | HTTP 单向流式 `api/v3/tts/unidirectional`（`seed-tts-2.0`），逐行 JSON + base64 PCM | 已实现 |
 | ASR | `volc`（豆包） | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async`，二进制帧 + gzip，只支持 2.0 资源（`volc.seedasr.*`） | 已实现（2026-11-06 用真实语音端到端验证） |
+| ASR | `deepseek` | `POST https://api.deepseek.com/v1/tools/asr`：**整段批处理**（缓存 PCM → 16-bit WAV → multipart 上传），无流式、无语种参数；≤120s / 8 MiB，超限截断 | 已实现（单测覆盖上传形状/采样率归一/截断/错误码；真实 Key 未实测） |
+| TTS | `deepseek` | `POST https://api.deepseek.com/v1/tools/tts`：整段 WAV 返回，JS 内剥头（**不需要 ffmpeg**）；音色 `stella` / `tide`，无“语种/语速”参数；10,000 计费字符上限 | 已实现（单测覆盖请求体/WAV 解析/重采样/400/上限；真实 Key 未实测） |
 
 讯飞三件套的签名规则一致（`host/date/request-line` 的 HMAC-SHA256，再 base64 包成 `authorization`），实现在 `src/voice/adapters/xunfei-auth.js`，被 iat 与 tts 共用。
 
@@ -406,7 +473,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 智能体「角色」页选「跟随音色」会删除该智能体的 `language` 覆盖、撤掉语种指令；如果只在 `cordis.patch.yml` 里写过默认语种，需要智能体上显式选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，251 项）：
+实测（`node --test "test/*.test.mjs"`，275 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -414,9 +481,10 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 | 首帧延迟（管道本身） | 40–100 ms | mock 供应商，预算 1200ms |
 | 打断 | < 100 ms 内不再有帧，`tts_stop` 立即到 | 含"打断后下一轮仍可用" |
 | 20 轮连续对话 | 队列有界、`turns=20`、无泄漏 | — |
+| TTS 流式首帧（管道内） | 254 ms | 真实 ffmpeg 编码器 + 20ms/包模拟流式 TTS（2026-11-16） |
 | Edge TTS 首包 | 1.28–1.50 s，且整句一次性到达 | 真实网络；**这是端到端预算的主要项** |
 
-结论直说：管道自身是几十毫秒级；Edge 是整句合成后才吐包，会把端到端首帧推到 2 s 上下。要进 800–1200ms 得换真正流式的 TTS（豆包 `doubao_ws` / CosyVoice），适配器接口就是为此留的。
+结论直说：管道自身是几十毫秒级；2026-11-16 起 TTS 改为**流式下发**（`createOpusStreamEncoder`，首个 chunk 到就编码入队，不再等整句），管道侧首帧约 250ms；Edge 若仍整句到达，瓶颈在其服务端而不是这条管道。要再进 800–1200ms 得换真正流式的 TTS（豆包 `doubao_ws` / CosyVoice），适配器接口就是为此留的。
 
 ## 语音排障
 
@@ -428,6 +496,8 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 | `vad.start` / `vad.end` | 上行判停是否触发（有这两条说明音频真的到了服务端） |
 | `asr.result` / `asr.empty` / `asr.error` | 识别结果；`empty` 表示有声音但没出字 |
 | `volc.request` / `volc.first` / `volc.done` | 火山合成：请求参数、首个音频块、总字节数 |
+| `deepseek.asr.request` / `.result` / `.error` | DeepSeek 识别：上传的秒数/字节（`truncated` 表示被 120s 或 8 MiB 截过）、`request_id` 与耗时、错误码 |
+| `deepseek.tts.done` / `.error` | DeepSeek 合成：音色、字符数/计费字符、WAV 与输出采样率、字节数；`error` 带状态码 |
 | `tts.pcm` / `tts.encoded` | 合成出来的 PCM 字节、编码出的 Opus 包数 |
 | `ws.json` + `frames` / `bytes` | 发给设备的 JSON（`tts start` / `sentence_start` / `stop`）以及当时已下发的帧数/字节数 |
 | `tts.error` / `volc.http.error` / `tts.encode.error` | 失败点，附原始错误 |
@@ -462,7 +532,7 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 251 项
+node --test "test/*.test.mjs"   # 275 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 

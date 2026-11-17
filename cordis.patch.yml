@@ -1,6 +1,6 @@
 - insert:
     - id: dsh-xiaozhi
-      name: '@local/dsh-xiaozhi'
+      name: '@aishangwuji/dsh-xiaozhi'
       config:
         host: '0.0.0.0'
         port: 8989

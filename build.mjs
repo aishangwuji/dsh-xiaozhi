@@ -3,7 +3,7 @@
  *
  * 宿主只认一种格式：
  *
- *   window.__ModuleLoader__.load({ id: '@local/dsh-xiaozhi', factory(require) { ... } })
+ *   window.__ModuleLoader__.load({ id: '@aishangwuji/dsh-xiaozhi', factory(require) { ... } })
  *
  * 所以这里把 esbuild 打出来的 IIFE 包在 factory 里；`react` 保持 external，运行时由
  * factory 的 `require` 参数解析（页面模块表提供 React，插件不自带）。
@@ -26,7 +26,7 @@ await build({
   banner: {
     js: [
       'window.__ModuleLoader__.load({',
-      "  id: '@local/dsh-xiaozhi',",
+      "  id: '@aishangwuji/dsh-xiaozhi',",
       '  factory(require) {',
     ].join('\n'),
   },

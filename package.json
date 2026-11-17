@@ -1,9 +1,26 @@
 {
-  "name": "@local/dsh-xiaozhi",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@aishangwuji/dsh-xiaozhi",
+  "version": "0.2.0",
   "type": "module",
-  "description": "Xiaozhi (小智) ESP32 device ingress for DeepSeek Harness: zero-touch OTA bootstrap, challenge/HMAC activation, user binding, and a mutually exclusive WebSocket gateway.",
+  "description": "Xiaozhi (小智) ESP32 device ingress for DeepSeek Harness: zero-touch OTA bootstrap, LAN discovery, device approval, and a realtime voice pipeline (VAD / ASR / LLM / TTS) with a management console.",
+  "license": "MIT",
+  "author": "aishangwuji",
+  "homepage": "https://github.com/aishangwuji/dsh-xiaozhi#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aishangwuji/dsh-xiaozhi.git"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "xiaozhi",
+    "esp32",
+    "voice",
+    "asr",
+    "tts",
+    "mcp"
+  ],
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -18,7 +35,7 @@
     "locale/*.json",
     "icon.svg",
     "README.md",
-    "systemmap/**"
+    "LICENSE"
   ],
   "scripts": {
     "build": "node build.mjs",
@@ -26,7 +43,10 @@
     "check:ui": "node scripts/check-config-wizard.mjs",
     "check:fonts": "node scripts/check-fonts.mjs",
     "check:role": "node scripts/check-role-preset.mjs",
-    "test": "node --test \"test/*.test.mjs\""
+    "check:card": "node scripts/check-agent-card.mjs",
+    "check:devices": "node scripts/check-devices-dialog.mjs",
+    "test": "node --test \"test/*.test.mjs\"",
+    "check:voice": "node scripts/check-agent-voice.mjs"
   },
   "dsh": {
     "bundle": {

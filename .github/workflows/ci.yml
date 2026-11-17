@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: unit tests
+        run: node --test test/
+      - name: build console bundle
+        run: node build.mjs
+      - name: committed client.js must match src/client
+        run: git diff --exit-code client.js
+      - name: node syntax check
+        run: node --check index.js client.js
