@@ -15,17 +15,17 @@
 
 ```
 history/
-├── B8_1F_3F_D8_2C_CC.jsonl          # 每设备一份消息流水（sanitize 后的 deviceId）
+├── 02_DE_AD_BE_EF_01.jsonl          # 每设备一份消息流水（sanitize 后的 deviceId）
 ├── 02_00_00_00_00_FF.jsonl
 └── audio/
-    ├── B8_1F_3F_D8_2C_CC/
+    ├── 02_DE_AD_BE_EF_01/
     │   ├── <audioId>.wav             # 用户（16k）或助手（24k），PCM16 单声道
     │   └── <audioId>.wav
     └── 02_00_00_00_00_FF/
 ```
 
 - `sanitize(deviceId)`：把 `[A-Za-z0-9._-]` 以外的字符换成 `_`，所以
-  `B8:1F:3F:D8:2C:CC` → `B8_1F_3F_D8_2C_CC.jsonl`（与历史数据文件名一致）。
+  `02:DE:AD:BE:EF:01` → `02_DE_AD_BE_EF_01.jsonl`（与历史数据文件名一致）。
 - `audioId = randomUUID().replace(/-/g,'')`，32 位十六进制；音频文件名是 `<audioId>.wav`。
 - 消息文件每行一条 JSON（JSONL，追加写）：
 
@@ -51,7 +51,7 @@ history/
   会话 id 为 `legacy-<该会话第一行的 at>`；间隔 > 10 分钟才开新会话；
 - 遇到新格式行会打断 legacy 连续段（不会把升级后的新消息混进旧会话）。
 
-> 为什么必须聚合：真实数据里 `B8_1F_3F_D8_2C_CC.jsonl` 有 48 行旧格式，如果一行一个
+> 为什么必须聚合：真实数据里 `02_DE_AD_BE_EF_01.jsonl` 有 48 行旧格式，如果一行一个
 > `legacy-<at>` 会话，控制台列表会冒出 48 条「会话」，完全没法用。按 10 分钟聚合后是
 > 正常的一段段对话。
 >
@@ -106,7 +106,7 @@ JSON 响应都是 `error: {code, message}` 形态；写接口用 `requireTrusted
 
 ```json
 {
-  "deviceId": "B8:1F:3F:D8:2C:CC",
+  "deviceId": "02:DE:AD:BE:EF:01",
   "conversations": [
     {
       "sessionId": "legacy-1793885457654",
@@ -132,7 +132,7 @@ JSON 响应都是 `error: {code, message}` 形态；写接口用 `requireTrusted
 
 ```json
 {
-  "deviceId": "B8:1F:3F:D8:2C:CC",
+  "deviceId": "02:DE:AD:BE:EF:01",
   "found": true,
   "sessionId": "legacy-1793885457654",
   "title": "你好",
@@ -168,7 +168,7 @@ JSON 响应都是 `error: {code, message}` 形态；写接口用 `requireTrusted
 ### 3.4 `POST /history/clear`
 
 ```json
-{ "deviceId": "B8:1F:3F:D8:2C:CC", "sessionId": "可省略" }
+{ "deviceId": "02:DE:AD:BE:EF:01", "sessionId": "可省略" }
 ```
 
 - 带 `sessionId`：只清该会话的消息 + 它用到的音频文件，其它会话保留。
@@ -176,7 +176,7 @@ JSON 响应都是 `error: {code, message}` 形态；写接口用 `requireTrusted
 - 缺 `deviceId` → 400；缺 CSRF header → 403 `csrf`。
 
 ```json
-{ "deviceId": "B8:1F:3F:D8:2C:CC", "sessionId": "legacy-1793885457654", "cleared": true,
+{ "deviceId": "02:DE:AD:BE:EF:01", "sessionId": "legacy-1793885457654", "cleared": true,
   "removedMessages": 96, "removedAudio": 2, "entries": [] }
 ```
 

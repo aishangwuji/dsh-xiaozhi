@@ -46,7 +46,7 @@ console.error = (...args) => {
 const me = {
   id: 'a2',
   name: '小智',
-  devices: [{ deviceId: 'B8:1F:3F:D8:2C:CC', nickName: '小智手表', online: false, otaEnabled: false }]
+  devices: [{ deviceId: '02:DE:AD:BE:EF:00', nickName: '小智手表', online: false, otaEnabled: false }]
 }
 const agents = [{ id: 'a1', name: '甲' }, me]
 const devices = [

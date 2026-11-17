@@ -11,7 +11,7 @@ import { SettingsStore } from '../src/settings.js'
 import { DeviceStore } from '../src/store.js'
 
 const CONTROL = '/dsh-xiaozhi-7c3a'
-const DEVICE = 'B8:1F:3F:D8:2C:CC'
+const DEVICE = '02:DE:AD:BE:EF:01'
 const T0 = 1_700_000_000_000
 const silent = { info() {}, warn() {}, error() {} }
 

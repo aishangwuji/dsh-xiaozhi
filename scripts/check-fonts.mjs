@@ -65,7 +65,7 @@ const FLAT = [
   ['empty', 'xz-devcard-devices', '还没有绑定设备', '卡片空态'],
   ['list', 'xz-devcard-devices', '手表已绑定', '卡片设备行'],
   ['mono-cn', 'xz-device-row-mac', '设备已离线', '等宽元素里的中文'],
-  ['mac', 'xz-device-row-mac', 'b8:1f:3f:d8:2c:cc', '等宽元素里的 MAC']
+  ['mac', 'xz-device-row-mac', '02:de:ad:be:ef:01', '等宽元素里的 MAC']
 ]
 
 const MODAL = `

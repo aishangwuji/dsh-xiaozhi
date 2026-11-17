@@ -12,7 +12,7 @@ import {
 } from '../src/history.js'
 
 const silent = { info() {}, warn() {}, error() {} }
-const DEVICE = 'B8:1F:3F:D8:2C:CC'
+const DEVICE = '02:DE:AD:BE:EF:01'
 const MINUTE = 60_000
 const DAY = 24 * 60 * 60 * 1000
 const T0 = 1_700_000_000_000
