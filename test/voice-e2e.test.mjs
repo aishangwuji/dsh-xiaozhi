@@ -205,24 +205,34 @@ test('the first audio frame meets the latency budget', async () => {
   }
 })
 
-test('abort silences the device within 100ms and keeps the session usable', async () => {
+test('abort silences the device and keeps the session usable', async () => {
   const harness = await startVoiceHarness()
   try {
     const client = await harness.connect()
-    await speak(client, { leadMs: 240, voiceMs: 600, tailMs: 400 })
+    // 2s 的语音：保证 abort 一定落在播放中途。用 600ms 时，CI 跑者的调度抖动
+    // （观测到 >4 帧的时刻可能比真正开始播放晚几百毫秒）会让 abort 撞上自然收尾，
+    // 这条用例就变成"测运气"了。
+    await speak(client, { leadMs: 240, voiceMs: 2000, tailMs: 400 })
     await waitFor(() => client.binaries.length > 4, 4000)
     const voice = harness.hub.get(MAC).voice
     const generationBefore = voice.generation.current
+    const stateAtAbort = voice.snapshot().state
 
     const abortAt = Date.now()
     client.ws.sendJson({ type: 'abort' })
     await waitFor(() => client.messages.some((message) => message.type === 'tts' && message.state === 'stop'), 1000)
     const stopAt = client.messages.find((message) => message.type === 'tts' && message.state === 'stop')
     assert.ok(stopAt, 'the device must receive tts stop')
-    // 300ms 而不是 100ms：这一条量的是「abort 后服务端有没有立刻发 stop」，
-    // 但墙钟包含 WS 往返与 CI 跑者调度抖动（GitHub 共享跑者实测偶发 >100ms）。
-    // 「等这句 TTS 念完才 stop」会是秒级，300ms 仍能区分。
-    assert.ok(Date.now() - abortAt < 300, 'the stop signal must be prompt')
+    // 语义断言优先：只有 abort 路径的 stop 带 reason（自然收尾不带）。若 abort 要等
+    // 当前这句念完才生效，先到的那条 stop 不带 reason，这里就会红。
+    assert.equal(
+      stopAt.reason,
+      'client abort',
+      `the stop must come from the abort path (state at abort: ${stateAtAbort})`,
+    )
+    // 墙钟只兜底"延迟到下一句"这种级别的问题；WS 往返与共享跑者抖动都在这 800ms 里。
+    const elapsed = Date.now() - abortAt
+    assert.ok(elapsed < 800, `the stop signal must be prompt, took ${elapsed}ms (state at abort: ${stateAtAbort})`)
 
     // No audio may follow the stop: that would be ghost audio from the old epoch.
     const framesAtStop = client.binaries.length
