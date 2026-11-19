@@ -82,6 +82,30 @@ dsh plugin --profile <你的 profile> add github:aishangwuji/dsh-xiaozhi
 - 改动在设备**下一次连接**时生效（每次连接按当前配置重建 adapters，cache key 里带人设与音色，改完不会用旧人设）；
 - 全局默认里改「静音收口/回复参数」会立刻写进 `settings.json`，重启后仍是面板里的值；**人设按智能体配置**（智能体 → 配置 → 角色），不再放在全局设置里。
 
+## 回答来源：直连模型，或一条 DSH 会话（2026-11-19）
+
+默认仍是「插件直连 LLM」，行为和以前一样。现在每个智能体还可以把回答来源切到 **DSH 会话**：
+
+```
+手表说一句 → ASR → 这句被送进绑定的 DSH Session（带它的模型/工具/记忆/权限）
+           → 只取这一轮的最终结论 → toSpeech 去 Markdown → TTS → 手表
+```
+
+- 在哪里配：**智能体 → 配置 → 模型与记忆 → 回答来源**。`跟随全局` / `直连模型` / `DSH 会话`；
+  选「DSH 会话」后可以从「最近会话」里挑一条，或留空让它在首次连接时自动建一条
+  （记在 `~/.dsh-xiaozhi/voice-sessions.json`，按智能体复用）。
+- **DS-Bot 的 Bot 也能绑**：它的每个 Bot 就是一条 DSH Session，把 Bot 的会话 id 填进来即可；
+  本插件不 import DS-Bot、不读它的 `state.json`，所以它换 part 后需要你重新选一次。
+- 只念**最终结论**：工具步骤里的「我先查一下」不会念；回复会被去掉 Markdown/代码块并按句末截断
+  （`voice.session.maxChars`，默认 600 字）。
+- 工具与记忆归会话：切到会话后端后，插件的工具注册表与本地记忆**不再参与**这一轮；人设也用会话自己的，
+  面板里的人设/音色只影响 TTS 与直连模型后端。
+- 打断会让会话 `cancel` 当前 turn；一轮超过 `voice.session.timeoutMs`（默认 120 秒）也会取消并播一句兜底，
+  避免下一句话排在一轮长任务后面。
+- **限制**：会话回复是给人读的，长文/表格/代码块体验不如直连模型；会话里需要审批的操作（写文件、跑命令）
+  在手表上无法确认，当前会一直等到超时（默认 120 秒）才播兜底，建议给语音绑一条只读/受限 preset 的会话。
+  真实手表到会话的端到端延迟**未实测**。
+
 ## 设备怎么接进来（这是正确的那条路）
 
 固件的配网页面（长按 BOOT → 连 `xiaozhi` 热点 → `http://192.168.4.1` → 高级设置）本来就有三个字段：
@@ -143,8 +167,9 @@ dsh plugin --profile <你的 profile> add github:aishangwuji/dsh-xiaozhi
 | POST | `/pending/reject` | `{deviceId}`：拒绝并移出待审核队列 |
 | GET | `/devices` | 已批准设备列表 |
 | GET | `/agents` | 智能体列表（每条带绑定设备、在线、最近在线） |
+| GET | `/sessions` | 只读：宿主最近会话（`available` + `items`），供「回答来源 = DSH 会话」下拉选择；没有会话服务时 `available:false` |
 | POST | `/agents` | `{name}` 新建智能体 |
-| POST | `/agents/update` | `{agentId, name?, systemPrompt?, voice?, language?, model?, silenceMs?}`：智能体级配置（空串 = 删掉该覆盖） |
+| POST | `/agents/update` | `{agentId, name?, systemPrompt?, voice?, language?, model?, silenceMs?, backend?, sessionId?}`：智能体级配置（空串 = 删掉该覆盖）；`backend` 只收 `llm` / `session`，`sessionId` 必须形如 `session-…`（坏值 400） |
 | POST | `/agents/bind` | `{agentId, deviceId}` 绑定设备（已在别的智能体上 = 移动） |
 | POST | `/agents/unbind` | `{agentId, deviceId}` 解绑 |
 | POST | `/agents/remove` | `{agentId}` 删智能体，**级联删除绑定设备、历史与记忆** |
@@ -548,7 +573,7 @@ node --test "test/*.test.mjs"   # 275 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 
-覆盖：标识归一化/私网判定/存储（待审核、损坏文件隔离）；智能体覆盖合并与越界回落（含「hostProvider 不再强切 host」）；全局设置（人设/静音收口持久化、空值回落插件配置、`applyRuntimeVoiceSettings` 的 hostProvider/backups 叠加回归）；**三段备用服务商持久化/掩码/逐条留空保留/非法整次失败**；**TTS 默认音色**（全局只存凭据、`voice`/`model`/`resourceId` 可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留，2026-11-08）；HTTP 端到端（待审核/批准、`activation: null`、互斥 4001、CSRF、`/test/provider` 参数与回包）；网关（`/health` 免鉴权、`/commands` 401/200、`/exec` 白名单/参数注入 400/超时 124/截断/限流 429/爆破锁定）；语音（分句器边界、VAD、Ogg 往返、真 Opus 整轮、打断、20 轮）；**failover**（LLM 未出字前切换/出字后不切、TTS 整句重试、ASR 回放且不推 partial、abort 不切换、候选构建失败跳过、粘性与 5 分钟回落）；**小米 MiMo**（`api-key` 认证头、`thinking` 开关、SSE 文本/工具调用、模型清单走 /v1/models（无内置兜底））；**联网工具**（Search 带正文/截断预算、web_fetch 正文与 403/404 语义、动态 Key、无 Key 回退）；**对话历史**（会话聚合/标题/旧格式迁移/音频 WAV 读写与路径安全/保留期与容量清理/clear 粒度/4 条 HTTP 路由）；**智能体/设备绑定**（旧设备迁移与记忆复制、多设备绑定/移动/解绑、配置共享、级联删除、历史合并、智能体重名拦截，`test/agents.test.mjs` 7 项）。
+覆盖：标识归一化/私网判定/存储（待审核、损坏文件隔离）；智能体覆盖合并与越界回落（含「hostProvider 不再强切 host」）；全局设置（人设/静音收口持久化、空值回落插件配置、`applyRuntimeVoiceSettings` 的 hostProvider/backups 叠加回归）；**三段备用服务商持久化/掩码/逐条留空保留/非法整次失败**；**TTS 默认音色**（全局只存凭据、`voice`/`model`/`resourceId` 可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留，2026-11-08）；HTTP 端到端（待审核/批准、`activation: null`、互斥 4001、CSRF、`/test/provider` 参数与回包）；网关（`/health` 免鉴权、`/commands` 401/200、`/exec` 白名单/参数注入 400/超时 124/截断/限流 429/爆破锁定）；语音（分句器边界、VAD、Ogg 往返、真 Opus 整轮、打断、20 轮）；**failover**（LLM 未出字前切换/出字后不切、TTS 整句重试、ASR 回放且不推 partial、abort 不切换、候选构建失败跳过、粘性与 5 分钟回落）；**小米 MiMo**（`api-key` 认证头、`thinking` 开关、SSE 文本/工具调用、模型清单走 /v1/models（无内置兜底））；**联网工具**（Search 带正文/截断预算、web_fetch 正文与 403/404 语义、动态 Key、无 Key 回退）；**对话历史**（会话聚合/标题/旧格式迁移/音频 WAV 读写与路径安全/保留期与容量清理/clear 粒度/4 条 HTTP 路由）；**智能体/设备绑定**（旧设备迁移与记忆复制、多设备绑定/移动/解绑、配置共享、级联删除、历史合并、智能体重名拦截，`test/agents.test.mjs` 9 项）；**DSH 会话后端**（只念最终结论、工具步骤文字丢弃、按 sessionId 不串台、`source.rpcId` 对上本轮、打断/超时取消、绑定持久化，`test/session-backend.test.mjs` 10 项）。
 
 ## 已知限制
 

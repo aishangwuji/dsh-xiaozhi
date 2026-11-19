@@ -384,18 +384,19 @@ function buildStage(stage, primarySpec, { build, logger, deviceId, clock }) {
 /**
  * @param {object} voice resolved voice config（含各段的 backups 列表）
  * @param {{systemPrompt?: string, ffmpegPath?: string, speechToText?: object, llm?: object,
- *   logger?: object, deviceId?: string, clock?: () => number}} options
+ *   logger?: object, deviceId?: string, clock?: () => number, llmAdapter?: object}} options
+ *   `llmAdapter` = 外部已建好的 LLM 适配器（DSH 会话后端），给了就不再建 provider 候选链。
  */
 export function createVoiceAdapters(
   voice,
-  { systemPrompt = '', ffmpegPath = 'ffmpeg', speechToText, llm, logger, deviceId = '', clock } = {},
+  { systemPrompt = '', ffmpegPath = 'ffmpeg', speechToText, llm, logger, deviceId = '', clock, llmAdapter } = {},
 ) {
   const config = voice ?? {}
   const downlinkRate = config.sampleRate?.downlink ?? 24_000
   const uplinkRate = config.sampleRate?.uplink ?? 16_000
   const shared = { logger, deviceId, clock }
   return {
-    llm: buildStage('llm', config.llm ?? {}, {
+    llm: llmAdapter ?? buildStage('llm', config.llm ?? {}, {
       ...shared,
       build: (spec) => buildLlmAdapter(spec, { systemPrompt, llm, deviceId }),
     }),

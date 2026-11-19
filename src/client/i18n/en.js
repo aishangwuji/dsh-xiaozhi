@@ -140,6 +140,15 @@
       llmProvider: 'LLM',
       model: 'Model',
       agentModelLabel: 'Chat model (LLM)',
+      // Reply source (2026-11-19): direct model vs a DSH session
+      backendLabel: 'Reply source',
+      backendFollow: 'Follow global',
+      backendLlm: 'Direct model',
+      backendSession: 'DSH session',
+      backendHint: 'DSH session sends the sentence into a session (with its tools, memory and permissions) and only speaks the final answer',
+      sessionLabel: 'Bound session',
+      sessionAuto: 'Create one on first connect',
+      sessionHint: 'Only recent sessions are listed; paste a session-… if missing. DS Bot bots work too',
       agentModelDefault: 'Default (global model)',
       // Agent card (redesigned 2026-11-13): avatar + status + 3 info cells + 3 buttons
       agentMenu: 'Actions',

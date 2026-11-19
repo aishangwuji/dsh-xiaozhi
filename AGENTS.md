@@ -25,13 +25,13 @@
 | 面 | 地址 | 谁在用 | 路由 |
 |---|---|---|---|
 | 设备面 | `0.0.0.0:8989`（插件自己 `net.createServer`，配置项 `host` / `port`，也接受 `iot_gateway.*` 包裹） | 手表固件 | `GET/POST /xiaozhi/ota/`、`POST /xiaozhi/ota/activate`（占位）、`Upgrade /xiaozhi/v1/`（语音 WS）、`GET /healthz`、网关 `/health` `/commands` `/exec` |
-| 操作台面 | **宿主 Harness 的 webServer**，前缀 `/dsh-xiaozhi-7c3a`（`control.prefix`） | 控制台页面（浏览器） | 主要路由：`GET /state`、`/pending*`、`/agents*`、`/devices*`、`/memory*`、`/tools*`、`/history*`、`/settings`、`/models`、`/voices`、`/providers`、`/llm/providers`、`/asr/local`、`/test/*`、`/probe/ota`、`/crashes*`、`/events`（完整清单见 `src/control.js`） |
+| 操作台面 | **宿主 Harness 的 webServer**，前缀 `/dsh-xiaozhi-7c3a`（`control.prefix`） | 控制台页面（浏览器） | 主要路由：`GET /state`、`/pending*`、`/agents*`、`/devices*`、`/sessions`、`/memory*`、`/tools*`、`/history*`、`/settings`、`/models`、`/voices`、`/providers`、`/llm/providers`、`/asr/local`、`/test/*`、`/probe/ota`、`/crashes*`、`/events`（完整清单见 `src/control.js`） |
 
 - **控制 API 不占 8989**：靠 `ctx.webServer.register({ kind: 'prefix', path: control.prefix })` 挂在 Harness 自己的 Web 服务上，所以端口跟着 GUI 走（DSH 每次重启都会变），设备入口始终是 8989。
 - 写接口（POST）必须带 `x-dsh-xiaozhi: 1` 头（CSRF），缺了回 403；读接口不校验——控制台由只监听回环的 Harness Web 服务提供，能打开面板就等于本机管理员。
 - 配置优先级：插件自带 `cordis.patch.yml` 的默认值 → profile 的 `cordis.patch.yml`（当前**没有** dsh-xiaozhi 覆盖行）→ 控制台保存的 `settings.json`（运行时叠在上面，保存即生效）。
 - 数据目录 `~/.dsh-xiaozhi/`（`dataRoot` 可配）：
-  - 现役：`devices.json`（已批准设备名册）、`pending.json`（待审核设备队列）、`agents.json`（配置单位，0600、版本 1）、`settings.json`（0600、版本 3）、`memory/<agentId>.json`、`history/<deviceId>.jsonl` + `history/audio/<deviceId>/*.wav`、`voice.log`（JSONL trace）、`crash.log`。
+  - 现役：`devices.json`（已批准设备名册）、`pending.json`（待审核设备队列）、`agents.json`（配置单位，0600、版本 1）、`settings.json`（0600、版本 3）、`voice-sessions.json`（智能体 → 语音用的 DSH 会话绑定，0600、版本 1；见 § 八「DSH 会话后端」）、`memory/<agentId>.json`、`history/<deviceId>.jsonl` + `history/audio/<deviceId>/*.wav`、`voice.log`（JSONL trace）、`crash.log`。
   - **遗留、代码已不读写**：`profiles.json`、`tools.json`（旧「行为档案」页与旧全局工具开关留下的），可手工删，删了不影响任何链路。
 
 **端侧**：`D:\Demo\esp-xiaozhi\xiaozhi-esp32`，板子是 waveshare ESP32-S3-Touch-AMOLED-2.06，target `esp32s3`，分区表 `partitions/v2/32m.csv`（32MB flash，NVS 在 `0x3B000`，840K）。
@@ -91,7 +91,7 @@
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"          # 全量 307 项，必须全绿
+node --test "test/*.test.mjs"          # 全量 319 项，必须全绿
 npm run build                          # src/client/** → client.js（esbuild，React 保持 external）
 npm run smoke                          # 真实 React SSR 渲染主要页面 + slot 注册校验
 npm run check:ui                       # jsdom 交互检查：概览卡 → 弹窗 → 添加 → ⋯ → 模型回显 → 自动保存 → TTS 服务商池（无主备、删除走服务端）
@@ -103,7 +103,7 @@ npm run check:voice                    # jsdom 验智能体「TTS 服务商 + �
 node --check client.js                 # 构建产物语法检查
 ```
 
-当前 307 项，覆盖分句、VAD、Ogg/Opus 往返、mock 整轮、打断、20 轮、语种、音色族、**TTS 默认音色**（全局只存凭据可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留）、设备级覆盖合并（含「设备 hostProvider 不再强切 host」）、全局设置（人设/静音收口、`applyRuntimeSettings` 的 hostProvider/backups 叠加回归）、备用服务商（持久化/掩码/留空保留/整次失败/**条数不设上限**/`/test/provider`）、**服务商描述符**（描述符与 `BACKUP_SPEC` 白名单一致、字段可存储、stage 级名字覆盖、`hidden` 只存不展示、`GET /providers` 路由，`test/providers.test.mjs` 8 项）、**ASR 在线测试**（TTS→ASR 编排：分块喂 PCM、TTS mock/无音频/ASR error 的报错，`test/asr-probe.test.mjs` 5 项）、**设备侧 MCP/IoT**（MCP initialize/tools/list/tools/call 与工具名清洗、IoT descriptors/states/commands，`test/device-mcp.test.mjs` 5 项 + `test/device-iot.test.mjs` 2 项）、**外部 MCP（stdio）**（子进程 JSON-RPC initialize/tools/list/tools/call，`test/mcp-stdio.test.mjs` 1 项）、**外部 MCP（SSE / Streamable HTTP）**（本地 HTTP server 走通 initialize/tools/list/tools/call，`test/mcp-http.test.mjs` 1 项）、**MCP 接入点**（WebSocket JSON-RPC initialize/tools/list/tools/call，`test/mcp-endpoint.test.mjs` 1 项）、**入站 `/mcp`**（token 鉴权 + 服务端驱动 initialize/tools/list/tools/call，`test/mcp-inbound.test.mjs` 2 项 + `test/http.test.mjs` 1 项）、**服务端插件工具**（newsnow 热榜 / Intl 农历 / exit 退出 / HASS / RAGFlow / call_device / play_music + 「change_role / get_weather 已下掉」反向断言，`test/tools-extra.test.mjs` 9 项；音乐解码 `test/music.test.mjs` 1 项）、**待审核设备**（`PendingStore` 持久化/尝试次数/重新加载、`autoProvision:false` 时 OTA/WS 返回 `device-pending`、控制台批准并绑定指定智能体、拒绝移除、批准后 OTA 放行，`test/pending.test.mjs` 1 项 + `test/http.test.mjs` 1 项）、三段 failover（LLM 未出字前切换、TTS 首包前切换/出音频后不换家、ASR 回放不推 partial、abort 不切换、粘性回落）、mDNS 报文与地址过滤、小米 MiMo（api-key 认证头 / thinking / SSE / 工具调用 / 模型清单走 /v1/models 无内置兜底）、联网工具（Search 带正文与截断预算 / web_fetch 正文与 403·404 语义 / 动态 Key / 无 Key 回退）、对话历史（会话聚合与标题 / 旧格式 10 分钟迁移 / WAV 读写与路径安全 / 30 天保留与容量清理 / clear 粒度 / 4 条 HTTP 路由）、**智能体/设备绑定**（旧设备迁移与记忆复制 / 多设备绑定与移动 / 解绑 / 配置共享 / 级联删除 / 历史合并 / **智能体重名拦截**，`test/agents.test.mjs` 7 项）、**百智云语音**（描述符覆盖 ASR/TTS、语种归一化、语速能力门控、WAV 解析/重采样、TTS 请求体与 401 报错、ASR 真实节奏发送 + commit + delta/final 拼接 + 服务端错误帧，`test/baizhi.test.mjs` 13 项）、**DeepSeek 语音**（描述符覆盖 ASR/TTS、WAV 编解码与立体声下混、multipart `file` 上传、采样率归一、120s 截断、空音频不发请求、TTS 请求体与重采样、400 与计费字符上限，`test/deepseek.test.mjs` 18 项）、**主用/备用互换**（服务端整段互换且密钥不出进程、空主用不留空壳、CSRF / 非法 index / 坏 hostProvider 被拒，`test/settings.test.mjs` 3 项）、**表情跟随**（21 个表情名与固件 `chibi-maid_240` 资源一一对应、emoji 被 SSE 拆成两半仍能识别、无 emoji 不发 emotion、TTS 文本与历史里都不含 emoji，`test/emotion.test.mjs` 6 项）、**回合守卫**（listen stop 后的续话窗口：窗口内继续说不收口、窗口内没声音正常收口、工具调用前发 `% 工具名` 提示、工具报错回灌给模型、模型只回表情时用兜底话术收尾，`test/turn-guard.test.mjs` 8 项，含「空回合后不重发 listen start 也能接住下一句」）。**TTS 流式下发**（首包早于合成结束、流式 Ogg 解复用跨页/跨字节边界、abort 停流且不产生幽灵帧、空音频不发 sentence_start，`test/tts-stream.test.mjs` 4 项）。**固件升级通道**（固件仓库保存/替换/删除与非法名拒绝、OTA 请求体解析设备版本、上传后 OTA 下发绝对 URL、force 以数字下发、移除后回落到设备版本，`test/firmware.test.mjs` 4 项 + `test/http.test.mjs` 5 项）。**错误气泡与 session_id**（ASR 失败 alert、LLM 失败 alert + 兜底语音、下行业务消息带 session_id，`test/turn-guard.test.mjs` 3 项）。**设备工具可见性**（`DeviceMcpClient.catalog()` 只读目录、`GET /devices/tools` 在线/离线/参数校验，`test/device-mcp.test.mjs` + `test/http.test.mjs`）。
+当前 319 项，覆盖分句、VAD、Ogg/Opus 往返、mock 整轮、打断、20 轮、语种、音色族、**TTS 默认音色**（全局只存凭据可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留）、设备级覆盖合并（含「设备 hostProvider 不再强切 host」）、全局设置（人设/静音收口、`applyRuntimeSettings` 的 hostProvider/backups 叠加回归）、备用服务商（持久化/掩码/留空保留/整次失败/**条数不设上限**/`/test/provider`）、**服务商描述符**（描述符与 `BACKUP_SPEC` 白名单一致、字段可存储、stage 级名字覆盖、`hidden` 只存不展示、`GET /providers` 路由，`test/providers.test.mjs` 8 项）、**ASR 在线测试**（TTS→ASR 编排：分块喂 PCM、TTS mock/无音频/ASR error 的报错，`test/asr-probe.test.mjs` 5 项）、**设备侧 MCP/IoT**（MCP initialize/tools/list/tools/call 与工具名清洗、IoT descriptors/states/commands，`test/device-mcp.test.mjs` 5 项 + `test/device-iot.test.mjs` 2 项）、**外部 MCP（stdio）**（子进程 JSON-RPC initialize/tools/list/tools/call，`test/mcp-stdio.test.mjs` 1 项）、**外部 MCP（SSE / Streamable HTTP）**（本地 HTTP server 走通 initialize/tools/list/tools/call，`test/mcp-http.test.mjs` 1 项）、**MCP 接入点**（WebSocket JSON-RPC initialize/tools/list/tools/call，`test/mcp-endpoint.test.mjs` 1 项）、**入站 `/mcp`**（token 鉴权 + 服务端驱动 initialize/tools/list/tools/call，`test/mcp-inbound.test.mjs` 2 项 + `test/http.test.mjs` 1 项）、**服务端插件工具**（newsnow 热榜 / Intl 农历 / exit 退出 / HASS / RAGFlow / call_device / play_music + 「change_role / get_weather 已下掉」反向断言，`test/tools-extra.test.mjs` 9 项；音乐解码 `test/music.test.mjs` 1 项）、**待审核设备**（`PendingStore` 持久化/尝试次数/重新加载、`autoProvision:false` 时 OTA/WS 返回 `device-pending`、控制台批准并绑定指定智能体、拒绝移除、批准后 OTA 放行，`test/pending.test.mjs` 1 项 + `test/http.test.mjs` 1 项）、三段 failover（LLM 未出字前切换、TTS 首包前切换/出音频后不换家、ASR 回放不推 partial、abort 不切换、粘性回落）、mDNS 报文与地址过滤、小米 MiMo（api-key 认证头 / thinking / SSE / 工具调用 / 模型清单走 /v1/models 无内置兜底）、联网工具（Search 带正文与截断预算 / web_fetch 正文与 403·404 语义 / 动态 Key / 无 Key 回退）、对话历史（会话聚合与标题 / 旧格式 10 分钟迁移 / WAV 读写与路径安全 / 30 天保留与容量清理 / clear 粒度 / 4 条 HTTP 路由）、**智能体/设备绑定**（旧设备迁移与记忆复制 / 多设备绑定与移动 / 解绑 / 配置共享 / 级联删除 / 历史合并 / **智能体重名拦截**，`test/agents.test.mjs` 9 项）、**百智云语音**（描述符覆盖 ASR/TTS、语种归一化、语速能力门控、WAV 解析/重采样、TTS 请求体与 401 报错、ASR 真实节奏发送 + commit + delta/final 拼接 + 服务端错误帧，`test/baizhi.test.mjs` 13 项）、**DeepSeek 语音**（描述符覆盖 ASR/TTS、WAV 编解码与立体声下混、multipart `file` 上传、采样率归一、120s 截断、空音频不发请求、TTS 请求体与重采样、400 与计费字符上限，`test/deepseek.test.mjs` 18 项）、**主用/备用互换**（服务端整段互换且密钥不出进程、空主用不留空壳、CSRF / 非法 index / 坏 hostProvider 被拒，`test/settings.test.mjs` 3 项）、**表情跟随**（21 个表情名与固件 `chibi-maid_240` 资源一一对应、emoji 被 SSE 拆成两半仍能识别、无 emoji 不发 emotion、TTS 文本与历史里都不含 emoji，`test/emotion.test.mjs` 6 项）、**回合守卫**（listen stop 后的续话窗口：窗口内继续说不收口、窗口内没声音正常收口、工具调用前发 `% 工具名` 提示、工具报错回灌给模型、模型只回表情时用兜底话术收尾，`test/turn-guard.test.mjs` 8 项，含「空回合后不重发 listen start 也能接住下一句」）。**TTS 流式下发**（首包早于合成结束、流式 Ogg 解复用跨页/跨字节边界、abort 停流且不产生幽灵帧、空音频不发 sentence_start，`test/tts-stream.test.mjs` 4 项）。**固件升级通道**（固件仓库保存/替换/删除与非法名拒绝、OTA 请求体解析设备版本、上传后 OTA 下发绝对 URL、force 以数字下发、移除后回落到设备版本，`test/firmware.test.mjs` 4 项 + `test/http.test.mjs` 5 项）。**错误气泡与 session_id**（ASR 失败 alert、LLM 失败 alert + 兜底语音、下行业务消息带 session_id，`test/turn-guard.test.mjs` 3 项）。**设备工具可见性**（`DeviceMcpClient.catalog()` 只读目录、`GET /devices/tools` 在线/离线/参数校验，`test/device-mcp.test.mjs` + `test/http.test.mjs`）。**DSH 会话后端**（只念最终结论、工具步骤文字被丢弃、按 sessionId 分发防串台、`source.rpcId` 对上本轮、打断取消当前 turn、超时取消并抛错、绑定按智能体持久化，`test/session-backend.test.mjs` 10 项；回答来源保存/坏值 400/`GET /sessions` 过滤子代理，`test/agents.test.mjs` 2 项）。
 
 **不接手表也能做的三种探针**：
 
@@ -381,6 +381,30 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   「管理设备」弹窗每台绑定设备多一个「设备工具 ▼」按钮，展开显示 MCP 上报的工具；执行仍走
   `callTool` 的原始名映射，目录不参与执行。真机工具列表未实测（依赖设备在线完成 MCP 握手）。
 
+- **DSH 会话后端（2026-11-19）**：回答来源多了一条 `session`——不再由插件直连模型，而是把这句话
+  送进一条 DSH Session（DS-Bot 的 Bot 也是普通 Session，绑同一个 sessionId 即可），只念这一轮的
+  **最终结论**。四件事：
+  - **是什么**：`voice.backend`（全局，默认 `llm`）+ 智能体 `overrides.backend`（`llm` / `session` /
+    空=跟随全局）+ `overrides.sessionId`（空 = 首次连接自动建并记在 `voice-sessions.json`）。
+  - **入口**：`src/host-session.js` 的 `createSessionBridge`（`ctx.sessionController` + `ctx.on('session/event')`）、
+    `src/voice/adapters/dsh-session.js` 的 `createDshSessionLlm`（与 `host-llm.js` 同接口，只有 `stream`，
+    不实现 `streamWithTools`）、`src/session-bindings.js` 的 `SessionBindingStore`、`index.js` 的
+    `backendFor` / `pinnedSessionFor` / `ensureVoiceSession`。控制 API：`GET /sessions`（只读，最近 60 条，
+    过滤子代理会话）、`POST /agents/update` 新增 `backend` / `sessionId`（坏值 400：`invalid-backend` /
+    `invalid-session-id`）。控制台在「智能体 → 配置 → 模型与记忆」顶部。
+  - **生效条件**：保存后**设备下一次连接**生效（adapter 缓存 key 已带 backend / agentId）；改代码仍要重启 DSH。
+  - **语义与边界**：会话模式下 `toolsEnabled` / `memoryEnabled` / `memoryKey` 一律关掉/清空（工具与记忆
+    由会话负责，插件再塞一份会打架）；`sessionPrompt` 为空；用户话前面拼一段 `[语音通道]…` 指令
+    （`voice.session.instruction` 可覆盖）。只念「这一轮最终那条没有 tool-call 的 assistant 消息」，
+    工具步骤里的过程文字丢弃；`toSpeech()` 去掉 Markdown/代码块并按句末截断（`voice.session.maxChars`，
+    默认 600）。用 `source.rpcId` 把 prompt 与 `user/message` 对上，`turn/end` 收口；打断 → `cancel`，
+    超时（`voice.session.timeoutMs`，默认 120s）→ 也 `cancel` 并抛错（由会话层播兜底话术）。
+    **未实测**：真实手表 → 会话的端到端延迟、会话里工具/审批卡片对语音的体感、DS-Bot Bot 回复长文时的
+    截断效果；`host-llm` 与 `session` 两种后端的 A/B 延迟数据也还没采。
+- **回答来源的取舍（2026-11-19，用户确认）**：DS-Bot 不是可注入的后端服务，它的 Bot 就是一条 DSH
+  Session；所以接的是「DSH 会话」，不是「DS-Bot 插件」。不要为了接 DS-Bot 去读它的 `state.json`
+  或调 `POST /api/bot`（浏览器 cookie 鉴权、Bot 换 part 后 sessionId 会变）——那是耦合，不是集成。
+
 ## 九、多服务商冗余（2026-11-06）
 
 控制台「全局设置 → 服务商」是 ASR / LLM / TTS **三张概览卡**，点「管理」进入该环节的弹窗；
@@ -588,7 +612,7 @@ python -m esptool --chip esp32s3 --port COM8 read-flash 0x3B000 0xD2000 "$env:TE
   [播报/重命名/删除智能体] + 角色·模型·最近对话三格 + 配置/历史/设备(N) 三按钮）；
   「设备(N)」弹窗里绑定/解绑、改设备别名、OTA/断开（**没有删除设备入口**）；
   「播报」发给该智能体所有在线设备（一台都不在线时提示「这个智能体没有在线设备」）。
-- 验证：`node --test "test/*.test.mjs"`（294 项，含 `test/agents.test.mjs` 7 项、`test/deepseek.test.mjs` 18 项、主用/备用互换 3 项、智能体服务商/官方音色 6 项）。
+- 验证：`node --test "test/*.test.mjs"`（319 项，含 `test/agents.test.mjs` 9 项、`test/session-backend.test.mjs` 10 项、`test/deepseek.test.mjs` 18 项、主用/备用互换 3 项、智能体服务商/官方音色 6 项）。
 
 ## 十一、改代码时最容易漏的几处
 

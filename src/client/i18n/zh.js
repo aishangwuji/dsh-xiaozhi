@@ -139,6 +139,15 @@
       llmProvider: 'LLM',
       model: '模型',
       agentModelLabel: '对话模型（LLM）',
+      // 回答来源（2026-11-19）：直连模型 vs 送进 DSH 会话
+      backendLabel: '回答来源',
+      backendFollow: '跟随全局',
+      backendLlm: '直连模型',
+      backendSession: 'DSH 会话',
+      backendHint: 'DSH 会话 = 这句话送进一条会话（含它的工具、记忆与权限），只念最终结论',
+      sessionLabel: '绑定的会话',
+      sessionAuto: '首次连接时自动新建',
+      sessionHint: '下拉只列最近会话；找不到可手填 session-… 。DS-Bot 的 Bot 也能绑',
       agentModelDefault: '默认（用全局模型）',
       // 智能体卡片（2026-11-13 改版）：徽标 + 状态 + 三格信息 + 三按钮
       agentMenu: '操作',

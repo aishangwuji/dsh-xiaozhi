@@ -18,6 +18,7 @@
  */
 
 import { homedir } from 'node:os'
+import { mkdir } from 'node:fs/promises'
 import { join, resolve as resolvePath } from 'node:path'
 import { ConnectionHub } from './src/hub.js'
 import { createControlHandler } from './src/control.js'
@@ -32,11 +33,14 @@ import { InboundMcpRegistry } from './src/mcp/inbound.js'
 import { createGateway } from './src/gateway.js'
 import { createIngress } from './src/ingress.js'
 import { startMdns } from './src/mdns.js'
+import { createSessionBridge } from './src/host-session.js'
+import { SessionBindingStore } from './src/session-bindings.js'
 import { mergeDeviceConfig } from './src/device-config.js'
 import { SettingsStore } from './src/settings.js'
 import { DeviceStore } from './src/store.js'
 import { PendingStore } from './src/pending.js'
 import { buildLlmAdapter, buildTtsAdapter, buildAsrAdapter, createVoiceAdapters, prioritizeTtsProvider } from './src/voice/adapters/index.js'
+import { createDshSessionLlm, DEFAULT_SESSION_INSTRUCTION } from './src/voice/adapters/dsh-session.js'
 import { probeAsr } from './src/voice/asr-probe.js'
 import { hostProviderIssue } from './src/voice/host-provider.js'
 import { createOpusStreamEncoder, encodePcmToOpus, probeFfmpeg, UplinkDecoder } from './src/voice/codec.js'
@@ -220,11 +224,13 @@ export function resolveConfig(config = {}) {
   // The device-side gateway is a command whitelist, so its config must stay
   // explicit; anything malformed is dropped by `createGateway`.
   const deviceGateway = gateway.gateway && typeof gateway.gateway === 'object' ? gateway.gateway : {}
+  const dataRoot = resolvePath(text(field(root, ['dataRoot', 'data_root'], join(homedir(), '.dsh-xiaozhi'))))
+  const sessionRaw = voiceRaw.session && typeof voiceRaw.session === 'object' ? voiceRaw.session : {}
 
   return {
     host: text(field(gateway, ['host'], '0.0.0.0'), '0.0.0.0') || '0.0.0.0',
     port: positiveInteger(field(gateway, ['port'], DEFAULT_PORT), DEFAULT_PORT, { min: 1, max: 65_535 }),
-    dataRoot: resolvePath(text(field(root, ['dataRoot', 'data_root'], join(homedir(), '.dsh-xiaozhi')))),
+    dataRoot,
     // 官方 config.yaml 的 mcp_endpoint：出站 MCP 接入点（ws://.../mcp/...）。
     mcpEndpoint:
       text(field(root, ['mcpEndpoint', 'mcp_endpoint'], '')) ||
@@ -301,6 +307,25 @@ export function resolveConfig(config = {}) {
     voice: {
       enabled: field(voiceRaw, ['enabled'], false) === true,
       ffmpegPath: text(field(voiceRaw, ['ffmpegPath', 'ffmpeg_path'], 'ffmpeg'), 'ffmpeg') || 'ffmpeg',
+      // 回答来源（2026-11-19）：llm = 插件直连模型（原行为）；session = 把这句话送进
+      // 一条 DSH 会话，只念这一轮的最终结论。全局默认 + 智能体 overrides.backend 覆盖。
+      backend: text(field(voiceRaw, ['backend'], 'llm'), 'llm') === 'session' ? 'session' : 'llm',
+      session: {
+        // 固定绑定的会话；留空 = 首次连接时自动建一条并按智能体记住（voice-sessions.json）。
+        sessionId: text(field(sessionRaw, ['sessionId', 'session_id'], '')),
+        // 拼在用户话前面的语音指令；空串 = 用适配器内置默认。
+        instruction: text(field(sessionRaw, ['instruction'], '')),
+        // 一轮的总预算（ms）。超时会取消该会话当前 turn，避免下一句排长队。
+        timeoutMs: positiveInteger(
+          field(sessionRaw, ['timeoutMs', 'timeout_ms'], 120_000),
+          120_000,
+          { min: 5_000, max: 600_000 },
+        ),
+        // 念出来的最大字数（超出按句末截断）。
+        maxChars: positiveInteger(field(sessionRaw, ['maxChars', 'max_chars'], 600), 600, { min: 40, max: 4_000 }),
+        // 自动建会话时的工作目录；空串 = dataRoot/voice-sessions。
+        cwd: text(field(sessionRaw, ['cwd'], '')),
+      },
       // 服务端插件工具配置（官方 config.yaml 的 plugins 段）：newsnow / hass / ragflow / callDevice / music。
       // 天气工具已于 2026-11-09 下掉（要 QWeather Key，用户不用），这里不再解析 weather 段。
       tools: {
@@ -491,6 +516,24 @@ export function apply(ctx, config = {}) {
   // 智能体（配置单位）与设备（物理单位）分开存：一台智能体可以绑定多台设备，
   // 人设/模型/音色/语种/记忆/工具开关都在智能体上（对齐参考服务端 ai_agent / ai_device）。
   const agents = new AgentStore({ file: join(resolved.dataRoot, 'agents.json'), logger })
+  // 智能体 → 语音用的 DSH 会话（首次连接时自动建，之后复用）。纯运行期状态，
+  // 与 agents.json 分开存，坏了就重来，不阻断语音。
+  const sessionBindings = new SessionBindingStore({
+    file: join(resolved.dataRoot, 'voice-sessions.json'),
+    logger,
+  })
+  // 宿主会话桥：DSH 的 sessionController + session/event。没有装配时 available=false，
+  // 只有把某个智能体设成 backend=session 才会在构建期报错，其他链路不受影响。
+  const sessionBridge = createSessionBridge({
+    sessionController: typeof ctx.get === 'function' ? ctx.get('sessionController') : ctx.sessionController,
+    on: (event, listener) => ctx.on(event, listener),
+    logger,
+  })
+  if (!sessionBridge.available) {
+    logger.info?.('dsh-xiaozhi: 宿主没有 sessionController，voice.backend=session 不可用（默认仍是直连 LLM）')
+  }
+  // 卸载插件时退订 session/event：桥自己持有监听器集合，不交给 Loader 猜。
+  ctx.effect?.(() => () => sessionBridge.dispose())
 
   // 零接触入网：新设备第一次连上来就自动建一个属于它的智能体。名字与设备无关
   // （「智能体 N」）；设备保留自己的昵称/别名。之后可以在控制台把多台设备绑到同一个
@@ -522,9 +565,44 @@ export function apply(ctx, config = {}) {
 
   // 旧设备名册升级成「智能体 + 绑定」：每台设备各建一个智能体，配置原样搬过去，
   // 记忆文件复制到智能体键下。幂等，失败只记录不阻断启动。
-  const storesReady = Promise.all([store.load(), agents.load(), pending.load()])
+  const storesReady = Promise.all([store.load(), agents.load(), pending.load(), sessionBindings.load()])
     .then(() => adoptLegacyDevices({ devices: store, agents, memory, logger }))
     .catch((error) => logger.error?.(`dsh-xiaozhi: agent bootstrap failed: ${error.message}`))
+
+  /**
+   * 这个智能体的回答来源：智能体 overrides.backend（llm / session）优先，
+   * 空串 = 跟随全局 `voice.backend`（默认 llm）。
+   */
+  const backendFor = (device) => {
+    const override = String(agentOf(device)?.overrides?.backend ?? '').trim()
+    return override === 'llm' || override === 'session' ? override : resolved.voice.backend
+  }
+
+  /** 智能体显式钉死的会话 id；空串 = 交给自动建/复用。 */
+  const pinnedSessionFor = (device) =>
+    String(agentOf(device)?.overrides?.sessionId ?? '').trim() || resolved.voice.session.sessionId
+
+  /**
+   * 解析该设备这一轮要用的会话：显式绑定 > 之前自动建的 > 新建一条并记住。
+   *
+   * 自动建的按智能体存（同一智能体的多块表共用一段上下文），存在
+   * `voice-sessions.json`；会话被删/失效时 `prompt` 会失败，用户重新选一条即可。
+   */
+  async function ensureVoiceSession(device) {
+    const pinned = pinnedSessionFor(device)
+    if (pinned) return pinned
+    const agentId = agentOf(device)?.id || device?.deviceId || ''
+    if (!agentId) throw new Error('无法确定语音会话归属（智能体为空）')
+    const cached = sessionBindings.get(agentId)
+    if (cached) return cached
+    const cwd = resolved.voice.session.cwd || join(resolved.dataRoot, 'voice-sessions')
+    // DSH 把 cwd 当会话的工作目录；目录不存在时先建出来，免得建会话直接失败。
+    await mkdir(cwd, { recursive: true })
+    const sessionId = await sessionBridge.create({ cwd })
+    await sessionBindings.set(agentId, sessionId)
+    logger.info?.(`dsh-xiaozhi: 已为智能体 ${agentId} 自动创建语音会话 ${sessionId}`)
+    return sessionId
+  }
   const hub = new ConnectionHub({
     logger,
     onEvent: (event) => {
@@ -619,9 +697,16 @@ export function apply(ctx, config = {}) {
           // 几个 TTS 字段，导致在控制台修正 ASR resourceId（或换 ASR 的 Key）之后，设备重连
           // 仍然命中旧缓存，表现为「改了配置不生效、ASR 一直返回空」。
           const effective = mergeDevice(resolvedProfile, device)
+          // 回答来源：session 时 LLM 段完全不建 provider 链，改由会话适配器提供流。
+          const backend = backendFor(device)
+          const sessionMode = backend === 'session'
           // 2026-11-08 起配置在智能体上：key 必须带 agent.overrides，否则改完音色/模型后
           // 设备重连仍命中旧 adapter（旧版带的是 device.overrides，现在那只是回滚兜底）。
           const key = JSON.stringify([
+            backend,
+            // 会话模式下适配器闭包里带着「哪个智能体的会话」：两个智能体即使 overrides
+            // 一模一样，也不能共用同一个适配器，否则会把 A 的话送进 B 的会话。
+            sessionMode ? agentOf(device)?.id ?? device?.deviceId ?? '' : '',
             agentOf(device)?.overrides ?? {},
             device?.overrides ?? {},
             effective.config.systemPrompt ?? '',
@@ -656,11 +741,37 @@ export function apply(ctx, config = {}) {
               backups: merged.tts.backups.map((entry) => ({ language, ...entry })),
             }
           }
+          const sessionAdapter = sessionMode
+            ? (() => {
+                try {
+                  return createDshSessionLlm({
+                    bridge: sessionBridge,
+                    sessionId: () => ensureVoiceSession(device),
+                    instruction: resolved.voice.session.instruction || DEFAULT_SESSION_INSTRUCTION,
+                    timeoutMs: resolved.voice.session.timeoutMs,
+                    maxChars: resolved.voice.session.maxChars,
+                    logger,
+                  })
+                } catch (error) {
+                  // 建连不能因为后端不可用就断掉：让设备连上，说第一句时走兜底语音报错。
+                  logger.error?.(
+                    `dsh-xiaozhi: 设备 ${device?.deviceId ?? '?'} 的回答来源是 DSH 会话，但后端不可用：${error.message}`,
+                  )
+                  return {
+                    name: 'dsh-session',
+                    async *stream() {
+                      throw new Error(`DSH 会话后端不可用：${error.message}`)
+                    },
+                  }
+                }
+              })()
+            : null
           const adapters = createVoiceAdapters(merged, {
             systemPrompt: withShortReplies(withOutputLanguage(withClock(effective.config.systemPrompt), merged.tts.language)),
             ffmpegPath: resolved.voice.ffmpegPath,
             speechToText,
             llm: hostLlm,
+            llmAdapter: sessionAdapter,
             logger,
             deviceId: device?.deviceId ?? '',
           })
@@ -708,18 +819,25 @@ export function apply(ctx, config = {}) {
             }
           }
           const adapters = adaptersFor(deviceDefaults(), device)
+          const sessionMode = backendFor(device) === 'session'
           // 会话每轮都会用 config.systemPrompt 重设 LLM 的提示词（为了把记忆拼进去），
           // 所以这里必须给**同一条**已经拼好时间和语种的字符串，否则人格在第一轮就被
           // 覆盖成空串——面板里改人设「看起来不生效」就是这么来的。
-          const sessionPrompt = withShortReplies(
-            withOutputLanguage(withClock(resolvedProfile.config.systemPrompt), effectiveTts.language),
-          )
+          // 会话后端不需要：人设/记忆/工具全在绑定的那条 Session 里，插件再塞一份会打架。
+          const sessionPrompt = sessionMode
+            ? ''
+            : withShortReplies(
+                withOutputLanguage(withClock(resolvedProfile.config.systemPrompt), effectiveTts.language),
+              )
           // 观测不许打断建连：2026-11-06 这里引用了一个不属于本作用域的变量，
           // voice.build 抛 ReferenceError → 服务器在 WS 握手后发不出 hello，
           // 设备表现就是「一直连接中、然后跳错误页」。trace 写失败只降级为告警。
           try {
             trace('session.build', {
               device: device?.deviceId ?? '',
+              // 这一轮的回答来源：llm = 插件直连；session = 绑定的 DSH 会话。
+              backend: sessionMode ? 'session' : 'llm',
+              sessionId: sessionMode ? pinnedSessionFor(device) || '(auto)' : '',
               ttsProvider: effectiveTts.provider,
               // 记录实际生效的音色（设备选的 / 厂商默认 / 跨厂商回落后的），排障才有据可查。
               voice: effectiveTtsVoice,
@@ -759,11 +877,14 @@ export function apply(ctx, config = {}) {
               // 判停模式随会话下发：device 时以固件 listen stop 收口。
               vadMode: resolved.voice.vadMode,
               // 每轮都会被 session 重新写进 LLM 的提示词（记忆拼在后面），必须是完整版本。
+              // 会话后端留空：它自己的 system prompt 由 DSH 按 preset 装配。
               systemPrompt: sessionPrompt,
-              toolsEnabled: resolved.voice.toolsEnabled !== false,
-              memoryEnabled: agentOf(device)?.memoryEnabled !== false,
+              // 会话自带工具与记忆：插件这边必须让路，否则两套工具表/两段记忆会互相打架。
+              toolsEnabled: sessionMode ? false : resolved.voice.toolsEnabled !== false,
+              memoryEnabled: sessionMode ? false : agentOf(device)?.memoryEnabled !== false,
               // 记忆按智能体存：同一智能体绑定的多台设备共用一份记忆；历史仍按设备落盘。
-              memoryKey: agentOf(device)?.id ?? device?.deviceId ?? '',
+              // 会话后端把记忆交给 DSH，这里留空，免得两套记忆各记一半。
+              memoryKey: sessionMode ? '' : agentOf(device)?.id ?? device?.deviceId ?? '',
               dumpPcm: resolved.voice.dumpPcm === true,
               // 历史对话每轮落 user/assistant 文本 + 两段 WAV；与 dumpPcm 解耦。
               historyAudio: resolved.voice.historyAudio !== false,
@@ -788,7 +909,7 @@ export function apply(ctx, config = {}) {
         voice.enabled = true
         logger.info?.(
           `dsh-xiaozhi: voice pipeline ready (ffmpeg ${probe.version || 'unknown'}, ` +
-            `llm=${resolved.voice.llm.provider}${
+            `backend=${resolved.voice.backend}, llm=${resolved.voice.llm.provider}${
               resolved.voice.llm.provider === 'host'
                 ? `(${resolved.voice.llm.hostProvider || '未选厂商'}/${resolved.voice.llm.model || '未选模型'})`
                 : ''
@@ -823,6 +944,7 @@ export function apply(ctx, config = {}) {
     pending,
     speechToText,
     llm: hostLlm,
+    sessions: sessionBridge,
     tools: toolRegistry,
     memory,
     history,

@@ -31,7 +31,7 @@ function headers() {
   return { 'content-type': 'application/json', 'x-dsh-xiaozhi': '1' }
 }
 
-async function start({ seedDevices, autoAgent = false } = {}) {
+async function start({ seedDevices, autoAgent = false, sessions } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-xiaozhi-agents-'))
   if (seedDevices) {
     await writeFile(join(dir, 'devices.json'), JSON.stringify({ version: 2, devices: seedDevices }, null, 2))
@@ -62,6 +62,7 @@ async function start({ seedDevices, autoAgent = false } = {}) {
     settings,
     memory,
     history,
+    sessions,
     logger: silent,
     ready: Promise.resolve(),
   })
@@ -82,8 +83,7 @@ async function start({ seedDevices, autoAgent = false } = {}) {
     agents,
     memory,
     history,
-    call,
-    async dispose() {
+    call,    async dispose() {
       await new Promise((resolve) => server.close(resolve))
       await rm(dir, { recursive: true, force: true })
     },
@@ -370,5 +370,71 @@ test('legacy agent names copied from device nicknames are corrected once, edited
     assert.equal(agents.get('legacy-a').name, '智能体 1')
   } finally {
     await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('回答来源可以按智能体切到 DSH 会话，坏值被边界拒绝', async () => {
+  const fakeSessions = {
+    available: true,
+    async list() {
+      return [
+        { sessionId: 'session-cccc', updatedAt: 20, running: false, blank: false, cwd: 'C:\\work' },
+        { sessionId: 'session-dddd', updatedAt: 10, running: true, blank: false },
+        { sessionId: 'session-child', updatedAt: 30, parentSessionId: 'session-cccc' },
+      ]
+    },
+  }
+  const ctx = await start({ sessions: fakeSessions })
+  try {
+    const created = await ctx.call('/agents', { method: 'POST', body: { name: '语音助手' } })
+    assert.equal(created.status, 200)
+    const agentId = created.json.agent.id
+
+    const updated = await ctx.call('/agents/update', {
+      method: 'POST',
+      body: { agentId, backend: 'session', sessionId: 'session-cccc' },
+    })
+    assert.equal(updated.status, 200)
+    assert.equal(updated.json.agent.overrides.backend, 'session')
+    assert.equal(updated.json.agent.overrides.sessionId, 'session-cccc')
+
+    // 空串 = 删掉覆盖（回到跟随全局 / 自动建）。
+    const cleared = await ctx.call('/agents/update', {
+      method: 'POST',
+      body: { agentId, backend: '', sessionId: '' },
+    })
+    assert.equal(cleared.status, 200)
+    assert.equal(cleared.json.agent.overrides.backend, undefined)
+    assert.equal(cleared.json.agent.overrides.sessionId, undefined)
+
+    const badBackend = await ctx.call('/agents/update', { method: 'POST', body: { agentId, backend: 'gpt' } })
+    assert.equal(badBackend.status, 400)
+    assert.equal(badBackend.json.error.code, 'invalid-backend')
+
+    const badSession = await ctx.call('/agents/update', { method: 'POST', body: { agentId, sessionId: '../../etc' } })
+    assert.equal(badSession.status, 400)
+    assert.equal(badSession.json.error.code, 'invalid-session-id')
+
+    const sessions = await ctx.call('/sessions')
+    assert.equal(sessions.status, 200)
+    assert.equal(sessions.json.available, true)
+    assert.deepEqual(
+      sessions.json.items.map((row) => row.sessionId),
+      ['session-cccc', 'session-dddd'],
+      '子代理会话不列为语音目标，按最近时间排序',
+    )
+  } finally {
+    await ctx.dispose()
+  }
+})
+
+test('宿主没有会话服务时 /sessions 回不可用，而不是 500', async () => {
+  const ctx = await start()
+  try {
+    const response = await ctx.call('/sessions')
+    assert.equal(response.status, 200)
+    assert.deepEqual(response.json, { available: false, items: [] })
+  } finally {
+    await ctx.dispose()
   }
 })

@@ -632,6 +632,15 @@ var DshXiaozhi = (() => {
     llmProvider: "LLM",
     model: "\u6A21\u578B",
     agentModelLabel: "\u5BF9\u8BDD\u6A21\u578B\uFF08LLM\uFF09",
+    // 回答来源（2026-11-19）：直连模型 vs 送进 DSH 会话
+    backendLabel: "\u56DE\u7B54\u6765\u6E90",
+    backendFollow: "\u8DDF\u968F\u5168\u5C40",
+    backendLlm: "\u76F4\u8FDE\u6A21\u578B",
+    backendSession: "DSH \u4F1A\u8BDD",
+    backendHint: "DSH \u4F1A\u8BDD = \u8FD9\u53E5\u8BDD\u9001\u8FDB\u4E00\u6761\u4F1A\u8BDD\uFF08\u542B\u5B83\u7684\u5DE5\u5177\u3001\u8BB0\u5FC6\u4E0E\u6743\u9650\uFF09\uFF0C\u53EA\u5FF5\u6700\u7EC8\u7ED3\u8BBA",
+    sessionLabel: "\u7ED1\u5B9A\u7684\u4F1A\u8BDD",
+    sessionAuto: "\u9996\u6B21\u8FDE\u63A5\u65F6\u81EA\u52A8\u65B0\u5EFA",
+    sessionHint: "\u4E0B\u62C9\u53EA\u5217\u6700\u8FD1\u4F1A\u8BDD\uFF1B\u627E\u4E0D\u5230\u53EF\u624B\u586B session-\u2026 \u3002DS-Bot \u7684 Bot \u4E5F\u80FD\u7ED1",
     agentModelDefault: "\u9ED8\u8BA4\uFF08\u7528\u5168\u5C40\u6A21\u578B\uFF09",
     // 智能体卡片（2026-11-13 改版）：徽标 + 状态 + 三格信息 + 三按钮
     agentMenu: "\u64CD\u4F5C",
@@ -949,6 +958,15 @@ var DshXiaozhi = (() => {
     llmProvider: "LLM",
     model: "Model",
     agentModelLabel: "Chat model (LLM)",
+    // Reply source (2026-11-19): direct model vs a DSH session
+    backendLabel: "Reply source",
+    backendFollow: "Follow global",
+    backendLlm: "Direct model",
+    backendSession: "DSH session",
+    backendHint: "DSH session sends the sentence into a session (with its tools, memory and permissions) and only speaks the final answer",
+    sessionLabel: "Bound session",
+    sessionAuto: "Create one on first connect",
+    sessionHint: "Only recent sessions are listed; paste a session-\u2026 if missing. DS Bot bots work too",
     agentModelDefault: "Default (global model)",
     // Agent card (redesigned 2026-11-13): avatar + status + 3 info cells + 3 buttons
     agentMenu: "Actions",
@@ -2109,6 +2127,9 @@ var DshXiaozhi = (() => {
     const [draftLanguage, setDraftLanguage] = useState2(agent.overrides?.language ?? "");
     const [saving, setSaving] = useState2(false);
     const [draftModel, setDraftModel] = useState2(agent.overrides?.model ?? "");
+    const [draftBackend, setDraftBackend] = useState2(agent.overrides?.backend ?? "");
+    const [draftSessionId, setDraftSessionId] = useState2(agent.overrides?.sessionId ?? "");
+    const [sessionRows, setSessionRows] = useState2(null);
     const [ttsGlobal, setTtsGlobal] = useState2({ provider: "volc", resourceId: "" });
     const [ttsEntries, setTtsEntries] = useState2([]);
     const [voiceCatalog, setVoiceCatalog] = useState2(null);
@@ -2140,6 +2161,15 @@ var DshXiaozhi = (() => {
         callApi("/models?kind=llm&source=primary").then((models) => {
           if (alive) setModelOptions(Array.isArray(models?.options) ? models.options : []);
         }).catch(() => {
+        });
+        callApi("/sessions").then((data2) => {
+          if (!alive) return;
+          setSessionRows({
+            available: data2?.available !== false,
+            items: Array.isArray(data2?.items) ? data2.items : []
+          });
+        }).catch(() => {
+          if (alive) setSessionRows({ available: false, items: [] });
         });
       }).catch(() => {
       });
@@ -2181,7 +2211,10 @@ var DshXiaozhi = (() => {
             // 空 = 跟随全局主用；非空 = 从全局已配置的主用/备用里挑一条（服务端校验）。
             ttsProvider: draftTtsProvider,
             language: draftLanguage,
-            model: draftModel
+            model: draftModel,
+            // 空 = 跟随全局；backend=session 时 sessionId 空 = 首次连接自动建。
+            backend: draftBackend,
+            sessionId: draftSessionId
           }
         });
         await onSaved();
@@ -2296,9 +2329,54 @@ var DshXiaozhi = (() => {
     if (draftModel && !modelSelectOptions.some((option) => option.value === draftModel)) {
       modelSelectOptions.push({ value: draftModel, label: draftModel });
     }
+    const backendOptions = [
+      { value: "", label: t("backendFollow") },
+      { value: "llm", label: t("backendLlm") },
+      { value: "session", label: t("backendSession") }
+    ];
+    const sessionOptions = [{ value: "", label: t("sessionAuto") }].concat(
+      (sessionRows && sessionRows.items || []).map((row) => ({
+        value: row.sessionId,
+        label: `${String(row.sessionId).replace(/^session-/, "").slice(0, 8)}${row.cwd ? ` \xB7 ${String(row.cwd).split(/[\\/]/).filter(Boolean).pop() || ""}` : ""}`
+      }))
+    );
+    if (draftSessionId && !sessionOptions.some((option) => option.value === draftSessionId)) {
+      sessionOptions.push({ value: draftSessionId, label: draftSessionId });
+    }
+    const backendField = h(
+      "div",
+      { className: "xz-field" },
+      h("label", null, t("backendLabel")),
+      h(PillSelect, {
+        value: draftBackend,
+        ariaLabel: t("backendLabel"),
+        options: backendOptions,
+        onChange: setDraftBackend
+      }),
+      h("span", { className: "note" }, t("backendHint"))
+    );
+    const sessionField = draftBackend === "session" ? h(
+      "div",
+      { className: "xz-field" },
+      h("label", null, t("sessionLabel")),
+      sessionRows && sessionRows.available === false ? h("input", {
+        className: "xz-input",
+        value: draftSessionId,
+        placeholder: "session-\u2026",
+        onChange: (e) => setDraftSessionId(e.target.value)
+      }) : h(PillSelect, {
+        value: draftSessionId,
+        ariaLabel: t("sessionLabel"),
+        options: sessionOptions,
+        onChange: setDraftSessionId
+      }),
+      h("span", { className: "note" }, t("sessionHint"))
+    ) : null;
     const modelPane = h(
       "div",
       { key: "model", className: "xz-pane" },
+      backendField,
+      sessionField,
       // 直连语义：provider / Base URL / API Key 都在「全局设置 → LLM」里，
       // 这里只覆盖模型名；留空 = 用全局默认模型。模型清单来自全局 LLM 的 /models，
       // 拉不到时退回手填（各厂商模型 id 命名差异大，不硬编码）。

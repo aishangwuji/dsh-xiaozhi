@@ -107,6 +107,7 @@ export function createControlHandler({
   history,
   pending,
   firmware,
+  sessions,
   ready: bootstrapReady,
   logger,
   clock = () => Date.now(),
@@ -235,6 +236,25 @@ export function createControlHandler({
     // 语种会被拼进系统提示词，只放白名单值；不在名单里的一律当“跟随音色”。
     if (typeof body.language === 'string') patch.language = normalizeOutputLanguage(body.language)
     if (typeof body.model === 'string') patch.model = body.model.trim().slice(0, 120)
+    // 回答来源（2026-11-19）：空串 = 跟随全局；llm / session 二选一。
+    if (typeof body.backend === 'string') {
+      const backend = body.backend.trim()
+      if (backend && backend !== 'llm' && backend !== 'session') {
+        throw Object.assign(new Error(`未知的回答来源「${backend}」`), { status: 400, code: 'invalid-backend' })
+      }
+      patch.backend = backend
+    }
+    // 绑定的 DSH 会话；空串 = 删掉覆盖（回到自动建/复用）。
+    if (typeof body.sessionId === 'string') {
+      const sessionId = body.sessionId.trim()
+      if (sessionId && !/^session-[A-Za-z0-9._-]{1,80}$/.test(sessionId)) {
+        throw Object.assign(new Error('会话 id 格式不对（应形如 session-<uuid>）'), {
+          status: 400,
+          code: 'invalid-session-id',
+        })
+      }
+      patch.sessionId = sessionId
+    }
     if (body.speed !== undefined) patch.speed = Number(body.speed)
     if (body.silenceMs !== undefined) patch.silenceMs = Number(body.silenceMs)
     return patch
@@ -386,6 +406,31 @@ export function createControlHandler({
         sendJson(res, 200, { deviceId, rejected: removed, pending: pending.list().map(publicPending) })
         return
       }
+    }
+
+    // --------------------------------------------------------------- 会话（session）
+    // 只读：给「智能体 → 配置 → 回答来源 = DSH 会话」提供可选项。
+    // 列不出会话不是错误（宿主没有会话服务 / 列表失败都回空），控制台会提示手填。
+    if (method === 'GET' && path === '/sessions') {
+      if (!sessions?.available) {
+        sendJson(res, 200, { available: false, items: [] })
+        return
+      }
+      const items = await sessions.list()
+      const rows = items
+        // 子代理会话不作为语音目标（它依赖父会话，绑上去没意义）。
+        .filter((row) => row && typeof row.sessionId === 'string' && !row.parentSessionId && row.origin !== 'subagent')
+        .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
+        .slice(0, 60)
+        .map((row) => ({
+          sessionId: row.sessionId,
+          updatedAt: row.updatedAt ?? 0,
+          running: row.running === true,
+          blank: row.blank === true,
+          cwd: typeof row.cwd === 'string' ? row.cwd : '',
+        }))
+      sendJson(res, 200, { available: true, items: rows })
+      return
     }
 
     // --------------------------------------------------------------- 智能体（agent）

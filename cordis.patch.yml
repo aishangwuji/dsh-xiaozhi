@@ -78,6 +78,21 @@
           # 判停模式：device = 用固件 AFE 的 VAD（固件侧 VAD_MODE_2 + vad_min_noise_ms=300，
           # 抗环境音；固件判到静音就发 listen stop）；energy = 老固件退回插件自判。
           vadMode: 'device'
+          # 回答来源（2026-11-19）：llm = 插件直连模型（默认）；session = 把这句话送进
+          # 一条 DSH 会话（含它的工具/记忆/权限），只念这一轮的最终结论。
+          # 单个智能体可在「配置 → 模型与记忆 → 回答来源」里覆盖。
+          backend: 'llm'
+          session:
+            # 固定绑定的会话；留空 = 首次连接自动建一条，按智能体记在 voice-sessions.json。
+            sessionId: ''
+            # 拼在用户话前面的语音指令；留空 = 用适配器内置的「口语、两句内」默认。
+            instruction: ''
+            # 一轮总预算（ms）：超时取消该会话当前 turn，避免下一句排长队。
+            timeoutMs: 120000
+            # 念出来的最大字数（超出按句末截断）。
+            maxChars: 600
+            # 自动建会话时的工作目录；留空 = <dataRoot>/voice-sessions。
+            cwd: ''
           # 下面两项只在 vadMode: energy 时生效，不是原厂值（能量 VAD 自研参数）。
           silenceMs: 400
           minSpeechMs: 120

@@ -27,6 +27,11 @@ import { ROLE_PRESETS, rolePresetPrompt, matchRolePreset } from './rolePresets.j
       const [draftLanguage, setDraftLanguage] = useState(agent.overrides?.language ?? '');
       const [saving, setSaving] = useState(false);
       const [draftModel, setDraftModel] = useState(agent.overrides?.model ?? '');
+      // 回答来源（2026-11-19）：空 = 跟随全局；llm = 插件直连模型；session = 送进一条
+      // DSH 会话，只念这一轮的最终结论。会话列表来自 `/sessions`（只读）。
+      const [draftBackend, setDraftBackend] = useState(agent.overrides?.backend ?? '');
+      const [draftSessionId, setDraftSessionId] = useState(agent.overrides?.sessionId ?? '');
+      const [sessionRows, setSessionRows] = useState(null);
       // 智能体级只覆盖「模型名」：provider / Key / 端点都是全局设置的一部分，这里不再有
       // 「Harness 厂商 + hostProvider」二级下拉（2026-11-07 起主路径改回插件直连）。
       // 音色（= TTS 模型）是智能体级配置，但厂商与资源族来自全局 TTS：拉 /settings 而不是
@@ -77,6 +82,17 @@ import { ROLE_PRESETS, rolePresetPrompt, matchRolePreset } from './rolePresets.j
                 if (alive) setModelOptions(Array.isArray(models?.options) ? models.options : []);
               })
               .catch(() => {});
+            callApi('/sessions')
+              .then((data) => {
+                if (!alive) return;
+                setSessionRows({
+                  available: data?.available !== false,
+                  items: Array.isArray(data?.items) ? data.items : []
+                });
+              })
+              .catch(() => {
+                if (alive) setSessionRows({ available: false, items: [] });
+              });
           })
           .catch(() => {});
         return () => {
@@ -127,7 +143,10 @@ import { ROLE_PRESETS, rolePresetPrompt, matchRolePreset } from './rolePresets.j
               // 空 = 跟随全局主用；非空 = 从全局已配置的主用/备用里挑一条（服务端校验）。
               ttsProvider: draftTtsProvider,
               language: draftLanguage,
-              model: draftModel
+              model: draftModel,
+              // 空 = 跟随全局；backend=session 时 sessionId 空 = 首次连接自动建。
+              backend: draftBackend,
+              sessionId: draftSessionId
             }
           });
           await onSaved();
@@ -241,7 +260,55 @@ import { ROLE_PRESETS, rolePresetPrompt, matchRolePreset } from './rolePresets.j
         modelSelectOptions.push({ value: draftModel, label: draftModel });
       }
 
+      const backendOptions = [
+        { value: '', label: t('backendFollow') },
+        { value: 'llm', label: t('backendLlm') },
+        { value: 'session', label: t('backendSession') }
+      ];
+      const sessionOptions = [{ value: '', label: t('sessionAuto') }].concat(
+        ((sessionRows && sessionRows.items) || []).map((row) => ({
+          value: row.sessionId,
+          label: `${String(row.sessionId).replace(/^session-/, '').slice(0, 8)}${
+            row.cwd ? ` · ${String(row.cwd).split(/[\\/]/).filter(Boolean).pop() || ''}` : ''
+          }`
+        }))
+      );
+      if (draftSessionId && !sessionOptions.some((option) => option.value === draftSessionId)) {
+        sessionOptions.push({ value: draftSessionId, label: draftSessionId });
+      }
+      const backendField = h('div', { className: 'xz-field' },
+        h('label', null, t('backendLabel')),
+        h(PillSelect, {
+          value: draftBackend,
+          ariaLabel: t('backendLabel'),
+          options: backendOptions,
+          onChange: setDraftBackend
+        }),
+        h('span', { className: 'note' }, t('backendHint'))
+      );
+      const sessionField = draftBackend === 'session'
+        ? h('div', { className: 'xz-field' },
+            h('label', null, t('sessionLabel')),
+            sessionRows && sessionRows.available === false
+              ? h('input', {
+                  className: 'xz-input',
+                  value: draftSessionId,
+                  placeholder: 'session-…',
+                  onChange: (e) => setDraftSessionId(e.target.value)
+                })
+              : h(PillSelect, {
+                  value: draftSessionId,
+                  ariaLabel: t('sessionLabel'),
+                  options: sessionOptions,
+                  onChange: setDraftSessionId
+                }),
+            h('span', { className: 'note' }, t('sessionHint'))
+          )
+        : null;
+
       const modelPane = h('div', { key: 'model', className: 'xz-pane' },
+        backendField,
+        sessionField,
         // 直连语义：provider / Base URL / API Key 都在「全局设置 → LLM」里，
         // 这里只覆盖模型名；留空 = 用全局默认模型。模型清单来自全局 LLM 的 /models，
         // 拉不到时退回手填（各厂商模型 id 命名差异大，不硬编码）。
