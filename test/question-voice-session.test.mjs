@@ -58,6 +58,21 @@ function makeSession(adapters) {
   return { session, json, feed: (pcm) => pcmSink(pcm) }
 }
 
+test('askApproval 念原因并收「允许」', async () => {
+  const adapters = createMockAdapters({ plan: ['允许'], reply: '', deltaMs: 0, chunkChars: 4 })
+  const { session, json, feed } = makeSession(adapters)
+  try {
+    const pending = session.askApproval({ text: '需要确认：要写文件。', timeoutMs: 3_000 })
+    await waitFor(() => json.some((message) => message.type === 'tts' && String(message.text || '').includes('需要确认')))
+    await waitFor(() => session.capturing === true)
+    feed(tone(240))
+    session.handleListen({ state: 'stop' })
+    assert.equal(await pending, 'allowed-once')
+  } finally {
+    await session.close()
+  }
+})
+
 test('askUserQuestions 真的念题、收两次回答并映射选项', async () => {
   const adapters = createMockAdapters({
     plan: ['红色', '第一个和第三个'],

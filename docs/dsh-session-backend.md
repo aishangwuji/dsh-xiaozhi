@@ -125,7 +125,7 @@ node --test "test/session-backend.test.mjs"   # 12 项：原话直送/只念结�
 node --test "test/spoken-summary.test.mjs"    # 5 项：短回复跳过/清理/超时回落/话术
 node --test "test/approval.test.mjs"          # 2 项：意图分类/桥的 next() 回落
 node --test "test/question-voice.test.mjs"    # 5 项：单选/多选/意图映射/自由文本/桥的 next() 回落
-node --test "test/question-voice-session.test.mjs" # 1 项：进程内真跑 TTS/player + 短捕获
+node --test "test/question-voice-session.test.mjs" # 2 项：审批/提问进程内真跑 TTS/player + 短捕获
 node --test "test/agents.test.mjs"            # 10 项：Bot 会话视图 / 换会话 API
 npm run build; npm run smoke
 ```
