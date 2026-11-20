@@ -39,7 +39,7 @@ docs/                    能力契约与排障
 systemmap/overview.md    代码级认知地图
 ```
 
-数据目录 `~/.dsh-xiaozhi/`：`devices.json`、`pending.json`、`agents.json`、`settings.json`、`voice-sessions.json`、`memory/`、`history/`、`voice.log`、`crash.log`。
+数据目录 `~/.dsh-xiaozhi/`：`devices.json`、`pending.json`、`agents.json`、`settings.json`、`voice-sessions.json`、`memory/`、`history/`、`voice.log`、`crash.log`。技术债、未接入模块与待评估项见 `systemmap/tech-debt.md`，不要写回本文。
 
 ## 3. 项目私有约束
 
@@ -74,14 +74,7 @@ node --check client.js
 
 完整排障表见 `docs/troubleshooting.md`。
 
-## 6. 技术债
-
-1. `src/client/views/CapabilitiesView.js` 已无渲染点，按“未接入模块不默认删”保留待评估。
-2. 真实设备端到端仍有未实测项：会话后端延迟、工具/审批卡片体感、固件升级全流程。
-3. `src/client/**` 与 `client.js` 是双份产物；CI 会校验 `client.js` 与源码一致，但本地提交前仍要自己 `npm run build`。
-4. 控制台 UI 的若干历史布局细节分散在 `docs/current-state.md`，没有统一设计系统。
-
-## 7. 仓库与发布
+## 6. 仓库与发布
 
 - GitHub：`aishangwuji/dsh-xiaozhi`（public，`main`）
 - npm：`@aishangwuji/dsh-xiaozhi`，当前 `0.2.0`
@@ -89,7 +82,7 @@ node --check client.js
 - 本机 profile：`link:D:/Demo/esp-xiaozhi/dsh-xiaozhi`（运行副本 A）
 - 两张工作副本：A `D:\Demo\esp-xiaozhi\dsh-xiaozhi`、B `D:\Projects\dsh\dsh-xiaozhi`；同步规则见 `docs/development-workflow.md`，发布细节见 `docs/release.md`。
 
-## 8. 文档地图
+## 7. 文档地图
 
 | 文件 | 写什么 |
 |---|---|
@@ -111,7 +104,7 @@ node --check client.js
 | `docs/development-workflow.md` | 两副本 pull/commit/push |
 | `systemmap/overview.md` | 代码级认知地图 |
 
-## 9. 交接检查清单
+## 8. 交接检查清单
 
 - [ ] 先读 §1–§3，再按任务跳到对应 `docs/`；
 - [ ] 确认当前是运行副本 A 还是工作区副本 B；
