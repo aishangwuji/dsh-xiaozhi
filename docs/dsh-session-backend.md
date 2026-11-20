@@ -62,11 +62,16 @@ DSH 的聊天页打开的就是这条会话：在文本框里打字和在手表�
    `toSpeech()`（去 Markdown + 按句末截断）。
 5. **打断 = cancel**：`VoiceSession` abort → 适配器 `sessionController.cancel({sessionId})`，
    超时同样 cancel 并抛错。
-6. **审批**：`ctx.on('approval/request', …, { prepend: true })`，只有「这条会话绑在
-   一个有在线设备的 Bot 上，且设备正处在 `thinking`/`speaking`（这一轮是语音发起的）」才接；
-   念出原因，等一次「允许/拒绝」，说清则返回 `allowed-once` / `rejected`。含糊、超时、异常
-   一律 `next()` 交回桌面审批卡，不擅自放行。**桌面发起的 turn 不抢**，避免一台只是连着的表
-   把桌面卡片拖住十几秒。**`ask_user_question` 仍未接语音**。
+6. **审批 / 提问**：
+   - 审批：`ctx.on('approval/request', …, { prepend: true })`，只有「这条会话绑在
+     一个有在线设备的 Bot 上，且设备正处在 `thinking`/`speaking`（这一轮是语音发起的）」才接；
+     念出原因，等一次「允许/拒绝」，说清则返回 `allowed-once` / `rejected`。含糊、超时、异常
+     一律 `next()` 交回桌面审批卡，不擅自放行。**桌面发起的 turn 不抢**，避免一台只是连着的表
+     把桌面卡片拖住十几秒。
+   - 结构化提问：`user-questions/request` 同一套前置监听；逐题念「问题 + 选项（1. xxx；2. yyy）」，
+     收一次回答，按「精确标签 > 标签包含 > 序号」映射到 `selected`；没有选项/匹配不上时作为
+     `custom` 自由文本。多选按逗号/顿号/和/与拆开逐项匹配。任何一题说不清（多个选项同时命中、
+     超时、异常）都 `next()` 把**整个请求**交回桌面卡片，绝不猜答案。`questionTimeoutMs` 控制每题等待。
 
 ## 4. 配置
 
@@ -88,6 +93,7 @@ voice:
     progressMinIntervalMs: 8000
     heartbeatMs: 20000      # 0 = 关闭心跳
     approvalTimeoutMs: 12000
+    questionTimeoutMs: 15000 # ask_user_question 每题的等待；超时交回桌面
     cwd: ''                 # 自动建会话的根目录；空 = dataRoot/voice-sessions/<agentId>
 ```
 
@@ -118,6 +124,8 @@ DS-Bot 的 Bot 也是一条普通 DSH Session，但它的 Bot→当前会话映�
 node --test "test/session-backend.test.mjs"   # 12 项：原话直送/只念结论/进度/摘要/打断/超时
 node --test "test/spoken-summary.test.mjs"    # 5 项：短回复跳过/清理/超时回落/话术
 node --test "test/approval.test.mjs"          # 2 项：意图分类/桥的 next() 回落
+node --test "test/question-voice.test.mjs"    # 5 项：单选/多选/意图映射/自由文本/桥的 next() 回落
+node --test "test/question-voice-session.test.mjs" # 1 项：进程内真跑 TTS/player + 短捕获
 node --test "test/agents.test.mjs"            # 10 项：Bot 会话视图 / 换会话 API
 npm run build; npm run smoke
 ```
@@ -131,13 +139,16 @@ npm run build; npm run smoke
    手表听到的是摘要。
 4. 让会话触发一个需要审批的工具：手表应念出原因并等待「允许/拒绝」；说清后会话继续；
    不说/说含糊应在 `approvalTimeoutMs` 后回到桌面审批卡。
-5. 记录首字延迟、摘要耗时、长回答截断、播放中打断四项。
+5. 让会话调用 `ask_user_question`（单选题、多选题、自由文本各一次）：手表应念题和选项，
+   说标签/序号能选中，多选按顿号/和拆开；说不清应在 `questionTimeoutMs` 后回桌面卡片。
+6. 记录首字延迟、摘要耗时、长回答截断、播放中打断、审批/提问各一次。
 
 ## 8. 已知限制
 
 - 不是流式首字：必须等最终 assistant 消息落库才能摘要 + 合成；工具多时体感偏慢。
 - 摘要是额外一次模型调用（默认开），会产生额外 token；主用 LLM 不可用时自动回落截断。
 - 会话回复里的表格/代码块在 `toSpeech` 回落路径会被丢掉；摘要路径会提示「详细内容在会话里」。
-- `ask_user_question` 仍未接语音；审批语音也尚未真机验证。
+- 审批/提问语音均**未真机验证**；多题提问是一题一题念，题多时会比较慢。
+- 多选题只支持「标签/序号按顿号、和、与、逗号拆开」的简单说法；一句话里绕太多层会交回桌面。
 - 一条会话同时只跑一轮；多台设备绑同一 Bot 时会排队（`mode:'queue'`）。
 - 审批答案只认「允许 / 拒绝」两类明确说法；否定词优先，避免「不行」被误判为允许。

@@ -85,6 +85,22 @@ export function createSessionBridge({ sessionController, on, logger = {} } = {})
         return next()
       }, { prepend: true })
     : null
+  // 语音结构化提问应答器：`ask_user_question`（选项/多选/计划确认）走同一套前置监听。
+  // 只有插件装配层能找到「正在等这一轮的在线设备」时才接；否则把请求交给桌面卡片。
+  let questionAnswerer = null
+  const offQuestion = available && typeof on === 'function'
+    ? on('user-questions/request', async (request, next) => {
+        const handler = questionAnswerer
+        if (typeof handler !== 'function') return next()
+        try {
+          const answer = await handler(request)
+          if (answer && Array.isArray(answer.answers) && answer.answers.length > 0) return answer
+        } catch (error) {
+          logger.warn?.(`dsh-xiaozhi: 语音提问失败，交回桌面：${error?.message ?? error}`)
+        }
+        return next()
+      }, { prepend: true })
+    : null
 
   function requireController() {
     if (!available) throw new Error('DSH 会话服务未装配（ctx.sessionController 不可用）')
@@ -105,6 +121,14 @@ export function createSessionBridge({ sessionController, on, logger = {} } = {})
      */
     setApprovalAnswerer(handler) {
       approvalAnswerer = typeof handler === 'function' ? handler : null
+    },
+
+    /**
+     * 装配/撤销语音提问应答器。返回 `{ answers }` 表示语音已答复；
+     * 返回空/空数组 = 不接，桥会把请求交给桌面卡片。
+     */
+    setQuestionAnswerer(handler) {
+      questionAnswerer = typeof handler === 'function' ? handler : null
     },
 
     /** 最近会话，供控制台「绑定会话」下拉使用。失败只返回空数组。 */
@@ -179,7 +203,7 @@ export function createSessionBridge({ sessionController, on, logger = {} } = {})
       disposed = true
       listeners.clear()
       statuses.clear()
-      for (const unsubscribe of [off, offStatus, offAgentStatus, offApproval]) {
+      for (const unsubscribe of [off, offStatus, offAgentStatus, offApproval, offQuestion]) {
         try {
           unsubscribe?.()
         } catch {

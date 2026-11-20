@@ -56,7 +56,7 @@ systemmap/overview.md    代码级认知地图
 ## 4. 命令与验证
 
 ```powershell
-node --test "test/*.test.mjs"   # 329 项
+node --test "test/*.test.mjs"   # 335 项
 npm run build
 npm run smoke
 node --check client.js

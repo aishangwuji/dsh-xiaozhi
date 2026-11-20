@@ -47,6 +47,105 @@ export function classifyApprovalAnswer(text) {
   return ''
 }
 
+const CN_DIGITS = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 }
+
+function parseOrdinal(value) {
+  const text = String(value ?? '').trim()
+  if (/^\d+$/.test(text)) return Number(text)
+  if (text === '十') return 10
+  if (/^十[一二三四五六七八九]$/.test(text)) return 10 + CN_DIGITS[text[1]]
+  if (/^[一二三四五六七八九]十[一二三四五六七八九]?$/.test(text)) {
+    return CN_DIGITS[text[0]] * 10 + (CN_DIGITS[text[2]] ?? 0)
+  }
+  return CN_DIGITS[text] ?? 0
+}
+
+function normalizeChoice(text) {
+  return String(text ?? '')
+    .toLowerCase()
+    .replace(/[\s，。！？、,.!?;；:"'“”‘’（）()【】[\]<>]/g, '')
+}
+
+/**
+ * 把一句语音回答映射到 `ask_user_question` 的选项。
+ *
+ * 返回 `{ selected, custom }`；`null` = 说不清（多个选项同时命中、多选里有的词映射不上），
+ * 调用方应把整个问题交回桌面卡片，不能猜。
+ *
+ * 匹配顺序：精确标签 > 标签包含 > 序号（"第一个" / "2"）。多选题按逗号/顿号/和/与拆开逐个匹配。
+ */
+export function parseQuestionAnswer(text, question) {
+  const raw = String(text ?? '').trim()
+  if (!raw) return null
+  const options = Array.isArray(question?.options)
+    ? question.options.filter((option) => option && typeof option.label === 'string' && option.label.trim())
+    : []
+  if (options.length === 0) return { selected: [], custom: raw.slice(0, 200) }
+
+  const labels = options.map((option) => normalizeChoice(option.label))
+  // 带 intent 的问题（计划确认/权限确认）选项文案常常是「批准计划 / 拒绝」，
+  // 用户嘴上说的是「同意 / 不行」；先按意图映射，再走通用标签/序号匹配。
+  const intent = question?.intent
+  if (intent && (intent.kind === 'plan-review' || intent.kind === 'approval')) {
+    const verdict = classifyApprovalAnswer(raw)
+    if (verdict === 'allowed-once' && options.some((option) => option.label === intent.approve)) {
+      return { selected: [intent.approve] }
+    }
+    if (verdict === 'rejected') {
+      if (intent.kind === 'approval' && options.some((option) => option.label === intent.reject)) {
+        return { selected: [intent.reject] }
+      }
+      if (intent.kind === 'plan-review') {
+        const decline = options.map((option) => option.label).filter((label) => label !== intent.approve)
+        if (decline.length === 1) return { selected: [decline[0]] }
+      }
+      return null
+    }
+  }
+  const pick = (value) => {
+    const normalized = normalizeChoice(value)
+    if (!normalized) return -1
+    const exact = labels.indexOf(normalized)
+    if (exact >= 0) return exact
+    const contained = labels
+      .map((label, index) => (label && normalized.includes(label) ? index : -1))
+      .filter((index) => index >= 0)
+    return contained.length === 1 ? contained[0] : contained.length > 1 ? -2 : -1
+  }
+
+  if (question?.multiSelect === true) {
+    const tokens = raw.split(/[,，、和与及]|以及|\s+/).map((token) => token.trim()).filter(Boolean)
+    const selected = new Set()
+    for (const token of tokens) {
+      const index = pick(token)
+      const ordinal = parseOrdinal(token.replace(/^(?:第|选)/, '').replace(/(?:个|项|号|条)$/, ''))
+      if (index >= 0) selected.add(options[index].label)
+      else if (index === -2) return null
+      else if (ordinal > 0 && ordinal <= options.length) selected.add(options[ordinal - 1].label)
+    }
+    if (selected.size > 0) return { selected: [...selected] }
+    return { selected: [], custom: raw.slice(0, 200) }
+  }
+
+  const index = pick(raw)
+  if (index === -2) return null
+  if (index >= 0) return { selected: [options[index].label] }
+
+  // 序号：「第一个」「第2项」「选三」；只接受一个明确的序号。
+  const ordinals = [...raw.matchAll(/(?:第|选)?\s*([一二三四五六七八九十\d]+)\s*(?:个|项|号|条)/g)]
+    .map((match) => parseOrdinal(match[1]))
+    .filter((number) => number > 0 && number <= options.length)
+  const uniqueOrdinals = [...new Set(ordinals)]
+  if (uniqueOrdinals.length === 1) return { selected: [options[uniqueOrdinals[0] - 1].label] }
+  if (uniqueOrdinals.length > 1) return null
+  // 裸序号（"2" / "二"）在口语里很常见；只在整句就是序号时采纳，避免把 "2026" 当选项。
+  if (/^[一二三四五六七八九十\d]+$/.test(raw.trim())) {
+    const ordinal = parseOrdinal(raw.trim())
+    if (ordinal > 0 && ordinal <= options.length) return { selected: [options[ordinal - 1].label] }
+  }
+  return { selected: [], custom: raw.slice(0, 200) }
+}
+
 export class VoiceSession {
   /**
    * @param {object} options
@@ -156,9 +255,9 @@ export class VoiceSession {
     this.onClose = onClose
     this.asrStream = null
     this.utterance = null
-    // 语音审批中的「等一次回答」：非空时 #finalizeUtterance 把这句话交给它，而不是
-    // 开新一轮对话。超时会清空它并把状态交回 thinking。
-    this.approvalWaiter = null
+    // 语音审批 / 结构化提问中的「等一次回答」：非空时 #finalizeUtterance 把这句话
+    // 交给它，而不是开新一轮对话。超时会清空它并把状态交回 thinking。
+    this.listenWaiter = null
     // 设备 listen stop 之后的续话窗口：非空表示还没真正收口（见 #scheduleFinalize）。
     this.pendingFinalize = null
     // 唤醒开场白进行中：这期间不要开捕获（否则会把 TTS 回声当用户说话）。
@@ -204,10 +303,10 @@ export class VoiceSession {
     this.closed = true
     trace('session.close', { device: this.deviceId, turns: this.metrics.turns })
     this.capturing = false
-    // 关闭时挂着的审批等待必须收口，否则回答方的 Promise 永远不会 settle。
-    if (this.approvalWaiter) {
-      const waiter = this.approvalWaiter
-      this.approvalWaiter = null
+    // 关闭时挂着的审批/提问等待必须收口，否则回答方的 Promise 永远不会 settle。
+    if (this.listenWaiter) {
+      const waiter = this.listenWaiter
+      this.listenWaiter = null
       clearTimeout(waiter.timer)
       waiter.resolve('')
     }
@@ -383,7 +482,7 @@ export class VoiceSession {
       return null
     }
     if (this.closed) return null
-    const answer = await this.#listenOnce(timeoutMs)
+    const answer = await this.#listenOnce(timeoutMs, 'approval')
     if (this.closed) return null
     const outcome = classifyApprovalAnswer(answer)
     if (!outcome) {
@@ -397,17 +496,87 @@ export class VoiceSession {
   }
 
   /**
-   * 为审批开一次短捕获。`#finalizeUtterance` 看到 `approvalWaiter` 时把识别文本
+   * 语音回答 `ask_user_question` 的一题：念问题+选项 → 收一次回答 → 映射到选项。
+   * 说不清/超时返回 null，由调用方把整个请求交回桌面（不能猜一个选项）。
+   */
+  async askQuestion({ question, options = [], multiSelect = false, timeoutMs = 15_000, index = 0, total = 1 } = {}) {
+    if (this.closed) return null
+    const text = String(question ?? '').trim()
+    if (!text) return null
+    const choices = Array.isArray(options)
+      ? options.filter((option) => option && typeof option.label === 'string' && option.label.trim())
+      : []
+    const prefix = total > 1 ? `第${index + 1}题：` : ''
+    const optionText = choices.length
+      ? `。选项：${choices.map((option, at) => `${at + 1}. ${option.label}`).join('；')}。`
+      : '。'
+    const prompt = `${prefix}${text}${optionText}`
+    try {
+      await this.speak(prompt)
+      await this.player.whenDrained()
+    } catch (error) {
+      this.logger.warn?.(`dsh-xiaozhi: question prompt failed: ${error.message}`)
+      this.state = 'thinking'
+      return null
+    }
+    if (this.closed) return null
+    const answer = await this.#listenOnce(timeoutMs, 'question')
+    if (this.closed) return null
+    const parsed = parseQuestionAnswer(answer, { options: choices, multiSelect })
+    if (!parsed) {
+      trace('question.retry', { device: this.deviceId, text: String(answer).slice(0, 60) })
+      this.#sendAlert({ status: '需要选择', message: '我没听清选项，请在电脑上选一下' })
+      return null
+    }
+    trace('question.answer', {
+      device: this.deviceId,
+      selected: parsed.selected,
+      custom: parsed.custom ? parsed.custom.slice(0, 60) : '',
+    })
+    this.state = 'thinking'
+    return parsed
+  }
+
+  /**
+   * 一整个 `ask_user_question` 请求（可能多题）：逐题念、逐题收，任何一题说不清就返回 null，
+   * 让宿主把原请求交给桌面卡片。
+   */
+  async askUserQuestions(questions, { timeoutMs = 15_000 } = {}) {
+    const list = Array.isArray(questions) ? questions : []
+    if (list.length === 0) return null
+    const answers = []
+    for (let index = 0; index < list.length; index += 1) {
+      const question = list[index] ?? {}
+      const parsed = await this.askQuestion({
+        question: question.question,
+        options: question.options,
+        multiSelect: question.multiSelect === true,
+        timeoutMs,
+        index,
+        total: list.length,
+      })
+      if (!parsed) return null
+      answers.push({
+        id: String(question.id ?? ''),
+        selected: parsed.selected,
+        ...(parsed.custom ? { custom: parsed.custom } : {}),
+      })
+    }
+    return { answers }
+  }
+
+  /**
+   * 为审批/提问开一次短捕获。`#finalizeUtterance` 看到 `listenWaiter` 时把识别文本
    * 交给它并提前返回，不会触发 `#answer`。
    */
-  #listenOnce(timeoutMs) {
+  #listenOnce(timeoutMs, kind = 'listen') {
     return new Promise((resolve) => {
       if (this.closed) {
         resolve('')
         return
       }
       this.#cancelPendingFinalize()
-      this.approvalWaiter = null
+      this.listenWaiter = null
       this.capturing = true
       this.state = 'listening'
       this.vad.reset()
@@ -415,25 +584,25 @@ export class VoiceSession {
       this.preRollBytes = 0
       this.#openAsr()
       const timer = setTimeout(() => {
-        if (!this.approvalWaiter) return
-        this.approvalWaiter = null
+        if (!this.listenWaiter) return
+        this.listenWaiter = null
         this.capturing = false
         this.asrStream?.abort?.()
         this.asrStream = null
         this.utterance = null
         this.state = 'thinking'
-        trace('approval.timeout', { device: this.deviceId })
+        trace(`${kind}.timeout`, { device: this.deviceId })
         resolve('')
       }, Math.max(3_000, Number(timeoutMs) || 12_000))
-      this.approvalWaiter = { resolve, timer }
+      this.listenWaiter = { resolve, timer, kind }
     })
   }
 
-  /** 审批捕获的收口：有等待者就交答案并返回 true（调用方不再进入 #answer）。 */
-  #settleApproval(text) {
-    const waiter = this.approvalWaiter
+  /** 短捕获的收口：有等待者就交答案并返回 true（调用方不再进入 #answer）。 */
+  #settleListen(text) {
+    const waiter = this.listenWaiter
     if (!waiter) return false
-    this.approvalWaiter = null
+    this.listenWaiter = null
     clearTimeout(waiter.timer)
     this.capturing = false
     this.state = 'thinking'
@@ -720,7 +889,7 @@ export class VoiceSession {
         trace('asr.error', { device: this.deviceId, message: String(result.error).slice(0, 300), ...stats })
         this.#sendAlert({ status: '听不清', message: '我没听清，你再说一遍？' })
         await dumpWav()
-        if (this.#settleApproval('')) return
+        if (this.#settleListen('')) return
         this.#resumeCaptureAfterEmpty('asr-failed')
         return
       }
@@ -743,15 +912,15 @@ export class VoiceSession {
         trace('asr.no_audio', { device: this.deviceId, trigger })
       }
       await dumpWav()
-      if (this.#settleApproval('')) return
+      if (this.#settleListen('')) return
       this.#resumeCaptureAfterEmpty('empty-asr')
       return
     }
     this.logger.info?.(`dsh-xiaozhi: heared "${text}" (${trigger})`)
     trace('asr.result', { device: this.deviceId, trigger, ms: this.clock() - startedAt, ...stats, text: text.slice(0, 120) })
     await dumpWav()
-    // 语音审批：这次识别不是新对话，交给 #settleApproval 后直接返回。
-    if (this.#settleApproval(text)) {
+    // 语音审批/结构化提问：这次识别不是新对话，交给 #settleListen 后直接返回。
+    if (this.#settleListen(text)) {
       this.sink.sendJson({ type: 'stt', text })
       return
     }

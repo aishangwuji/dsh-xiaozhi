@@ -110,16 +110,17 @@ Bot（配置单位）──overrides──> 生效配置 <──全局默认─�
   去 Markdown + 按句末截断（`voice.session.maxChars`）。
 - **过程不静默**：每次工具调用发 `% 工具名` 气泡（不朗读）并念一句进度；长任务按
   `voice.session.heartbeatMs` 念「还在处理」；摘要前念「我整理一下」。
-- **审批可以语音答**：语音发起的这一轮弹出审批卡时，手表会念出原因并等「允许 / 拒绝」；
-  说清后会话继续。桌面发起的 turn 不抢（避免一台只是连着的表拖住桌面卡片）；含糊、超时
-  （`voice.session.approvalTimeoutMs`）或出错会自动交回桌面审批卡，不擅自放行。
+- **审批和提问都可以语音答**：语音发起的这一轮弹出审批卡时，手表会念出原因并等「允许 / 拒绝」；
+  说清后会话继续。`ask_user_question` 会逐题念题和选项，按标签/序号选，多选按顿号/和拆开。
+  桌面发起的 turn 不抢（避免一台只是连着的表拖住桌面卡片）；含糊、超时
+  （`approvalTimeoutMs` / `questionTimeoutMs`）或出错会自动交回桌面卡片，不擅自放行。
 - **打断会让会话 `cancel` 当前 turn**；一轮超过 `voice.session.timeoutMs`（默认 120 秒）也会
   取消并播兜底，避免下一句话排在一轮长任务后面。
 - **DS-Bot 的 Bot 也能绑**：它的每个 Bot 就是一条 DSH Session，把会话 id 填进来即可；
   本插件不 import DS-Bot、不读它的 `state.json`，所以它换 part 后需要你重新选一次。
 - **限制**：不是流式首字（要等最终消息落库才能摘要）；摘要多一次模型调用（默认开，
-  主用 LLM 不可用时自动回落）；`ask_user_question` 的多选题目前仍只在桌面处理。
-  真实手表到会话的端到端延迟**未实测**。
+  主用 LLM 不可用时自动回落）；语音提问只覆盖标签/序号/简单多选，复杂说法会交回桌面。
+  真实手表到会话的端到端延迟、审批/提问语音**未实测**。
 
 ## 设备怎么接进来（这是正确的那条路）
 
@@ -593,11 +594,11 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 329 项
+node --test "test/*.test.mjs"   # 335 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 
-覆盖：标识归一化/私网判定/存储（待审核、损坏文件隔离）；智能体覆盖合并与越界回落（含「hostProvider 不再强切 host」）；全局设置（人设/静音收口持久化、空值回落插件配置、`applyRuntimeVoiceSettings` 的 hostProvider/backups 叠加回归）；**三段备用服务商持久化/掩码/逐条留空保留/非法整次失败**；**TTS 默认音色**（全局只存凭据、`voice`/`model`/`resourceId` 可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留，2026-11-08）；HTTP 端到端（待审核/批准、`activation: null`、互斥 4001、CSRF、`/test/provider` 参数与回包）；网关（`/health` 免鉴权、`/commands` 401/200、`/exec` 白名单/参数注入 400/超时 124/截断/限流 429/爆破锁定）；语音（分句器边界、VAD、Ogg 往返、真 Opus 整轮、打断、20 轮）；**failover**（LLM 未出字前切换/出字后不切、TTS 整句重试、ASR 回放且不推 partial、abort 不切换、候选构建失败跳过、粘性与 5 分钟回落）；**小米 MiMo**（`api-key` 认证头、`thinking` 开关、SSE 文本/工具调用、模型清单走 /v1/models（无内置兜底））；**联网工具**（Search 带正文/截断预算、web_fetch 正文与 403/404 语义、动态 Key、无 Key 回退）；**对话历史**（会话聚合/标题/旧格式迁移/音频 WAV 读写与路径安全/保留期与容量清理/clear 粒度/4 条 HTTP 路由）；**智能体/设备绑定**（旧设备迁移与记忆复制、多设备绑定/移动/解绑、配置共享、级联删除、历史合并、智能体重名拦截，`test/agents.test.mjs` 9 项）；**DSH 会话后端 / Bot**（原话直送、只念最终结论、工具步骤文字丢弃、工具进度与气泡、摘要与回落、按 sessionId 不串台、`source.rpcId` 对上本轮、打断/超时取消、绑定持久化，`test/session-backend.test.mjs` 12 项；摘要 5 项 `test/spoken-summary.test.mjs`；审批意图与 `next()` 回落 2 项 `test/approval.test.mjs`；Bot 会话视图与换会话 API `test/agents.test.mjs` 10 项）。
+覆盖：标识归一化/私网判定/存储（待审核、损坏文件隔离）；智能体覆盖合并与越界回落（含「hostProvider 不再强切 host」）；全局设置（人设/静音收口持久化、空值回落插件配置、`applyRuntimeVoiceSettings` 的 hostProvider/backups 叠加回归）；**三段备用服务商持久化/掩码/逐条留空保留/非法整次失败**；**TTS 默认音色**（全局只存凭据、`voice`/`model`/`resourceId` 可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留，2026-11-08）；HTTP 端到端（待审核/批准、`activation: null`、互斥 4001、CSRF、`/test/provider` 参数与回包）；网关（`/health` 免鉴权、`/commands` 401/200、`/exec` 白名单/参数注入 400/超时 124/截断/限流 429/爆破锁定）；语音（分句器边界、VAD、Ogg 往返、真 Opus 整轮、打断、20 轮）；**failover**（LLM 未出字前切换/出字后不切、TTS 整句重试、ASR 回放且不推 partial、abort 不切换、候选构建失败跳过、粘性与 5 分钟回落）；**小米 MiMo**（`api-key` 认证头、`thinking` 开关、SSE 文本/工具调用、模型清单走 /v1/models（无内置兜底））；**联网工具**（Search 带正文/截断预算、web_fetch 正文与 403/404 语义、动态 Key、无 Key 回退）；**对话历史**（会话聚合/标题/旧格式迁移/音频 WAV 读写与路径安全/保留期与容量清理/clear 粒度/4 条 HTTP 路由）；**智能体/设备绑定**（旧设备迁移与记忆复制、多设备绑定/移动/解绑、配置共享、级联删除、历史合并、智能体重名拦截，`test/agents.test.mjs` 9 项）；**DSH 会话后端 / Bot**（原话直送、只念最终结论、工具步骤文字丢弃、工具进度与气泡、摘要与回落、按 sessionId 不串台、`source.rpcId` 对上本轮、打断/超时取消、绑定持久化，`test/session-backend.test.mjs` 12 项；摘要 5 项 `test/spoken-summary.test.mjs`；审批意图与 `next()` 回落 2 项 `test/approval.test.mjs`；语音提问单选/多选/自由文本与 `next()` 回落 5 项 `test/question-voice.test.mjs`；语音提问进程内端到端 1 项 `test/question-voice-session.test.mjs`；Bot 会话视图与换会话 API `test/agents.test.mjs` 10 项）。
 
 ## 已知限制
 
@@ -617,8 +618,8 @@ npm run build && npm run smoke  # 控制台构建 + 冒烟
   控制台「全局设置 → LLM → 回复长度上限」可覆盖（32–2048，留空 = 120），改完下一次连接生效。
   会话模式不靠限长：会话返回完整回复，插件用 `voice.session.summary*` 压成播报摘要。
 - **会话模式的三项代价**：不是流式首字（等最终消息落库才摘要+合成）；摘要多一次模型调用
-  （默认开，主用 LLM 不可用时自动回落截断）；`ask_user_question` 的多选题还没有语音应答，
-  只能在桌面处理。真实手表到会话的端到端延迟和审批语音均**未实测**。
+  （默认开，主用 LLM 不可用时自动回落截断）；语音提问只覆盖标签/序号/简单多选，复杂说法
+  会交回桌面。真实手表到会话的端到端延迟、审批/提问语音均**未实测**。
 - **空回合**：ASR 空结果不再回 tts（回 tts 会让环境音触发的假句尾把设备弹一下，像“自己触发对话”）；
   收到「没有进行中 utterance 的 `listen stop`」时服务端直接 `#beginCapture()` 重开捕获，
   否则设备不会重发 `listen start`、后续话音会被整段丢弃。固件侧短于 400ms 的假片段不发 stop。

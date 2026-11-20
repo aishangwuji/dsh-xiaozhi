@@ -5,7 +5,7 @@ covered_paths:
   - dsh-xiaozhi/src/
   - dsh-xiaozhi/src/client/
   - dsh-xiaozhi/test/
-last_verified_commit: acc5714
+last_verified_commit: 8ba0065
 verified_at: 2026-11-20
 status: current
 note: 技术债/未接入模块的持久记录；AGENTS.md 只保留边界、结构、约束、命令、坑、仓库状态。
@@ -22,13 +22,13 @@ note: 技术债/未接入模块的持久记录；AGENTS.md 只保留边界、结
 ### 真实设备端到端仍有未实测项
 
 会话后端延迟、语音摘要耗时/成本、工具进度与心跳的体感、审批语音（念问题→收「允许/拒绝」）、
-DS-Bot 长文截断效果、固件升级全流程，均未在真实手表上完整验证。
+结构化提问语音、DS-Bot 长文截断效果、固件升级全流程，均未在真实手表上完整验证。
 
-### `ask_user_question` 尚未接语音
+### 语音提问的真机与复杂说法未验证
 
-`approval/request` 已有语音应答器；`user-questions/request`（结构化提问/选项）仍是桌面卡片。
-手表上遇到多选题只能等桌面，或超时后继续。要做需要：播报问题+选项、用 ASR 选序号/选项、
-无匹配时回落桌面——按「未接入模块」保留，暂不擅自扩写。
+`user-questions/request` 已接：逐题念题/选项、标签/序号映射、多选按顿号/和拆开；说不清/超时交回桌面。
+未验证：真实手表上的识别率、多题连问的等待体感、嵌套/长选项。复杂说法目前不猜，直接回桌面；
+多选题的一句话里绕太多层也会回桌面。
 
 ### 摘要依赖插件自己的 LLM 段
 

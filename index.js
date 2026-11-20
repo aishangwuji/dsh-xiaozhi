@@ -360,6 +360,12 @@ export function resolveConfig(config = {}) {
           12_000,
           { min: 3_000, max: 60_000 },
         ),
+        // 语音回答 ask_user_question：每题念完后的等待时间；超时交回桌面卡片。
+        questionTimeoutMs: positiveInteger(
+          field(sessionRaw, ['questionTimeoutMs', 'question_timeout_ms'], 15_000),
+          15_000,
+          { min: 3_000, max: 60_000 },
+        ),
         // 自动建会话时的工作目录；空串 = dataRoot/voice-sessions/<agentId>（每个 Bot 一个目录）。
         cwd: text(field(sessionRaw, ['cwd'], '')),
       },
@@ -684,8 +690,11 @@ export function apply(ctx, config = {}) {
    * 接到后由当前正在等的 VoiceSession 念问题、收一次「允许/拒绝」；
    * 说不清/超时返回 null，桥会 next() 交给桌面审批卡（不擅自放行）。
    */
-  sessionBridge.setApprovalAnswerer?.(async (request) => {
-    const sessionId = String(request?.agent?.session?.id ?? '')
+  /**
+   * 找「这条 DSH 会话当前正在等回答的语音设备」。
+   * 只认 thinking/speaking：桌面发起的 turn 不该被一台只是连着的表抢走。
+   */
+  function voiceSessionFor(sessionId) {
     if (!sessionId) return null
     const agent = agents.list().find((candidate) => {
       const pinned = String(candidate.overrides?.sessionId ?? '').trim()
@@ -696,16 +705,29 @@ export function apply(ctx, config = {}) {
     const live = store
       .listByAgent(agent.id)
       .map((device) => hub.get(device.deviceId))
-      .filter((item) => item && typeof item.askApproval === 'function')
-    // 只接「语音发起、正在等这一轮」的审批：设备在 thinking/speaking 才说明这一轮是它问的。
-    // 桌面发起的 turn 不抢——否则一台只是连着的表会把桌面审批卡拖住十几秒。
-    const voiceSession = live.find((item) => item.state === 'thinking' || item.state === 'speaking')
-    if (!voiceSession) return null
+      .filter(Boolean)
+    return live.find((item) => item.state === 'thinking' || item.state === 'speaking') ?? null
+  }
+
+  sessionBridge.setApprovalAnswerer?.(async (request) => {
+    const voiceSession = voiceSessionFor(String(request?.agent?.session?.id ?? ''))
+    if (!voiceSession || typeof voiceSession.askApproval !== 'function') return null
     const reason = request.displayReason?.zh || request.displayReason?.en || request.reason || ''
     const label = String(reason || `工具 ${request.toolName ?? ''}`).trim().slice(0, 120)
     return voiceSession.askApproval({
       text: `需要你确认：${label}。可以说允许，或者拒绝。`,
       timeoutMs: resolved.voice.session.approvalTimeoutMs,
+    })
+  })
+
+  // 语音结构化提问（ask_user_question）：和多选题/选项/计划确认共用同一套短捕获。
+  sessionBridge.setQuestionAnswerer?.(async (request) => {
+    const voiceSession = voiceSessionFor(String(request?.agent?.session?.id ?? ''))
+    if (!voiceSession || typeof voiceSession.askUserQuestions !== 'function') return null
+    const questions = Array.isArray(request?.questions) ? request.questions : []
+    if (questions.length === 0) return null
+    return voiceSession.askUserQuestions(questions, {
+      timeoutMs: resolved.voice.session.questionTimeoutMs,
     })
   })
   const hub = new ConnectionHub({

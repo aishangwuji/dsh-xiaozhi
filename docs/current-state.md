@@ -235,13 +235,14 @@
     压成 2–3 句（额外一次无工具调用，默认开、有超时），失败/太短回落 `toSpeech()`。
   - **过程可见**：`tool/call` → 设备气泡 `% 工具名`；同时按工具名念一句进度；长任务
     `heartbeatMs` 心跳；摘要前念「我整理一下」。进度话术不进最终正文/历史。
-  - **语音审批**：`approval/request` 前置监听；只接「绑在有在线设备的 Bot 上、且设备正在
-    `thinking`/`speaking`」的会话（桌面发起的 turn 不抢，避免只连着的表拖住桌面卡片）；
-    念原因、收一次「允许/拒绝」；含糊/超时/异常 `next()` 交回桌面卡片。
+  - **语音审批 / 提问**：`approval/request` 与 `user-questions/request` 都是前置监听；只接
+    「绑在有在线设备的 Bot 上、且设备正在 `thinking`/`speaking`」的会话（桌面发起的 turn 不抢）。
+    审批念原因、收「允许/拒绝」；提问逐题念题和选项，按标签/序号映射，多选按顿号/和拆开。
+    含糊/超时/异常 `next()` 交回桌面卡片。
   - **每个 Bot 一个工作目录**：`~/.dsh-xiaozhi/voice-sessions/<agentId>/`（`voice.session.cwd`
     显式配置时共用）；新建 Bot 默认 `backend=session`。
   - **控制 API**：`POST /agents/session` 的 `new` / `auto` / `bind`；`GET /agents` 带
     `session: { id, available, running }`。
-  - **未实测**：真实手表端到端延迟、摘要耗时、审批语音、`ask_user_question`（尚未接）。
+  - **未实测**：真实手表端到端延迟、摘要耗时、审批/提问语音。
   - **取舍**：不读 DS-Bot `state.json`；以后若启用 DS-Bot，用「绑定已有会话」手工接，
     或补只读适配器。
