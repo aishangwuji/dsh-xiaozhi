@@ -566,6 +566,15 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 改完源码要重新 build 再刷新控制台；仍加载旧产物就重启 DSH。完整契约（运行模型、Vue 评估结论、
 编码约定）见 [`docs/client-architecture.md`](docs/client-architecture.md)。
 
+## 开发（两个工作副本）
+
+本仓库有两张工作副本，共用同一个 GitHub `origin`：
+
+- `D:\Demo\esp-xiaozhi\dsh-xiaozhi`：运行副本，DSH profile 的 `link:` 指向这里。
+- `D:\Projects\dsh\dsh-xiaozhi`：工作区副本，和 `dsh-git`、`dsh-notify` 并列。
+
+每次开工先 `git pull --rebase origin main`，改完测试后先 rebase 再 push；一次只在一张副本里改。完整规则见 [`docs/development-workflow.md`](docs/development-workflow.md)。
+
 ## 测试
 
 ```powershell
