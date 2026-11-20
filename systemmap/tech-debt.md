@@ -5,7 +5,7 @@ covered_paths:
   - dsh-xiaozhi/src/
   - dsh-xiaozhi/src/client/
   - dsh-xiaozhi/test/
-last_verified_commit: 2b1d45a
+last_verified_commit: acc5714
 verified_at: 2026-11-20
 status: current
 note: 技术债/未接入模块的持久记录；AGENTS.md 只保留边界、结构、约束、命令、坑、仓库状态。
