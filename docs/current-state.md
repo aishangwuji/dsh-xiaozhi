@@ -226,3 +226,22 @@
 - **回答来源的取舍（2026-11-19，用户确认）**：DS-Bot 不是可注入的后端服务，它的 Bot 就是一条 DSH
   Session；所以接的是「DSH 会话」，不是「DS-Bot 插件」。不要为了接 DS-Bot 去读它的 `state.json`
   或调 `POST /api/bot`（浏览器 cookie 鉴权、Bot 换 part 后 sessionId 会变）——那是耦合，不是集成。
+- **Bot = DSH 会话（2026-11-20，用户确认方向）**：控制台的「智能体」按 **Bot** 理解：一个 Bot
+  一条长期会话，手表/家里端侧设备只是它的麦克风与扬声器；一人一个 Bot 或全家共用一个都行。
+  文本聊天界面直接用 DSH 自己的会话页（不重复造 UI），插件控制台只做 Bot/设备/音色管理。
+  - **原话直送**：默认不拼 `[语音通道]` 前缀，会话里看到的就是用户原话；需要时用
+    `voice.session.instruction` 显式加。
+  - **只念最终结论 + 总结式**：最终 assistant 消息先经 `createSpeechSummarizer`
+    压成 2–3 句（额外一次无工具调用，默认开、有超时），失败/太短回落 `toSpeech()`。
+  - **过程可见**：`tool/call` → 设备气泡 `% 工具名`；同时按工具名念一句进度；长任务
+    `heartbeatMs` 心跳；摘要前念「我整理一下」。进度话术不进最终正文/历史。
+  - **语音审批**：`approval/request` 前置监听；只接「绑在有在线设备的 Bot 上、且设备正在
+    `thinking`/`speaking`」的会话（桌面发起的 turn 不抢，避免只连着的表拖住桌面卡片）；
+    念原因、收一次「允许/拒绝」；含糊/超时/异常 `next()` 交回桌面卡片。
+  - **每个 Bot 一个工作目录**：`~/.dsh-xiaozhi/voice-sessions/<agentId>/`（`voice.session.cwd`
+    显式配置时共用）；新建 Bot 默认 `backend=session`。
+  - **控制 API**：`POST /agents/session` 的 `new` / `auto` / `bind`；`GET /agents` 带
+    `session: { id, available, running }`。
+  - **未实测**：真实手表端到端延迟、摘要耗时、审批语音、`ask_user_question`（尚未接）。
+  - **取舍**：不读 DS-Bot `state.json`；以后若启用 DS-Bot，用「绑定已有会话」手工接，
+    或补只读适配器。

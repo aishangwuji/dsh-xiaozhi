@@ -33,6 +33,10 @@ function sessionIdOf(session) {
  */
 export function createSessionBridge({ sessionController, on, logger = {} } = {}) {
   const listeners = new Map()
+  // 会话运行态：控制台要显示「这条 Bot 的会话现在有没有在跑」。`api-session/status`
+  // 是全局事件（sessionId + running），比逐个订阅 agent/status 便宜；`agent/status`
+  // 作为补充，覆盖宿主只发后者的情况。
+  const statuses = new Map()
   const available = Boolean(sessionController && typeof sessionController.prompt === 'function')
   let disposed = false
 
@@ -53,6 +57,34 @@ export function createSessionBridge({ sessionController, on, logger = {} } = {})
   const off = available && typeof on === 'function'
     ? on('session/event', (session, event) => dispatch(sessionIdOf(session), event))
     : null
+  const offStatus = available && typeof on === 'function'
+    ? on('api-session/status', (sessionId, running) => {
+        if (typeof sessionId === 'string' && sessionId) statuses.set(sessionId, running === true)
+      })
+    : null
+  const offAgentStatus = available && typeof on === 'function'
+    ? on('agent/status', (payload) => {
+        const id = sessionIdOf(payload?.agent?.session)
+        if (id) statuses.set(id, payload.status === 'running')
+      })
+    : null
+  // 语音审批应答器：由插件装配层按「这条会话有没有在线的语音设备」决定要不要接。
+  // 注册在宿主 UI 的审批卡之前（prepend）：谁先给出 outcome 谁生效；我们不接时
+  // 必须调用 next()，把请求原样让给桌面卡片，不能吞掉。
+  let approvalAnswerer = null
+  const offApproval = available && typeof on === 'function'
+    ? on('approval/request', async (request, next) => {
+        const handler = approvalAnswerer
+        if (typeof handler !== 'function') return next()
+        try {
+          const outcome = await handler(request)
+          if (outcome === 'allowed-once' || outcome === 'rejected' || outcome === 'cancelled') return outcome
+        } catch (error) {
+          logger.warn?.(`dsh-xiaozhi: 语音审批失败，交回桌面：${error?.message ?? error}`)
+        }
+        return next()
+      }, { prepend: true })
+    : null
 
   function requireController() {
     if (!available) throw new Error('DSH 会话服务未装配（ctx.sessionController 不可用）')
@@ -62,12 +94,30 @@ export function createSessionBridge({ sessionController, on, logger = {} } = {})
   return {
     available,
 
+    /** 该会话当前是否有活跃 turn；未知/未跑 = false。 */
+    statusOf(sessionId) {
+      return statuses.get(String(sessionId ?? '')) === true
+    },
+
+    /**
+     * 装配/撤销语音审批应答器。返回三值 outcome 之一表示语音已答复；
+     * 返回空 = 不接，桥会把请求交给桌面审批卡。
+     */
+    setApprovalAnswerer(handler) {
+      approvalAnswerer = typeof handler === 'function' ? handler : null
+    },
+
     /** 最近会话，供控制台「绑定会话」下拉使用。失败只返回空数组。 */
     async list({ signal } = {}) {
       if (!available) return []
       try {
         const value = await requireController().list({}, signal ?? AbortSignal.timeout(5_000))
-        return Array.isArray(value?.items) ? value.items : []
+        const items = Array.isArray(value?.items) ? value.items : []
+        // 列表行是「会话运行态」的权威快照：冷会话不会发 status 事件，靠这次刷新补上。
+        for (const row of items) {
+          if (row && typeof row.sessionId === 'string') statuses.set(row.sessionId, row.running === true)
+        }
+        return items
       } catch (error) {
         logger.warn?.(`dsh-xiaozhi: 列会话失败: ${error?.message ?? error}`)
         return []
@@ -128,10 +178,13 @@ export function createSessionBridge({ sessionController, on, logger = {} } = {})
     dispose() {
       disposed = true
       listeners.clear()
-      try {
-        off?.()
-      } catch {
-        // 退订失败不影响进程退出。
+      statuses.clear()
+      for (const unsubscribe of [off, offStatus, offAgentStatus, offApproval]) {
+        try {
+          unsubscribe?.()
+        } catch {
+          // 退订失败不影响进程退出。
+        }
       }
     },
   }

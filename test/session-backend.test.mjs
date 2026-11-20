@@ -26,7 +26,7 @@ const silent = { info() {}, warn() {}, error() {} }
 const tick = () => new Promise((resolve) => setImmediate(resolve))
 
 function harness({ sessionId = 'session-aaaa' } = {}) {
-  const bus = new Set()
+  const bus = new Map()
   const prompts = []
   const cancels = []
   const controller = {
@@ -46,8 +46,10 @@ function harness({ sessionId = 'session-aaaa' } = {}) {
   const bridge = createSessionBridge({
     sessionController: controller,
     on: (name, listener) => {
-      bus.add(listener)
-      return () => bus.delete(listener)
+      const set = bus.get(name) ?? new Set()
+      set.add(listener)
+      bus.set(name, set)
+      return () => set.delete(listener)
     },
     logger: silent,
   })
@@ -57,7 +59,7 @@ function harness({ sessionId = 'session-aaaa' } = {}) {
     cancels,
     sessionId,
     emit(id, event) {
-      for (const listener of [...bus]) listener({ id }, event)
+      for (const listener of [...(bus.get('session/event') ?? [])]) listener({ id }, event)
     },
   }
 }
@@ -121,23 +123,33 @@ test('只念最终结论：工具步骤的文字被丢掉，别的会话不串�
   assert.deepEqual(await pending, ['开着，客厅灯现在是亮的。'])
 })
 
-test('发给会话的文本带语音指令，并保留原话', async () => {
+test('默认原话直送（与文本框一致），显式 instruction 才加前缀', async () => {
   const h = harness()
-  const adapter = createDshSessionLlm({
-    bridge: h.bridge,
-    sessionId: 'session-aaaa',
-    instruction: '用一句话回答。',
-    timeoutMs: 5_000,
-    logger: silent,
-  })
+  const adapter = createDshSessionLlm({ bridge: h.bridge, sessionId: 'session-aaaa', timeoutMs: 5_000, logger: silent })
   const pending = collect(adapter.stream({ messages: [{ role: 'user', content: '今天几号' }] }))
   await tick()
-  assert.equal(h.prompts[0].content[0].text, '用一句话回答。\n用户说：今天几号')
+  assert.equal(h.prompts[0].content[0].text, '今天几号')
   assert.equal(h.prompts[0].mode, 'queue')
   h.emit('session-aaaa', { type: 'turn/start', data: { turn: 1 } })
   h.emit('session-aaaa', { type: 'user/message', data: { source: { rpcId: h.prompts[0].requestId } } })
   h.emit('session-aaaa', { type: 'turn/end', data: { turn: 1 } })
   await pending
+
+  const h2 = harness()
+  const withPrefix = createDshSessionLlm({
+    bridge: h2.bridge,
+    sessionId: 'session-aaaa',
+    instruction: '用一句话回答。',
+    timeoutMs: 5_000,
+    logger: silent,
+  })
+  const pending2 = collect(withPrefix.stream({ messages: [{ role: 'user', content: '今天几号' }] }))
+  await tick()
+  assert.equal(h2.prompts[0].content[0].text, '用一句话回答。\n今天几号')
+  h2.emit('session-aaaa', { type: 'turn/start', data: { turn: 1 } })
+  h2.emit('session-aaaa', { type: 'user/message', data: { source: { rpcId: h2.prompts[0].requestId } } })
+  h2.emit('session-aaaa', { type: 'turn/end', data: { turn: 1 } })
+  await pending2
 })
 
 test('打断会取消会话当前 turn，且不再吐字', async () => {
@@ -178,6 +190,94 @@ test('会话 id 缺失时给出明确错误，而不是静默无声', async () =
     collect(adapter.stream({ messages: [{ role: 'user', content: '你好' }] })),
     /语音会话未绑定/,
   )
+})
+
+test('工具调用播报进度并发布设备气泡，最终仍只念结论', async () => {
+  const h = harness()
+  const adapter = createDshSessionLlm({
+    bridge: h.bridge,
+    sessionId: 'session-aaaa',
+    timeoutMs: 5_000,
+    progress: true,
+    progressMinIntervalMs: 0,
+    heartbeatMs: 0,
+    logger: silent,
+  })
+  const pending = collect(adapter.stream({ messages: [{ role: 'user', content: '查一下天气' }] }))
+  await tick()
+  h.emit('session-aaaa', { type: 'turn/start', data: { turn: 1 } })
+  h.emit('session-aaaa', { type: 'user/message', data: { source: { rpcId: h.prompts[0].requestId } } })
+  h.emit('session-aaaa', {
+    type: 'tool/call',
+    data: { turn: 1, step: 1, callId: 'call-1', name: 'web_search', arguments: '{}' },
+  })
+  h.emit('session-aaaa', {
+    type: 'assistant/message',
+    data: { turn: 1, step: 1, message: { content: [{ type: 'tool-call', name: 'web_search' }] } },
+  })
+  h.emit('session-aaaa', {
+    type: 'assistant/message',
+    data: { turn: 1, step: 2, message: { content: [{ type: 'text', text: '今天晴，26 度。' }] } },
+  })
+  h.emit('session-aaaa', { type: 'turn/end', data: { turn: 1 } })
+  const out = await pending
+  assert.deepEqual(out[0], { type: 'notice', text: 'web_search' })
+  assert.deepEqual(out[1], { type: 'progress', text: '我正在联网查。' })
+  assert.equal(out[out.length - 1], '今天晴，26 度。')
+})
+
+test('最终回复先做语音摘要；摘要为空时回落到 toSpeech', async () => {
+  const h = harness()
+  const seen = []
+  const adapter = createDshSessionLlm({
+    bridge: h.bridge,
+    sessionId: 'session-aaaa',
+    timeoutMs: 5_000,
+    summarize: async (text) => {
+      seen.push(text)
+      return '都办好了，文件在会话里。'
+    },
+    summaryMinChars: 10,
+    progressMinIntervalMs: 0,
+    heartbeatMs: 0,
+    logger: silent,
+  })
+  const pending = collect(adapter.stream({ messages: [{ role: 'user', content: '整理一下' }] }))
+  await tick()
+  h.emit('session-aaaa', { type: 'turn/start', data: { turn: 1 } })
+  h.emit('session-aaaa', { type: 'user/message', data: { source: { rpcId: h.prompts[0].requestId } } })
+  h.emit('session-aaaa', {
+    type: 'assistant/message',
+    data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: '**已经整理完**，三个文件都改好了，详细内容见附件。' }] } },
+  })
+  h.emit('session-aaaa', { type: 'turn/end', data: { turn: 1 } })
+  const out = await pending
+  assert.equal(seen.length, 1)
+  assert.match(seen[0], /已经整理完/)
+  assert.deepEqual(out[0], { type: 'progress', text: '我整理一下，马上说。' })
+  assert.equal(out[1], '都办好了，文件在会话里。')
+
+  const h2 = harness()
+  const fallback = createDshSessionLlm({
+    bridge: h2.bridge,
+    sessionId: 'session-aaaa',
+    timeoutMs: 5_000,
+    summarize: async () => '',
+    summaryMinChars: 10,
+    heartbeatMs: 0,
+    logger: silent,
+  })
+  const pending2 = collect(fallback.stream({ messages: [{ role: 'user', content: '整理一下' }] }))
+  await tick()
+  h2.emit('session-aaaa', { type: 'turn/start', data: { turn: 1 } })
+  h2.emit('session-aaaa', { type: 'user/message', data: { source: { rpcId: h2.prompts[0].requestId } } })
+  h2.emit('session-aaaa', {
+    type: 'assistant/message',
+    data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: '**已经整理完**，三个文件都改好了。' }] } },
+  })
+  h2.emit('session-aaaa', { type: 'turn/end', data: { turn: 1 } })
+  const out2 = await pending2
+  assert.equal(out2[out2.length - 1], '已经整理完，三个文件都改好了。')
 })
 
 test('绑定按智能体持久化，重载后复用同一会话', async () => {

@@ -108,6 +108,7 @@ export function createControlHandler({
   pending,
   firmware,
   sessions,
+  voiceSessions,
   ready: bootstrapReady,
   logger,
   clock = () => Date.now(),
@@ -186,10 +187,18 @@ export function createControlHandler({
    */
   function publicAgent(agent) {
     const devices = store.listByAgent(agent.id)
+    const sessionId = String(agent.overrides?.sessionId ?? '').trim()
     return {
       id: agent.id,
       name: agent.name,
       overrides: agent.overrides ?? {},
+      // 「Bot = 一条 DSH 会话」在控制台的只读投影：绑定哪条、是否在线、是否正在跑。
+      // sessionId 为空 = 首次说话时自动建（voice-sessions.json 里按 Bot 记住）。
+      session: {
+        id: sessionId,
+        available: sessions?.available === true,
+        running: sessionId ? sessions?.statusOf?.(sessionId) === true : false,
+      },
       memoryEnabled: agent.memoryEnabled !== false,
       toolDisabled: agent.toolDisabled ?? [],
       devices: devices.map(publicDevice),
@@ -443,7 +452,53 @@ export function createControlHandler({
     }
 
     if (method === 'GET' && path === '/agents') {
+      // 先拉一次会话列表：它会刷新每条会话的 running 快照，卡片上的「运行中」才准。
+      await sessions?.list?.()
       sendJson(res, 200, { agents: (agents?.list() ?? []).map(publicAgent) })
+      return
+    }
+
+    if (method === 'POST' && path === '/agents/session') {
+      if (!requireTrustedMutation(req, res)) return
+      if (!voiceSessions) {
+        sendJson(res, 500, { error: { code: 'session-bridge-missing', message: '会话服务未装配' } })
+        return
+      }
+      const body = await readJson(req)
+      const agentId = agentIdOf(body)
+      const agent = agents.get(agentId)
+      if (!agent) {
+        sendJson(res, 404, { error: { code: 'agent-not-found', message: 'Bot 不存在' } })
+        return
+      }
+      const action = typeof body.action === 'string' ? body.action.trim() : 'new'
+      try {
+        if (action === 'new') {
+          // 手动换一条新会话：立即创建并钉死，下一轮语音就用它。
+          const sessionId = await voiceSessions.rotate(agentId)
+          sendJson(res, 200, { agent: publicAgent(agents.get(agentId)), sessionId })
+          return
+        }
+        if (action === 'auto') {
+          // 解除钉死：下一轮首次说话时按 Bot 自动建/复用一条。
+          await voiceSessions.clear(agentId)
+          sendJson(res, 200, { agent: publicAgent(agents.get(agentId)), sessionId: '' })
+          return
+        }
+        if (action === 'bind') {
+          const sessionId = String(body.sessionId ?? '').trim()
+          if (!/^session-[A-Za-z0-9._-]{1,80}$/.test(sessionId)) {
+            sendJson(res, 400, { error: { code: 'invalid-session-id', message: '会话 id 不合法' } })
+            return
+          }
+          await voiceSessions.bind(agentId, sessionId)
+          sendJson(res, 200, { agent: publicAgent(agents.get(agentId)), sessionId })
+          return
+        }
+        sendJson(res, 400, { error: { code: 'invalid-session-action', message: 'action 只接受 new / auto / bind' } })
+      } catch (error) {
+        sendJson(res, 500, { error: { code: 'session-operation-failed', message: error.message } })
+      }
       return
     }
 

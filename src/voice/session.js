@@ -32,6 +32,21 @@ import { join } from 'node:path'
 
 const PRE_ROLL_MS = 300
 
+/**
+ * 语音审批回答的意图分类：**先判拒绝**（"不" 里常带 "行/要" 之类的字，先判允许会误放行）。
+ * 返回 `allowed-once` / `rejected`，说不清就返回空串（交回桌面审批卡）。
+ */
+const APPROVAL_ALLOW = /(允许|同意|可以|确认|好的|好|行|没问题|对|嗯|yes|ok|allow|sure)/i
+const APPROVAL_DENY = /(拒绝|不行|不对|不好|不要|不可以|不同意|不允许|否决|取消|别|不准|no|deny|reject|cancel)/i
+
+export function classifyApprovalAnswer(text) {
+  const value = String(text ?? '').trim()
+  if (!value) return ''
+  if (APPROVAL_DENY.test(value)) return 'rejected'
+  if (APPROVAL_ALLOW.test(value)) return 'allowed-once'
+  return ''
+}
+
 export class VoiceSession {
   /**
    * @param {object} options
@@ -141,6 +156,9 @@ export class VoiceSession {
     this.onClose = onClose
     this.asrStream = null
     this.utterance = null
+    // 语音审批中的「等一次回答」：非空时 #finalizeUtterance 把这句话交给它，而不是
+    // 开新一轮对话。超时会清空它并把状态交回 thinking。
+    this.approvalWaiter = null
     // 设备 listen stop 之后的续话窗口：非空表示还没真正收口（见 #scheduleFinalize）。
     this.pendingFinalize = null
     // 唤醒开场白进行中：这期间不要开捕获（否则会把 TTS 回声当用户说话）。
@@ -186,6 +204,13 @@ export class VoiceSession {
     this.closed = true
     trace('session.close', { device: this.deviceId, turns: this.metrics.turns })
     this.capturing = false
+    // 关闭时挂着的审批等待必须收口，否则回答方的 Promise 永远不会 settle。
+    if (this.approvalWaiter) {
+      const waiter = this.approvalWaiter
+      this.approvalWaiter = null
+      clearTimeout(waiter.timer)
+      waiter.resolve('')
+    }
     this.#cancelTurn('session closed')
     this.asrStream?.abort?.()
     this.asrStream = null
@@ -334,6 +359,85 @@ export class VoiceSession {
       this.player.push(controlElement(KIND.TTS_STOP, { generation }))
       this.state = this.capturing ? 'listening' : 'idle'
     }
+    return true
+  }
+
+  /**
+   * 语音审批：念出问题 → 等一次「允许/拒绝」→ 返回 `allowed-once` / `rejected`。
+   *
+   * 说不清或超时返回 null，由调用方把请求交回桌面审批卡（不能擅自放行/拒绝）。
+   * 这里不复用 `#answer`：审批发生在会话的同一轮内部，`#answer` 正卡在等待
+   * 会话的生成器上；再开一轮会把上下文弄乱。
+   */
+  async askApproval({ text, timeoutMs = 12_000 } = {}) {
+    if (this.closed) return null
+    const prompt = String(text ?? '').trim()
+    if (!prompt) return null
+    try {
+      await this.speak(prompt)
+      // `speak` 只等合成入队；要等真正播完再开麦，否则会把 TTS 回声当回答。
+      await this.player.whenDrained()
+    } catch (error) {
+      this.logger.warn?.(`dsh-xiaozhi: approval prompt failed: ${error.message}`)
+      this.state = 'thinking'
+      return null
+    }
+    if (this.closed) return null
+    const answer = await this.#listenOnce(timeoutMs)
+    if (this.closed) return null
+    const outcome = classifyApprovalAnswer(answer)
+    if (!outcome) {
+      trace('approval.retry', { device: this.deviceId, text: String(answer).slice(0, 60) })
+      this.#sendAlert({ status: '需要确认', message: '请说“允许”或“拒绝”，或者在电脑上处理' })
+      return null
+    }
+    trace('approval.answer', { device: this.deviceId, outcome })
+    this.state = 'thinking'
+    return outcome
+  }
+
+  /**
+   * 为审批开一次短捕获。`#finalizeUtterance` 看到 `approvalWaiter` 时把识别文本
+   * 交给它并提前返回，不会触发 `#answer`。
+   */
+  #listenOnce(timeoutMs) {
+    return new Promise((resolve) => {
+      if (this.closed) {
+        resolve('')
+        return
+      }
+      this.#cancelPendingFinalize()
+      this.approvalWaiter = null
+      this.capturing = true
+      this.state = 'listening'
+      this.vad.reset()
+      this.preRoll = []
+      this.preRollBytes = 0
+      this.#openAsr()
+      const timer = setTimeout(() => {
+        if (!this.approvalWaiter) return
+        this.approvalWaiter = null
+        this.capturing = false
+        this.asrStream?.abort?.()
+        this.asrStream = null
+        this.utterance = null
+        this.state = 'thinking'
+        trace('approval.timeout', { device: this.deviceId })
+        resolve('')
+      }, Math.max(3_000, Number(timeoutMs) || 12_000))
+      this.approvalWaiter = { resolve, timer }
+    })
+  }
+
+  /** 审批捕获的收口：有等待者就交答案并返回 true（调用方不再进入 #answer）。 */
+  #settleApproval(text) {
+    const waiter = this.approvalWaiter
+    if (!waiter) return false
+    this.approvalWaiter = null
+    clearTimeout(waiter.timer)
+    this.capturing = false
+    this.state = 'thinking'
+    waiter.resolve(String(text ?? ''))
     return true
   }
 
@@ -616,6 +720,7 @@ export class VoiceSession {
         trace('asr.error', { device: this.deviceId, message: String(result.error).slice(0, 300), ...stats })
         this.#sendAlert({ status: '听不清', message: '我没听清，你再说一遍？' })
         await dumpWav()
+        if (this.#settleApproval('')) return
         this.#resumeCaptureAfterEmpty('asr-failed')
         return
       }
@@ -638,12 +743,18 @@ export class VoiceSession {
         trace('asr.no_audio', { device: this.deviceId, trigger })
       }
       await dumpWav()
+      if (this.#settleApproval('')) return
       this.#resumeCaptureAfterEmpty('empty-asr')
       return
     }
     this.logger.info?.(`dsh-xiaozhi: heared "${text}" (${trigger})`)
     trace('asr.result', { device: this.deviceId, trigger, ms: this.clock() - startedAt, ...stats, text: text.slice(0, 120) })
     await dumpWav()
+    // 语音审批：这次识别不是新对话，交给 #settleApproval 后直接返回。
+    if (this.#settleApproval(text)) {
+      this.sink.sendJson({ type: 'stt', text })
+      return
+    }
     // 用户这段话的 PCM（16k）留给历史对话，和文本一起落库；空/失败不写。
     const userPcm = this.historyAudio && utterance.pcm?.length ? Buffer.concat(utterance.pcm) : null
     this.sink.sendJson({ type: 'stt', text })
@@ -666,9 +777,17 @@ export class VoiceSession {
     Promise.allSettled(jobs).catch(() => {})
   }
 
-  /** 不支持工具的适配器包装成同一事件流，调用方不必分叉。 */
+  /**
+   * 不支持工具的适配器包装成同一事件流，调用方不必分叉。
+   *
+   * 会话适配器除了文本还会吐 `notice`（设备气泡）与 `progress`（朗读的进度短句）；
+   * 这些已经是事件对象，不能再包一层 `{type:'text'}`，否则会被当成正文念出来。
+   */
   async *#textOnly(stream) {
-    for await (const text of stream) yield { type: 'text', text }
+    for await (const item of stream) {
+      if (item && typeof item === 'object' && typeof item.type === 'string') yield item
+      else yield { type: 'text', text: item }
+    }
   }
 
   async #answer(userText, { userPcm = null } = {}) {
@@ -684,17 +803,21 @@ export class VoiceSession {
     this.state = 'thinking'
     this.player.push(controlElement(KIND.TTS_START, { generation }))
     const queued = []
+    let sentenceSeq = 0
     let firstTokenAt = 0
     let emotionSent = false
     let ttsAlertSent = false
     const requestStartedAt = this.clock()
 
-    const speak = (sentence) => {
-      const sentenceId = `${turn}:${queued.length + 1}`
-      queued.push(sentence)
+    const speak = (sentence, { record = true } = {}) => {
+      const value = String(sentence ?? '').trim()
+      if (!value) return
+      // 进度话术也要念，但不能写进本轮的 assistant 正文（历史/摘要只认最终结论）。
+      if (record) queued.push(value)
+      const sentenceId = `${turn}:${(sentenceSeq += 1)}`
       this.synthesisChain = this.synthesisChain
         .then(() =>
-          this.#speakSentence({ sentence, sentenceId, generation, signal: controller.signal, captureAudio: true }),
+          this.#speakSentence({ sentence: value, sentenceId, generation, signal: controller.signal, captureAudio: true }),
         )
         .catch((error) => {
           if (!controller.signal.aborted) {
@@ -738,6 +861,16 @@ export class VoiceSession {
           if (controller.signal.aborted) break
           if (event.type === 'tool_calls') {
             pending.push(...event.calls)
+            continue
+          }
+          if (event.type === 'notice') {
+            // 设备气泡（% 工具名），不朗读、不进历史。
+            this.#sendToolNotice(event.text)
+            continue
+          }
+          if (event.type === 'progress') {
+            // 会话适配器的阶段进度：朗读，但不计入最终 assistant 正文。
+            speak(event.text, { record: false })
             continue
           }
           if (event.type !== 'text') continue

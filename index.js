@@ -40,7 +40,8 @@ import { SettingsStore } from './src/settings.js'
 import { DeviceStore } from './src/store.js'
 import { PendingStore } from './src/pending.js'
 import { buildLlmAdapter, buildTtsAdapter, buildAsrAdapter, createVoiceAdapters, prioritizeTtsProvider } from './src/voice/adapters/index.js'
-import { createDshSessionLlm, DEFAULT_SESSION_INSTRUCTION } from './src/voice/adapters/dsh-session.js'
+import { createDshSessionLlm } from './src/voice/adapters/dsh-session.js'
+import { createSpeechSummarizer, DEFAULT_SUMMARY_PROMPT } from './src/voice/spoken-summary.js'
 import { probeAsr } from './src/voice/asr-probe.js'
 import { hostProviderIssue } from './src/voice/host-provider.js'
 import { createOpusStreamEncoder, encodePcmToOpus, probeFfmpeg, UplinkDecoder } from './src/voice/codec.js'
@@ -313,7 +314,7 @@ export function resolveConfig(config = {}) {
       session: {
         // 固定绑定的会话；留空 = 首次连接时自动建一条并按智能体记住（voice-sessions.json）。
         sessionId: text(field(sessionRaw, ['sessionId', 'session_id'], '')),
-        // 拼在用户话前面的语音指令；空串 = 用适配器内置默认。
+        // 可选：拼在用户话前面的语音指令；空串 = **原话直送**（与文本框一致）。
         instruction: text(field(sessionRaw, ['instruction'], '')),
         // 一轮的总预算（ms）。超时会取消该会话当前 turn，避免下一句排长队。
         timeoutMs: positiveInteger(
@@ -321,9 +322,45 @@ export function resolveConfig(config = {}) {
           120_000,
           { min: 5_000, max: 600_000 },
         ),
-        // 念出来的最大字数（超出按句末截断）。
+        // 念出来的最大字数（摘要结果与回落截断共用）。
         maxChars: positiveInteger(field(sessionRaw, ['maxChars', 'max_chars'], 600), 600, { min: 40, max: 4_000 }),
-        // 自动建会话时的工作目录；空串 = dataRoot/voice-sessions。
+        // 最终回复先做一次「语音摘要」（额外一次无工具的小模型调用）。失败/超时/太短
+        // 都回落到确定性的 toSpeech()，不会因为摘要失败把整轮语音打死。
+        summary: field(sessionRaw, ['summary'], true) !== false,
+        summaryMaxChars: positiveInteger(
+          field(sessionRaw, ['summaryMaxChars', 'summary_max_chars'], 160),
+          160,
+          { min: 40, max: 600 },
+        ),
+        summaryMinChars: positiveInteger(
+          field(sessionRaw, ['summaryMinChars', 'summary_min_chars'], 80),
+          80,
+          { min: 0, max: 400 },
+        ),
+        summaryTimeoutMs: positiveInteger(
+          field(sessionRaw, ['summaryTimeoutMs', 'summary_timeout_ms'], 8_000),
+          8_000,
+          { min: 1_000, max: 30_000 },
+        ),
+        // 过程播报：工具调用时念一句进度、长等待时心跳；设备气泡（% 工具名）始终发。
+        progress: field(sessionRaw, ['progress'], true) !== false,
+        progressMinIntervalMs: positiveInteger(
+          field(sessionRaw, ['progressMinIntervalMs', 'progress_min_interval_ms'], 8_000),
+          8_000,
+          { min: 0, max: 60_000 },
+        ),
+        heartbeatMs: positiveInteger(
+          field(sessionRaw, ['heartbeatMs', 'heartbeat_ms'], 20_000),
+          20_000,
+          { min: 0, max: 120_000 },
+        ),
+        // 语音审批：念完问题后等一次「允许/拒绝」回答的时间；超时交回桌面审批卡。
+        approvalTimeoutMs: positiveInteger(
+          field(sessionRaw, ['approvalTimeoutMs', 'approval_timeout_ms'], 12_000),
+          12_000,
+          { min: 3_000, max: 60_000 },
+        ),
+        // 自动建会话时的工作目录；空串 = dataRoot/voice-sessions/<agentId>（每个 Bot 一个目录）。
         cwd: text(field(sessionRaw, ['cwd'], '')),
       },
       // 服务端插件工具配置（官方 config.yaml 的 plugins 段）：newsnow / hass / ragflow / callDevice / music。
@@ -526,7 +563,7 @@ export function apply(ctx, config = {}) {
   // 只有把某个智能体设成 backend=session 才会在构建期报错，其他链路不受影响。
   const sessionBridge = createSessionBridge({
     sessionController: typeof ctx.get === 'function' ? ctx.get('sessionController') : ctx.sessionController,
-    on: (event, listener) => ctx.on(event, listener),
+    on: (event, listener, options) => ctx.on(event, listener, options),
     logger,
   })
   if (!sessionBridge.available) {
@@ -583,26 +620,94 @@ export function apply(ctx, config = {}) {
     String(agentOf(device)?.overrides?.sessionId ?? '').trim() || resolved.voice.session.sessionId
 
   /**
+   * 该 Bot 自动建会话时用的工作目录。每个 Bot 一个子目录（同 DS-Bot 的「Bot 有自己的
+   * 工作文件夹」）；显式配置了 `voice.session.cwd` 时按配置共用目录。
+   */
+  function voiceSessionCwd(agentId) {
+    const root = resolved.voice.session.cwd || join(resolved.dataRoot, 'voice-sessions')
+    return resolved.voice.session.cwd ? root : join(root, String(agentId || 'default'))
+  }
+
+  /**
    * 解析该设备这一轮要用的会话：显式绑定 > 之前自动建的 > 新建一条并记住。
    *
-   * 自动建的按智能体存（同一智能体的多块表共用一段上下文），存在
+   * 自动建的按 Bot 存（同一 Bot 的多块表共用一段上下文），存在
    * `voice-sessions.json`；会话被删/失效时 `prompt` 会失败，用户重新选一条即可。
    */
   async function ensureVoiceSession(device) {
     const pinned = pinnedSessionFor(device)
     if (pinned) return pinned
     const agentId = agentOf(device)?.id || device?.deviceId || ''
-    if (!agentId) throw new Error('无法确定语音会话归属（智能体为空）')
+    if (!agentId) throw new Error('无法确定语音会话归属（Bot 为空）')
     const cached = sessionBindings.get(agentId)
     if (cached) return cached
-    const cwd = resolved.voice.session.cwd || join(resolved.dataRoot, 'voice-sessions')
+    const cwd = voiceSessionCwd(agentId)
     // DSH 把 cwd 当会话的工作目录；目录不存在时先建出来，免得建会话直接失败。
     await mkdir(cwd, { recursive: true })
     const sessionId = await sessionBridge.create({ cwd })
     await sessionBindings.set(agentId, sessionId)
-    logger.info?.(`dsh-xiaozhi: 已为智能体 ${agentId} 自动创建语音会话 ${sessionId}`)
+    logger.info?.(`dsh-xiaozhi: 已为 Bot ${agentId} 自动创建语音会话 ${sessionId}`)
     return sessionId
   }
+
+  /**
+   * 控制台的「会话」操作：换一条新会话 / 解除钉死 / 绑定已有会话。
+   * 手动换会话要立刻落盘并钉死，否则下一轮还会命中 voice-sessions.json 里的旧 id。
+   */
+  const voiceSessions = {
+    async rotate(agentId) {
+      const agent = agents.get(agentId)
+      if (!agent) throw new Error('Bot 不存在')
+      if (!sessionBridge.available) throw new Error('DSH 会话服务未装配')
+      const cwd = voiceSessionCwd(agentId)
+      await mkdir(cwd, { recursive: true })
+      const sessionId = await sessionBridge.create({ cwd })
+      await sessionBindings.set(agentId, sessionId)
+      await agents.update({ agentId, overrides: { sessionId } })
+      logger.info?.(`dsh-xiaozhi: Bot ${agent.name || agentId} 换到新会话 ${sessionId}`)
+      return sessionId
+    },
+    async clear(agentId) {
+      if (!agents.get(agentId)) throw new Error('Bot 不存在')
+      await agents.update({ agentId, overrides: { sessionId: '' } })
+      await sessionBindings.remove(agentId)
+    },
+    async bind(agentId, sessionId) {
+      if (!agents.get(agentId)) throw new Error('Bot 不存在')
+      await sessionBindings.set(agentId, sessionId)
+      await agents.update({ agentId, overrides: { sessionId } })
+    },
+  }
+
+  /**
+   * 语音审批应答器：只有「这条会话确实绑在一个有在线设备的 Bot 上」才接。
+   * 接到后由当前正在等的 VoiceSession 念问题、收一次「允许/拒绝」；
+   * 说不清/超时返回 null，桥会 next() 交给桌面审批卡（不擅自放行）。
+   */
+  sessionBridge.setApprovalAnswerer?.(async (request) => {
+    const sessionId = String(request?.agent?.session?.id ?? '')
+    if (!sessionId) return null
+    const agent = agents.list().find((candidate) => {
+      const pinned = String(candidate.overrides?.sessionId ?? '').trim()
+      const bound = pinned || sessionBindings.get(candidate.id)
+      return bound === sessionId
+    })
+    if (!agent) return null
+    const live = store
+      .listByAgent(agent.id)
+      .map((device) => hub.get(device.deviceId))
+      .filter((item) => item && typeof item.askApproval === 'function')
+    // 只接「语音发起、正在等这一轮」的审批：设备在 thinking/speaking 才说明这一轮是它问的。
+    // 桌面发起的 turn 不抢——否则一台只是连着的表会把桌面审批卡拖住十几秒。
+    const voiceSession = live.find((item) => item.state === 'thinking' || item.state === 'speaking')
+    if (!voiceSession) return null
+    const reason = request.displayReason?.zh || request.displayReason?.en || request.reason || ''
+    const label = String(reason || `工具 ${request.toolName ?? ''}`).trim().slice(0, 120)
+    return voiceSession.askApproval({
+      text: `需要你确认：${label}。可以说允许，或者拒绝。`,
+      timeoutMs: resolved.voice.session.approvalTimeoutMs,
+    })
+  })
   const hub = new ConnectionHub({
     logger,
     onEvent: (event) => {
@@ -665,6 +770,8 @@ export function apply(ctx, config = {}) {
       }
       try {
         const adapterCache = new Map()
+        // 摘要构建失败只提醒一次（每个进程），否则每次建连都会刷同一条 warn。
+        const summaryWarnings = new Set()
         /**
          * 全局默认（Loader 配置 + 运行时设置）。设备级覆盖 overrides 叠在它之上：
          * 人设、音色、语速、模型、静音阈值这些「每台设备可以不一样」的项走 overrides，
@@ -741,15 +848,54 @@ export function apply(ctx, config = {}) {
               backups: merged.tts.backups.map((entry) => ({ language, ...entry })),
             }
           }
+          // 最终回复的「语音摘要」：用同一个 LLM 段做一次无工具的小调用。mock 不能当
+          // 摘要器（会产出合成话术）；没配模型段时直接不摘要，回落到确定性截断。
+          const summarize = (() => {
+            if (resolved.voice.session.summary === false) return null
+            const spec = merged.llm && typeof merged.llm === 'object' ? merged.llm : {}
+            const provider = String(spec.provider ?? '').trim()
+            if (!provider || provider === 'mock') return null
+            try {
+              const adapter = buildLlmAdapter(
+                {
+                  ...spec,
+                  // 摘要给自己留足 token：主模型可能为了语音短答把 maxTokens 压到 120，
+                  // 但 2–3 句摘要 + 标点在这个预算内可能被截断。
+                  maxTokens: Math.max(Number(spec.maxTokens) || 0, 300),
+                  temperature: 0.3,
+                },
+                { systemPrompt: DEFAULT_SUMMARY_PROMPT, llm: hostLlm },
+              )
+              return createSpeechSummarizer({
+                adapter,
+                maxChars: resolved.voice.session.summaryMaxChars,
+                minInputChars: resolved.voice.session.summaryMinChars,
+                timeoutMs: resolved.voice.session.summaryTimeoutMs,
+                logger,
+              })
+            } catch (error) {
+              const key = String(error?.message ?? error)
+              if (!summaryWarnings.has(key)) {
+                summaryWarnings.add(key)
+                logger.warn?.(`dsh-xiaozhi: 语音摘要不可用（${key}），最终回复将直接截断后朗读`)
+              }
+              return null
+            }
+          })()
           const sessionAdapter = sessionMode
             ? (() => {
                 try {
                   return createDshSessionLlm({
                     bridge: sessionBridge,
                     sessionId: () => ensureVoiceSession(device),
-                    instruction: resolved.voice.session.instruction || DEFAULT_SESSION_INSTRUCTION,
+                    instruction: resolved.voice.session.instruction,
                     timeoutMs: resolved.voice.session.timeoutMs,
                     maxChars: resolved.voice.session.maxChars,
+                    summarize,
+                    summaryMinChars: resolved.voice.session.summaryMinChars,
+                    progress: resolved.voice.session.progress,
+                    progressMinIntervalMs: resolved.voice.session.progressMinIntervalMs,
+                    heartbeatMs: resolved.voice.session.heartbeatMs,
                     logger,
                   })
                 } catch (error) {
@@ -838,6 +984,9 @@ export function apply(ctx, config = {}) {
               // 这一轮的回答来源：llm = 插件直连；session = 绑定的 DSH 会话。
               backend: sessionMode ? 'session' : 'llm',
               sessionId: sessionMode ? pinnedSessionFor(device) || '(auto)' : '',
+              // 会话后端是否启用了语音摘要 / 过程播报；排障时先看这里。
+              summary: sessionMode ? Boolean(summarize) : false,
+              progress: sessionMode ? resolved.voice.session.progress !== false : false,
               ttsProvider: effectiveTts.provider,
               // 记录实际生效的音色（设备选的 / 厂商默认 / 跨厂商回落后的），排障才有据可查。
               voice: effectiveTtsVoice,
@@ -945,6 +1094,7 @@ export function apply(ctx, config = {}) {
     speechToText,
     llm: hostLlm,
     sessions: sessionBridge,
+    voiceSessions,
     tools: toolRegistry,
     memory,
     history,

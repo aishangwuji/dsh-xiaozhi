@@ -31,7 +31,7 @@ function headers() {
   return { 'content-type': 'application/json', 'x-dsh-xiaozhi': '1' }
 }
 
-async function start({ seedDevices, autoAgent = false, sessions } = {}) {
+async function start({ seedDevices, autoAgent = false, sessions, voiceSessions } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-xiaozhi-agents-'))
   if (seedDevices) {
     await writeFile(join(dir, 'devices.json'), JSON.stringify({ version: 2, devices: seedDevices }, null, 2))
@@ -63,6 +63,7 @@ async function start({ seedDevices, autoAgent = false, sessions } = {}) {
     memory,
     history,
     sessions,
+    voiceSessions,
     logger: silent,
     ready: Promise.resolve(),
   })
@@ -434,6 +435,76 @@ test('宿主没有会话服务时 /sessions 回不可用，而不是 500', async
     const response = await ctx.call('/sessions')
     assert.equal(response.status, 200)
     assert.deepEqual(response.json, { available: false, items: [] })
+  } finally {
+    await ctx.dispose()
+  }
+})
+
+test('Bot 视图带会话状态，控制台可换新会话/解除钉死/绑定已有会话', async () => {
+  const calls = []
+  const fakeSessions = {
+    available: true,
+    async list() {
+      return [{ sessionId: 'session-old', updatedAt: 1, running: true }]
+    },
+    statusOf(sessionId) {
+      return sessionId === 'session-old'
+    },
+  }
+  const voiceSessions = {
+    async rotate(agentId) {
+      calls.push(['rotate', agentId])
+      return 'session-new'
+    },
+    async clear(agentId) {
+      calls.push(['clear', agentId])
+    },
+    async bind(agentId, sessionId) {
+      calls.push(['bind', agentId, sessionId])
+    },
+  }
+  const ctx = await start({ sessions: fakeSessions, voiceSessions })
+  try {
+    const created = await ctx.call('/agents', { method: 'POST', body: { name: '妈妈' } })
+    const agentId = created.json.agent.id
+    assert.equal(created.json.agent.session.available, true)
+    assert.equal(created.json.agent.session.id, '')
+
+    const updated = await ctx.call('/agents/update', {
+      method: 'POST',
+      body: { agentId, backend: 'session', sessionId: 'session-old' },
+    })
+    assert.equal(updated.json.agent.session.id, 'session-old')
+    assert.equal(updated.json.agent.session.running, true)
+
+    const rotated = await ctx.call('/agents/session', { method: 'POST', body: { agentId, action: 'new' } })
+    assert.equal(rotated.status, 200)
+    assert.equal(rotated.json.sessionId, 'session-new')
+    assert.deepEqual(calls[0], ['rotate', agentId])
+
+    const cleared = await ctx.call('/agents/session', { method: 'POST', body: { agentId, action: 'auto' } })
+    assert.equal(cleared.status, 200)
+    assert.equal(cleared.json.sessionId, '')
+    assert.deepEqual(calls[1], ['clear', agentId])
+
+    const bound = await ctx.call('/agents/session', {
+      method: 'POST',
+      body: { agentId, action: 'bind', sessionId: 'session-abc' },
+    })
+    assert.equal(bound.status, 200)
+    assert.equal(bound.json.sessionId, 'session-abc')
+    assert.deepEqual(calls[2], ['bind', agentId, 'session-abc'])
+
+    const bad = await ctx.call('/agents/session', {
+      method: 'POST',
+      body: { agentId, action: 'bind', sessionId: '../../etc' },
+    })
+    assert.equal(bad.status, 400)
+    assert.equal(bad.json.error.code, 'invalid-session-id')
+
+    const missing = await ctx.call('/agents/session', { method: 'POST', body: { agentId, action: 'nope' } })
+    assert.equal(missing.status, 400)
+    assert.equal(missing.json.error.code, 'invalid-session-action')
   } finally {
     await ctx.dispose()
   }

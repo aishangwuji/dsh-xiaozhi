@@ -2,6 +2,10 @@
 
 > 本文是「智能体 = 配置单位，设备 = 物理单位」这一层的实现契约。改动前先读完，
 > 它同时约束存储、控制 API、运行时装配与控制台。
+>
+> **2026-11-20 起控制台按 Bot 理解**：智能体就是 Bot，一个 Bot = 一条长期 DSH 会话
+> （模型/人设/工具/权限/审批由会话负责），设备只是它的麦克风与扬声器；一人一个或
+> 全家共用一个都可以。会话侧契约见 [`dsh-session-backend.md`](dsh-session-backend.md)。
 
 ## 1. 为什么拆成两层
 
@@ -91,9 +95,10 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/agents` | 列表；每条带 `devices` / `deviceCount` / `online` / `lastSeenAt` |
-| POST | `/agents` | `{name, ...overrides}` 新建 |
-| POST | `/agents/update` | `{agentId, name?, systemPrompt?, voice?, ttsProvider?, language?, model?, speed?, silenceMs?}`；空串 = 删掉该覆盖。`ttsProvider` 只能是全局已配置的 TTS 主用/备用（否则 400 `invalid-tts-provider`），空 = 跟随全局主用（2026-11-14） |
+| GET | `/agents` | 列表；每条带 `devices` / `deviceCount` / `online` / `lastSeenAt` / `session {id, available, running}` |
+| POST | `/agents` | `{name, ...overrides}` 新建；控制台新建默认 `backend=session` |
+| POST | `/agents/update` | `{agentId, name?, systemPrompt?, voice?, ttsProvider?, language?, model?, speed?, silenceMs?, backend?, sessionId?}`；空串 = 删掉该覆盖。`ttsProvider` 只能是全局已配置的 TTS 主用/备用（否则 400 `invalid-tts-provider`），空 = 跟随全局主用（2026-11-14）；`backend` 只收 `llm` / `session`，`sessionId` 只收 `session-…` |
+| POST | `/agents/session` | `{agentId, action}`：`new` 立即新建并钉死会话；`auto` 解除钉死；`bind` + `sessionId` 绑定已有会话 |
 | POST | `/agents/bind` | `{agentId, deviceId}` 绑定（设备已在别的智能体上 = 移动） |
 | POST | `/agents/unbind` | `{agentId, deviceId}` 解绑；设备不属于该智能体 → 400 |
 | POST | `/agents/remove` | `{agentId}` **级联删除**绑定设备（含历史与记忆），与参考 `deleteAgent` 一致 |
@@ -121,6 +126,10 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
   候选链：被指定的厂商条目（连同凭据）提为主用，原主用整条降为第一备用，其余备用顺序不变
 - adapter 缓存 key 已覆盖三段配置 + 设备 overrides；智能体配置改了之后设备重连即生效
   （和旧版一样，运行中的会话不热更）。
+- **会话模式（2026-11-20）**：`backend=session` 时 LLM 段不建 provider 候选链，改由
+  `createDshSessionLlm` 提供 `stream()`；`toolsEnabled` / `memoryEnabled` / `memoryKey` /
+  `sessionPrompt` 一律让路（工具、记忆、人设归会话），TTS/ASR 仍按 Bot 的音色/语种装配。
+  会话 id 是「每轮重新解析」的，所以控制台换会话下一轮生效，不需要重连。
 
 ## 5. 控制台
 

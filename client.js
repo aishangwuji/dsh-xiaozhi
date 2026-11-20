@@ -562,6 +562,7 @@ var DshXiaozhi = (() => {
     lastEvents: "\u6700\u8FD1\u4E8B\u4EF6",
     noEvents: "\u6682\u65E0\u4E8B\u4EF6",
     devicesTitle: "\u667A\u80FD\u4F53",
+    botsHint: "\u6BCF\u4E2A Bot \u662F\u4E00\u6761\u957F\u671F DSH \u4F1A\u8BDD\uFF1A\u624B\u8868\u8BED\u97F3\u548C DSH \u804A\u5929\u9875\u5171\u7528\u540C\u4E00\u6BB5\u4E0A\u4E0B\u6587\uFF1B\u53EF\u4E00\u4EBA\u4E00\u4E2A\uFF0C\u4E5F\u53EF\u5168\u5BB6\u5171\u7528\u3002",
     empty: "\u8FD8\u6CA1\u6709\u667A\u80FD\u4F53\u3002\u624B\u8868\u5728\u914D\u7F51\u9875\u9762\u586B\u597D OTA \u5730\u5740\u540E\uFF0C\u4E0A\u7535\u5C31\u4F1A\u81EA\u52A8\u51FA\u73B0\u5728\u8FD9\u91CC\u3002",
     agentsNew: "\u65B0\u5EFA\u667A\u80FD\u4F53",
     agentDevices: "\u8BBE\u5907",
@@ -639,8 +640,14 @@ var DshXiaozhi = (() => {
     backendSession: "DSH \u4F1A\u8BDD",
     backendHint: "DSH \u4F1A\u8BDD = \u8FD9\u53E5\u8BDD\u9001\u8FDB\u4E00\u6761\u4F1A\u8BDD\uFF08\u542B\u5B83\u7684\u5DE5\u5177\u3001\u8BB0\u5FC6\u4E0E\u6743\u9650\uFF09\uFF0C\u53EA\u5FF5\u6700\u7EC8\u7ED3\u8BBA",
     sessionLabel: "\u7ED1\u5B9A\u7684\u4F1A\u8BDD",
-    sessionAuto: "\u9996\u6B21\u8FDE\u63A5\u65F6\u81EA\u52A8\u65B0\u5EFA",
-    sessionHint: "\u4E0B\u62C9\u53EA\u5217\u6700\u8FD1\u4F1A\u8BDD\uFF1B\u627E\u4E0D\u5230\u53EF\u624B\u586B session-\u2026 \u3002DS-Bot \u7684 Bot \u4E5F\u80FD\u7ED1",
+    sessionAuto: "\u9996\u6B21\u8BF4\u8BDD\u65F6\u81EA\u52A8\u65B0\u5EFA",
+    sessionHint: "\u4E00\u4E2A Bot \u4E00\u6761\u957F\u671F\u4F1A\u8BDD\uFF1A\u8BED\u97F3\u4E0E DSH \u804A\u5929\u9875\u91CC\u7684\u6587\u672C\u6846\u5171\u7528\u540C\u4E00\u6BB5\u4E0A\u4E0B\u6587\u3002\u4E0B\u62C9\u53EA\u5217\u6700\u8FD1\u4F1A\u8BDD\uFF0C\u627E\u4E0D\u5230\u53EF\u624B\u586B session-\u2026",
+    sessionNew: "\u65B0\u5EFA\u4F1A\u8BDD",
+    sessionRunning: "\u4F1A\u8BDD\u8FD0\u884C\u4E2D",
+    sessionIdle: "\u4F1A\u8BDD\u7A7A\u95F2",
+    sessionUnavailable: "\u5BBF\u4E3B\u6CA1\u6709\u4F1A\u8BDD\u670D\u52A1",
+    sessionCreated: "\u5DF2\u6362\u5230\u65B0\u4F1A\u8BDD",
+    sessionCreateFailed: "\u65B0\u5EFA\u4F1A\u8BDD\u5931\u8D25\uFF1A",
     agentModelDefault: "\u9ED8\u8BA4\uFF08\u7528\u5168\u5C40\u6A21\u578B\uFF09",
     // 智能体卡片（2026-11-13 改版）：徽标 + 状态 + 三格信息 + 三按钮
     agentMenu: "\u64CD\u4F5C",
@@ -888,6 +895,7 @@ var DshXiaozhi = (() => {
     lastEvents: "Recent events",
     noEvents: "No events yet",
     devicesTitle: "Agents",
+    botsHint: "Each Bot is one long-lived DSH session: the watch and the DSH chat share the same context. One Bot per person, or one shared by the family.",
     empty: "No agents yet. Fill in the OTA URL in the watch portal; it appears here on boot.",
     agentsNew: "New agent",
     agentDevices: "Devices",
@@ -965,8 +973,14 @@ var DshXiaozhi = (() => {
     backendSession: "DSH session",
     backendHint: "DSH session sends the sentence into a session (with its tools, memory and permissions) and only speaks the final answer",
     sessionLabel: "Bound session",
-    sessionAuto: "Create one on first connect",
-    sessionHint: "Only recent sessions are listed; paste a session-\u2026 if missing. DS Bot bots work too",
+    sessionAuto: "Create one on first speech",
+    sessionHint: "One long-lived session per Bot: voice and the DSH chat box share the same context. Only recent sessions are listed; paste a session-\u2026 if missing",
+    sessionNew: "New session",
+    sessionRunning: "Session running",
+    sessionIdle: "Session idle",
+    sessionUnavailable: "No session service",
+    sessionCreated: "Switched to a new session",
+    sessionCreateFailed: "Could not create session: ",
     agentModelDefault: "Default (global model)",
     // Agent card (redesigned 2026-11-13): avatar + status + 3 info cells + 3 buttons
     agentMenu: "Actions",
@@ -2113,7 +2127,8 @@ var DshXiaozhi = (() => {
     onToggleTool,
     onToggleMemory,
     onSaved,
-    onClose
+    onClose,
+    notify
   }) {
     const [tab, setTab] = useState2("role");
     const tabs = [
@@ -2130,6 +2145,7 @@ var DshXiaozhi = (() => {
     const [draftBackend, setDraftBackend] = useState2(agent.overrides?.backend ?? "");
     const [draftSessionId, setDraftSessionId] = useState2(agent.overrides?.sessionId ?? "");
     const [sessionRows, setSessionRows] = useState2(null);
+    const [creatingSession, setCreatingSession] = useState2(false);
     const [ttsGlobal, setTtsGlobal] = useState2({ provider: "volc", resourceId: "" });
     const [ttsEntries, setTtsEntries] = useState2([]);
     const [voiceCatalog, setVoiceCatalog] = useState2(null);
@@ -2220,6 +2236,22 @@ var DshXiaozhi = (() => {
         await onSaved();
       } finally {
         setSaving(false);
+      }
+    };
+    const createSession = async () => {
+      setCreatingSession(true);
+      try {
+        const data = await callApi("/agents/session", {
+          method: "POST",
+          body: { agentId: agent.id, action: "new" }
+        });
+        if (data?.sessionId) setDraftSessionId(data.sessionId);
+        await onSaved?.();
+        notify?.(t("sessionCreated"), "ok");
+      } catch (error) {
+        notify?.(`${t("sessionCreateFailed")}${error.message}`, "bad");
+      } finally {
+        setCreatingSession(false);
       }
     };
     const catalog = voiceCatalog ?? (VOICES[activeTtsProvider] || []);
@@ -2355,6 +2387,7 @@ var DshXiaozhi = (() => {
       }),
       h("span", { className: "note" }, t("backendHint"))
     );
+    const sessionStatus = sessionRows && sessionRows.available === false ? t("sessionUnavailable") : agent.session && agent.session.running ? t("sessionRunning") : t("sessionIdle");
     const sessionField = draftBackend === "session" ? h(
       "div",
       { className: "xz-field" },
@@ -2370,6 +2403,17 @@ var DshXiaozhi = (() => {
         options: sessionOptions,
         onChange: setDraftSessionId
       }),
+      h(
+        "div",
+        { className: "xz-row", style: { gap: 8, marginTop: 6, alignItems: "center" } },
+        h("button", {
+          type: "button",
+          className: "xz-btn",
+          disabled: creatingSession || sessionRows && sessionRows.available === false,
+          onClick: createSession
+        }, t("sessionNew")),
+        h("span", { className: "note" }, sessionStatus)
+      ),
       h("span", { className: "note" }, t("sessionHint"))
     ) : null;
     const modelPane = h(
@@ -3072,6 +3116,7 @@ var DshXiaozhi = (() => {
       return preset ? t(preset.labelKey) : t("agentRoleCustom");
     };
     const agentChip = (agent) => {
+      if (agent.session && agent.session.running) return { kind: "ok", text: t("sessionRunning") };
       if ((agent.deviceCount ?? 0) === 0) return { kind: "warn", text: t("agentUnbound") };
       return agent.online ? { kind: "ok", text: t("online") } : { kind: "", text: t("offline") };
     };
@@ -3080,7 +3125,8 @@ var DshXiaozhi = (() => {
       try {
         const data = await callApi("/agents", {
           method: "POST",
-          body: { name: nextDefaultName() }
+          // 新 Bot 默认走 DSH 会话（Bot 本身是主推形态）；直连模型仍可在配置里切回。
+          body: { name: nextDefaultName(), backend: "session" }
         });
         await onChanged();
         if (data?.agent?.id) await openConfig(data.agent.id);
@@ -3341,166 +3387,171 @@ var DshXiaozhi = (() => {
         ),
         agents.length === 0 ? h("div", { className: "xz-empty" }, t("empty")) : h(
           "div",
-          { className: "xz-card-grid" },
-          agents.map((agent) => {
-            const chip = agentChip(agent);
-            const startRename = () => {
-              setEditing(agent.id);
-              setEditName(agent.name || "");
-            };
-            const toggleMenu = (event) => {
-              if (menu?.id === agent.id) {
-                setMenu(null);
-                return;
-              }
-              const button = event.currentTarget;
-              const cardBox = button.closest(".xz-agent-card").getBoundingClientRect();
-              const rect = button.getBoundingClientRect();
-              const openUp = window.innerHeight - rect.bottom < 150;
-              setMenu({
-                id: agent.id,
-                right: Math.max(8, cardBox.right - rect.right),
-                top: openUp ? null : rect.bottom - cardBox.top + 6,
-                bottom: openUp ? cardBox.bottom - rect.top + 6 : null
-              });
-            };
-            const cell = (label, value, title) => h(
-              "div",
-              { className: "xz-agent-cell" },
-              h("div", { className: "xz-agent-cell-label" }, label),
-              h("div", { className: "xz-agent-cell-value", title: title || value }, value)
-            );
-            return h(
-              "div",
-              { key: agent.id, className: "xz-agent-card" },
-              h(
+          null,
+          h("p", { className: "xz-hint", style: { marginTop: 0 } }, t("botsHint")),
+          h(
+            "div",
+            { className: "xz-card-grid" },
+            agents.map((agent) => {
+              const chip = agentChip(agent);
+              const startRename = () => {
+                setEditing(agent.id);
+                setEditName(agent.name || "");
+              };
+              const toggleMenu = (event) => {
+                if (menu?.id === agent.id) {
+                  setMenu(null);
+                  return;
+                }
+                const button = event.currentTarget;
+                const cardBox = button.closest(".xz-agent-card").getBoundingClientRect();
+                const rect = button.getBoundingClientRect();
+                const openUp = window.innerHeight - rect.bottom < 150;
+                setMenu({
+                  id: agent.id,
+                  right: Math.max(8, cardBox.right - rect.right),
+                  top: openUp ? null : rect.bottom - cardBox.top + 6,
+                  bottom: openUp ? cardBox.bottom - rect.top + 6 : null
+                });
+              };
+              const cell = (label, value, title) => h(
                 "div",
-                { className: "xz-agent-head" },
+                { className: "xz-agent-cell" },
+                h("div", { className: "xz-agent-cell-label" }, label),
+                h("div", { className: "xz-agent-cell-value", title: title || value }, value)
+              );
+              return h(
+                "div",
+                { key: agent.id, className: "xz-agent-card" },
                 h(
-                  "span",
-                  { className: "xz-agent-avatar", "aria-hidden": "true" },
-                  (agent.name || "?").trim().slice(0, 1) || "?"
+                  "div",
+                  { className: "xz-agent-head" },
+                  h(
+                    "span",
+                    { className: "xz-agent-avatar", "aria-hidden": "true" },
+                    (agent.name || "?").trim().slice(0, 1) || "?"
+                  ),
+                  h(
+                    "div",
+                    { className: "xz-agent-titlebar" },
+                    editing === agent.id ? h("input", {
+                      className: "xz-input xz-agent-rename",
+                      autoFocus: true,
+                      value: editName,
+                      maxLength: 40,
+                      placeholder: t("agentNamePlaceholder"),
+                      "aria-label": t("rename"),
+                      onChange: (e) => setEditName(e.target.value),
+                      onKeyDown: (e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitRename(agent);
+                        }
+                        if (e.key === "Escape") {
+                          renameCancelled.current = true;
+                          setEditing("");
+                        }
+                      },
+                      onBlur: () => {
+                        if (renameCancelled.current) {
+                          renameCancelled.current = false;
+                          return;
+                        }
+                        commitRename(agent);
+                      }
+                    }) : h("h3", {
+                      className: "xz-agent-name",
+                      title: t("rename"),
+                      onClick: startRename
+                    }, agent.name || t("unnamed")),
+                    h("span", { className: `xz-agent-chip ${chip.kind}` }, chip.text)
+                  ),
+                  h("button", {
+                    type: "button",
+                    className: "xz-agent-menu-btn",
+                    "aria-label": t("agentMenu"),
+                    "aria-haspopup": "menu",
+                    "aria-expanded": menu?.id === agent.id,
+                    onClick: toggleMenu
+                  }, "\u22EF")
+                ),
+                menu?.id === agent.id ? h(
+                  "div",
+                  {
+                    className: "xz-menu xz-agent-menu",
+                    role: "menu",
+                    style: {
+                      position: "absolute",
+                      right: menu.right,
+                      left: "auto",
+                      top: menu.top ?? "auto",
+                      bottom: menu.bottom ?? "auto"
+                    }
+                  },
+                  h("button", {
+                    type: "button",
+                    className: "xz-provider-menu-item",
+                    onClick: () => {
+                      setMenu(null);
+                      setInjecting(agent);
+                      setText("");
+                    }
+                  }, `${t("inject")}\u2026`),
+                  h("button", {
+                    type: "button",
+                    className: "xz-provider-menu-item",
+                    onClick: () => {
+                      setMenu(null);
+                      startRename();
+                    }
+                  }, t("agentMenuRename")),
+                  h("button", {
+                    type: "button",
+                    className: "xz-provider-menu-item is-danger",
+                    disabled: busyId === agent.id,
+                    title: t("agentDeleteHint"),
+                    onClick: () => {
+                      setMenu(null);
+                      setConfirmAgent(agent.id);
+                    }
+                  }, t("agentMenuDelete"))
+                ) : null,
+                h(
+                  "div",
+                  { className: "xz-agent-grid" },
+                  cell(t("agentRole"), agentRoleName(agent)),
+                  cell(
+                    t("agentModel"),
+                    agent.overrides?.model || t("agentModelDefault"),
+                    agent.overrides?.model || ""
+                  ),
+                  cell(t("agentRecentChat"), formatAgo(agent.lastSeenAt))
                 ),
                 h(
                   "div",
-                  { className: "xz-agent-titlebar" },
-                  editing === agent.id ? h("input", {
-                    className: "xz-input xz-agent-rename",
-                    autoFocus: true,
-                    value: editName,
-                    maxLength: 40,
-                    placeholder: t("agentNamePlaceholder"),
-                    "aria-label": t("rename"),
-                    onChange: (e) => setEditName(e.target.value),
-                    onKeyDown: (e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        commitRename(agent);
-                      }
-                      if (e.key === "Escape") {
-                        renameCancelled.current = true;
-                        setEditing("");
-                      }
-                    },
-                    onBlur: () => {
-                      if (renameCancelled.current) {
-                        renameCancelled.current = false;
-                        return;
-                      }
-                      commitRename(agent);
+                  { className: "xz-agent-actions" },
+                  h("button", {
+                    type: "button",
+                    className: "xz-agent-action",
+                    onClick: () => openConfig(agent.id)
+                  }, agentActionIcon("config"), t("configure")),
+                  h("button", {
+                    type: "button",
+                    className: "xz-agent-action",
+                    onClick: () => {
+                      setConfiguring("");
+                      setHistoryAgent(agent);
                     }
-                  }) : h("h3", {
-                    className: "xz-agent-name",
-                    title: t("rename"),
-                    onClick: startRename
-                  }, agent.name || t("unnamed")),
-                  h("span", { className: `xz-agent-chip ${chip.kind}` }, chip.text)
-                ),
-                h("button", {
-                  type: "button",
-                  className: "xz-agent-menu-btn",
-                  "aria-label": t("agentMenu"),
-                  "aria-haspopup": "menu",
-                  "aria-expanded": menu?.id === agent.id,
-                  onClick: toggleMenu
-                }, "\u22EF")
-              ),
-              menu?.id === agent.id ? h(
-                "div",
-                {
-                  className: "xz-menu xz-agent-menu",
-                  role: "menu",
-                  style: {
-                    position: "absolute",
-                    right: menu.right,
-                    left: "auto",
-                    top: menu.top ?? "auto",
-                    bottom: menu.bottom ?? "auto"
-                  }
-                },
-                h("button", {
-                  type: "button",
-                  className: "xz-provider-menu-item",
-                  onClick: () => {
-                    setMenu(null);
-                    setInjecting(agent);
-                    setText("");
-                  }
-                }, `${t("inject")}\u2026`),
-                h("button", {
-                  type: "button",
-                  className: "xz-provider-menu-item",
-                  onClick: () => {
-                    setMenu(null);
-                    startRename();
-                  }
-                }, t("agentMenuRename")),
-                h("button", {
-                  type: "button",
-                  className: "xz-provider-menu-item is-danger",
-                  disabled: busyId === agent.id,
-                  title: t("agentDeleteHint"),
-                  onClick: () => {
-                    setMenu(null);
-                    setConfirmAgent(agent.id);
-                  }
-                }, t("agentMenuDelete"))
-              ) : null,
-              h(
-                "div",
-                { className: "xz-agent-grid" },
-                cell(t("agentRole"), agentRoleName(agent)),
-                cell(
-                  t("agentModel"),
-                  agent.overrides?.model || t("agentModelDefault"),
-                  agent.overrides?.model || ""
-                ),
-                cell(t("agentRecentChat"), formatAgo(agent.lastSeenAt))
-              ),
-              h(
-                "div",
-                { className: "xz-agent-actions" },
-                h("button", {
-                  type: "button",
-                  className: "xz-agent-action",
-                  onClick: () => openConfig(agent.id)
-                }, agentActionIcon("config"), t("configure")),
-                h("button", {
-                  type: "button",
-                  className: "xz-agent-action",
-                  onClick: () => {
-                    setConfiguring("");
-                    setHistoryAgent(agent);
-                  }
-                }, agentActionIcon("history"), t("history")),
-                h("button", {
-                  type: "button",
-                  className: "xz-agent-action",
-                  onClick: () => setManaging(agent.id)
-                }, agentActionIcon("devices"), `${t("agentDevices")} (${agent.deviceCount ?? 0})`)
-              )
-            );
-          })
+                  }, agentActionIcon("history"), t("history")),
+                  h("button", {
+                    type: "button",
+                    className: "xz-agent-action",
+                    onClick: () => setManaging(agent.id)
+                  }, agentActionIcon("devices"), `${t("agentDevices")} (${agent.deviceCount ?? 0})`)
+                )
+              );
+            })
+          )
         )
       ),
       injecting ? h(
@@ -3574,7 +3625,8 @@ var DshXiaozhi = (() => {
         onSaved: async () => {
           await onChanged();
         },
-        onClose: () => setConfiguring("")
+        onClose: () => setConfiguring(""),
+        notify
       }) : null,
       manageAgent ? h(AgentDevicesDialog, {
         agent: manageAgent,

@@ -20,4 +20,9 @@
 | 新设备一直连不上，OTA 返回 `403 device-pending` | 控制台「智能体」页顶部出现待审核卡片；`pending.json` 有该 MAC | 默认 `autoProvision: false`，陌生设备要先在控制台选智能体并批准；批准后设备下一次 OTA/WS 才放行。不是固件故障，也不需要激活码 |
 | 配了 DeepSeek 语音后：说话没反应 / 没声音 | `voice.log` 里 `deepseek.asr.error` 或 `deepseek.tts.error 400` | 适配器自身保证音频 ≤120s / ≤8 MiB、WAV 采样率落在官方 7 档内，正常链路不会触发 413——若仍出现，多半是服务端按「整个请求体」限长或接口行为变了；TTS 400 = 文本未通过内容审核（`Content Exists Risk`）或没有可朗读文本。`429` = 账号并发超限（每账号最多 50 个在途请求） |
 | 手表每次开机都连 `xiaozhi.me` / 插件收不到 OTA | 手表串口 `Ota: mDNS: no _xiaozhi._tcp service on this LAN`，随后 `Checking version at https://api.tenclass.net/...`；PC 上单独发 PTR 查询**能**收到应答 | 插件只对 `QU=1` 的查询单播，esp-idf 发的是 `QU=0`；只发 multicast 时出口从 VMware `192.168.10.1` 出去，手表收不到。2026-11-14 修：应答一律单播给查询方 + 同网段补 multicast（`src/mdns.js` 的 `send()`） |
+| 会话模式手表念的比屏幕短很多 | DSH 聊天页里是完整回复；`voice.log` 的 `session.build` 有 `summary:true` | 这是设计行为：最终回复先经 `voice.session.summary` 压成 2–3 句再 TTS。要听全文，把 `voice.session.summary` 设为 `false`（或调大 `summaryMaxChars`） |
+| 会话模式工具跑了很久，手表一直安静 | `voice.log` 有 `tool.notice`，但没有 `tts.begin`；`session.build` 的 `progress:false` | 进度播报被关掉了，或工具太快（短于 `progressMinIntervalMs`）只发了 `% 工具名` 气泡。`progress:true` + `heartbeatMs>0` 才会有「我正在… / 还在处理」 |
+| 审批弹出手表没念问题、直接等超时 | DSH 里出现审批卡；`voice.log` 没有 `approval.answer` / `approval.timeout` | 三种可能：① 该会话没有绑在「有在线设备」的 Bot 上；② 设备不在 `thinking/speaking`（这一轮不是语音发起的，比如在桌面输入框里问的）；③ `approval/request` 被桌面应答器先接走。语音只接「语音发起、正在等这一轮」的审批，其余交回桌面 |
+| 手表说了「允许/拒绝」但会话没继续 | `voice.log` 有 `approval.retry` 或没有 `approval.answer` | 只认明确的允许/拒绝；否定词优先。说「行吧」「可以可以」通常能识别，说「嗯…那个」会被判为说不清并交回桌面（`approvalTimeoutMs` 后）。审批语音**未真机实测** |
+| 控制台点了「新建会话」，下一轮还在旧上下文 | `voice-sessions.json` 已换成新 id；`session.build` 的 `sessionId` 仍是旧值 | 新建会话是**下一轮**生效（适配器每轮重新解析会话），不需要重连；如果下一轮仍是旧 id，看是不是该 Bot 的 `overrides.sessionId` 被旧页面覆盖了（刷新控制台再保存一次） |
 

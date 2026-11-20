@@ -91,8 +91,9 @@ import { HistoryDialog } from './HistoryDialog.js'
         return preset ? t(preset.labelKey) : t('agentRoleCustom');
       };
 
-      /** 状态徽标：没绑设备 → 未绑定；绑了 → 在线/离线。 */
+      /** 状态徽标：会话在跑 → 运行中；没绑设备 → 未绑定；绑了 → 在线/离线。 */
       const agentChip = (agent) => {
+        if (agent.session && agent.session.running) return { kind: 'ok', text: t('sessionRunning') };
         if ((agent.deviceCount ?? 0) === 0) return { kind: 'warn', text: t('agentUnbound') };
         return agent.online
           ? { kind: 'ok', text: t('online') }
@@ -104,7 +105,8 @@ import { HistoryDialog } from './HistoryDialog.js'
         try {
           const data = await callApi('/agents', {
             method: 'POST',
-            body: { name: nextDefaultName() }
+            // 新 Bot 默认走 DSH 会话（Bot 本身是主推形态）；直连模型仍可在配置里切回。
+            body: { name: nextDefaultName(), backend: 'session' }
           });
           await onChanged();
           if (data?.agent?.id) await openConfig(data.agent.id);
@@ -370,7 +372,9 @@ import { HistoryDialog } from './HistoryDialog.js'
           ),
           agents.length === 0
             ? h('div', { className: 'xz-empty' }, t('empty'))
-            : h('div', { className: 'xz-card-grid' },
+            : h('div', null,
+                h('p', { className: 'xz-hint', style: { marginTop: 0 } }, t('botsHint')),
+                h('div', { className: 'xz-card-grid' },
                 agents.map((agent) => {
                   const chip = agentChip(agent);
                   const startRename = () => {
@@ -521,7 +525,7 @@ import { HistoryDialog } from './HistoryDialog.js'
                     )
                   );
                 })
-              )
+              ))
         ),
         injecting
           ? h('div', { className: 'xz-modal-mask', onClick: () => setInjecting(null) },
@@ -585,7 +589,8 @@ import { HistoryDialog } from './HistoryDialog.js'
               onSaved: async () => {
                 await onChanged();
               },
-              onClose: () => setConfiguring('')
+              onClose: () => setConfiguring(''),
+              notify
             })
           : null,
         manageAgent

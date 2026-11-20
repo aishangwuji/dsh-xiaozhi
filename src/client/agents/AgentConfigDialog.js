@@ -9,7 +9,7 @@ import { ROLE_PRESETS, rolePresetPrompt, matchRolePreset } from './rolePresets.j
     function AgentConfigDialog({
       agent, tools, memory, memoryDraft,
       onMemoryDraft, onAddMemory, onRemoveMemory, onToggleTool,
-      onToggleMemory, onSaved, onClose
+      onToggleMemory, onSaved, onClose, notify
     }) {
       const [tab, setTab] = useState('role');
       const tabs = [
@@ -32,6 +32,7 @@ import { ROLE_PRESETS, rolePresetPrompt, matchRolePreset } from './rolePresets.j
       const [draftBackend, setDraftBackend] = useState(agent.overrides?.backend ?? '');
       const [draftSessionId, setDraftSessionId] = useState(agent.overrides?.sessionId ?? '');
       const [sessionRows, setSessionRows] = useState(null);
+      const [creatingSession, setCreatingSession] = useState(false);
       // 智能体级只覆盖「模型名」：provider / Key / 端点都是全局设置的一部分，这里不再有
       // 「Harness 厂商 + hostProvider」二级下拉（2026-11-07 起主路径改回插件直连）。
       // 音色（= TTS 模型）是智能体级配置，但厂商与资源族来自全局 TTS：拉 /settings 而不是
@@ -155,7 +156,25 @@ import { ROLE_PRESETS, rolePresetPrompt, matchRolePreset } from './rolePresets.j
         }
       };
 
-      // 第一项「默认音色」= 不覆盖（保存时 voice 传空串，服务端删掉该智能体的音色覆盖）。
+      // 「新建会话」不是草稿：服务端会立刻建一条并钉死这个 Bot，语音下一轮就用它。
+      // 先把 draft 同步过去，再让父层刷新卡片上的会话状态。
+      const createSession = async () => {
+        setCreatingSession(true);
+        try {
+          const data = await callApi('/agents/session', {
+            method: 'POST',
+            body: { agentId: agent.id, action: 'new' }
+          });
+          if (data?.sessionId) setDraftSessionId(data.sessionId);
+          await onSaved?.();
+          notify?.(t('sessionCreated'), 'ok');
+        } catch (error) {
+          notify?.(`${t('sessionCreateFailed')}${error.message}`, 'bad');
+        } finally {
+          setCreatingSession(false);
+        }
+      };
+
       // 音色清单跟着**生效的 TTS 服务商**走：后端 `/voices` 回内置目录（2026-11-13 起不再调
       // 官方 ListSpeakers），按该厂商的资源族过滤（1.x / 2.0 混选会 55000000「有字没声」）。
       const catalog = voiceCatalog ?? (VOICES[activeTtsProvider] || []);
@@ -286,6 +305,9 @@ import { ROLE_PRESETS, rolePresetPrompt, matchRolePreset } from './rolePresets.j
         }),
         h('span', { className: 'note' }, t('backendHint'))
       );
+      const sessionStatus = sessionRows && sessionRows.available === false
+        ? t('sessionUnavailable')
+        : (agent.session && agent.session.running ? t('sessionRunning') : t('sessionIdle'));
       const sessionField = draftBackend === 'session'
         ? h('div', { className: 'xz-field' },
             h('label', null, t('sessionLabel')),
@@ -302,6 +324,15 @@ import { ROLE_PRESETS, rolePresetPrompt, matchRolePreset } from './rolePresets.j
                   options: sessionOptions,
                   onChange: setDraftSessionId
                 }),
+            h('div', { className: 'xz-row', style: { gap: 8, marginTop: 6, alignItems: 'center' } },
+              h('button', {
+                type: 'button',
+                className: 'xz-btn',
+                disabled: creatingSession || (sessionRows && sessionRows.available === false),
+                onClick: createSession
+              }, t('sessionNew')),
+              h('span', { className: 'note' }, sessionStatus)
+            ),
             h('span', { className: 'note' }, t('sessionHint'))
           )
         : null;
