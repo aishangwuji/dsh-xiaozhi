@@ -1,6 +1,6 @@
 # 分发与发布
 
-> 项目自己的发布细节。通用的 npm 2FA/token 流程与 GitHub Release 步骤见 `D:\Projects\dsh\AGENTS.md` 第 8 节；本文只记 dsh-xiaozhi 特有的部分。
+> 项目自己的发布细节。通用的 npm 2FA/token 流程与 GitHub Release 步骤见 `D:\Projects\dsh\AGENTS.md` §5；本文只记 dsh-xiaozhi 特有的部分。
 
 ## 1. 分发
 
@@ -53,5 +53,7 @@ git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 pus
 3. `git status` 干净，提交并 push；
 4. `npm publish --registry https://registry.npmjs.org/ --access public`；
 5. 轮询 registry：`npm view @aishangwuji/dsh-xiaozhi version --registry=https://registry.npmjs.org`；
-6. 打 tag、建 GitHub Release（通用步骤见 `D:\Projects\dsh\AGENTS.md` 第 8 节）；
+6. 打 tag、建 GitHub Release（通用步骤见 `D:\Projects\dsh\AGENTS.md` §5）；
 7. 从 registry 真实安装一次验证：`dsh plugin --profile <p> add @aishangwuji/dsh-xiaozhi`。
+
+
