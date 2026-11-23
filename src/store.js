@@ -32,6 +32,10 @@ function createRecord({ deviceId, clientId, ip, now }) {
     clientId,
     // 绑定的智能体（配置单位）。空串 = 未绑定；启动时 adoptLegacyDevices 会给旧设备补建。
     agentId: '',
+    // 绑定的家庭成员（dsh-family 的成员 id，2026-11-23）。空串 = 未绑定。
+    // 归属在 family 侧（成员/会话/记忆/审批），这里只记「这台设备替谁说话」；
+    // 成员被删后这里可能留下孤儿 id，运行时按「成员已失效」处理，不自动清理（M2）。
+    familyMemberId: '',
     notes: '',
     lastIp: ip,
     lastSeenAt: now,
@@ -65,6 +69,8 @@ function normalizeRecord(raw, now) {
   })
   record.nickName = typeof raw.nickName === 'string' ? raw.nickName.slice(0, 64) : ''
   record.agentId = typeof raw.agentId === 'string' ? raw.agentId.slice(0, 64) : ''
+  // family 成员 id：只接受字符串，超长/非字符串一律当未绑定（坏文件也要能启动）。
+  record.familyMemberId = typeof raw.familyMemberId === 'string' ? raw.familyMemberId.trim().slice(0, 128) : ''
   record.notes = typeof raw.notes === 'string' ? raw.notes.slice(0, 200) : ''
   record.lastSeenAt = Number.isSafeInteger(raw.lastSeenAt) ? raw.lastSeenAt : 0
   record.lastConnectedAt = Number.isSafeInteger(raw.lastConnectedAt) ? raw.lastConnectedAt : 0
@@ -159,6 +165,21 @@ export class DeviceStore {
     const device = this.devices.get(deviceId)
     if (!device) throw new DeviceStoreError('not-found', '设备不存在')
     device.agentId = String(agentId ?? '').trim().slice(0, 64)
+    device.updatedAt = this.clock()
+    await this.persist()
+    return device
+  }
+
+  /**
+   * 绑定 / 解绑家庭成员（`memberId` 为空串 = 解绑）。
+   *
+   * 这里**不校验成员是否存在**：成员名册在 dsh-family 里，插件只在控制 API 层校验
+   * （服务不可用时也必须允许解绑）。运行时每轮重新读这个字段，所以切成员下一轮生效。
+   */
+  async setFamilyMemberId({ deviceId, memberId }) {
+    const device = this.devices.get(deviceId)
+    if (!device) throw new DeviceStoreError('not-found', '设备不存在')
+    device.familyMemberId = String(memberId ?? '').trim().slice(0, 128)
     device.updatedAt = this.clock()
     await this.persist()
     return device
