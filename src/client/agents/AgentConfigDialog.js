@@ -282,7 +282,9 @@ import { ROLE_PRESETS, rolePresetPrompt, matchRolePreset } from './rolePresets.j
       const backendOptions = [
         { value: '', label: t('backendFollow') },
         { value: 'llm', label: t('backendLlm') },
-        { value: 'session', label: t('backendSession') }
+        { value: 'session', label: t('backendSession') },
+        // 家庭会话（2026-11-23）：这一轮交给 dsh-family 里该设备绑定的成员。
+        { value: 'family', label: t('backendFamily') }
       ];
       const sessionOptions = [{ value: '', label: t('sessionAuto') }].concat(
         ((sessionRows && sessionRows.items) || []).map((row) => ({
@@ -336,10 +338,17 @@ import { ROLE_PRESETS, rolePresetPrompt, matchRolePreset } from './rolePresets.j
             h('span', { className: 'note' }, t('sessionHint'))
           )
         : null;
+      // 家庭会话不需要选会话（会话/成员/记忆都在 dsh-family），但要提醒成员是按设备绑的。
+      const familyField = draftBackend === 'family'
+        ? h('div', { className: 'xz-field' },
+            h('span', { className: 'note' }, t('familyBackendHint'))
+          )
+        : null;
 
       const modelPane = h('div', { key: 'model', className: 'xz-pane' },
         backendField,
         sessionField,
+        familyField,
         // 直连语义：provider / Base URL / API Key 都在「全局设置 → LLM」里，
         // 这里只覆盖模型名；留空 = 用全局默认模型。模型清单来自全局 LLM 的 /models，
         // 拉不到时退回手填（各厂商模型 id 命名差异大，不硬编码）。

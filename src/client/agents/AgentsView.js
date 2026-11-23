@@ -237,6 +237,24 @@ import { HistoryDialog } from './HistoryDialog.js'
         }
       };
 
+      // 设备 → 家庭成员（dsh-family）。切换下一轮生效；空串 = 解绑。
+      const bindFamilyMember = async (device, memberId) => {
+        if ((device.familyMemberId || '') === String(memberId ?? '')) return;
+        setBusyId(device.deviceId);
+        try {
+          await callApi('/devices/family', {
+            method: 'POST',
+            body: { deviceId: device.deviceId, memberId: String(memberId ?? '') }
+          });
+          await onChanged();
+          notify(t('familyBindOk'), 'ok');
+        } catch (error) {
+          notify(`${t('actionFailed')}${error.message}`, 'bad');
+        } finally {
+          setBusyId('');
+        }
+      };
+
       const deviceAction = async (action, device, value) => {
         if (action === 'rename' && (device.nickName || '') === String(value ?? '')) return;
         setBusyId(device.deviceId);
@@ -602,6 +620,7 @@ import { HistoryDialog } from './HistoryDialog.js'
               onBind: (device) => bindDevice(manageAgent, device),
               onUnbind: (device) => unbindDevice(manageAgent, device),
               onDeviceAction: (action, device, value) => deviceAction(action, device, value),
+              onFamilyBind: (device, memberId) => bindFamilyMember(device, memberId),
               onClose: () => setManaging('')
             })
           : null

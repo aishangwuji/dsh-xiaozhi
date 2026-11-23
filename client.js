@@ -638,7 +638,19 @@ var DshXiaozhi = (() => {
     backendFollow: "\u8DDF\u968F\u5168\u5C40",
     backendLlm: "\u76F4\u8FDE\u6A21\u578B",
     backendSession: "DSH \u4F1A\u8BDD",
-    backendHint: "DSH \u4F1A\u8BDD = \u8FD9\u53E5\u8BDD\u9001\u8FDB\u4E00\u6761\u4F1A\u8BDD\uFF08\u542B\u5B83\u7684\u5DE5\u5177\u3001\u8BB0\u5FC6\u4E0E\u6743\u9650\uFF09\uFF0C\u53EA\u5FF5\u6700\u7EC8\u7ED3\u8BBA",
+    // 家庭会话（2026-11-23）：这一轮交给 dsh-family 的「语音」会话，成员由设备绑定决定。
+    backendFamily: "\u5BB6\u5EAD\u4F1A\u8BDD",
+    backendHint: "DSH \u4F1A\u8BDD = \u8FD9\u53E5\u8BDD\u9001\u8FDB\u4E00\u6761\u4F1A\u8BDD\uFF08\u542B\u5B83\u7684\u5DE5\u5177\u3001\u8BB0\u5FC6\u4E0E\u6743\u9650\uFF09\uFF0C\u53EA\u5FF5\u6700\u7EC8\u7ED3\u8BBA\uFF1B\u5BB6\u5EAD\u4F1A\u8BDD = \u4EA4\u7ED9 dsh-family \u91CC\u8BE5\u8BBE\u5907\u7ED1\u5B9A\u7684\u6210\u5458\uFF0C\u4EBA\u8BBE/\u8BB0\u5FC6/\u5BA1\u6279\u90FD\u5F52\u5BB6\u5EAD",
+    // 设备 → 家庭成员绑定（dsh-family）。空串 = 未绑定；切换下一轮生效。
+    familyLabel: "\u5BB6\u5EAD\u6210\u5458",
+    familyUnbound: "\u672A\u7ED1\u5B9A",
+    familyLoading: "\u52A0\u8F7D\u6210\u5458\u2026",
+    familyUnavailable: "\u5BB6\u5EAD\u670D\u52A1\u672A\u5C31\u7EEA",
+    familyEmpty: "\u5BB6\u5EAD\u91CC\u8FD8\u6CA1\u6709\u6210\u5458",
+    familyMemberMissing: "\u6210\u5458\u5DF2\u5931\u6548",
+    familyRefresh: "\u5237\u65B0",
+    familyBindOk: "\u5BB6\u5EAD\u6210\u5458\u5DF2\u66F4\u65B0",
+    familyBackendHint: "\u5BB6\u5EAD\u4F1A\u8BDD\u6309\u8BBE\u5907\u7ED1\u5B9A\u6210\u5458\uFF1A\u5728\u300C\u8BBE\u5907\u300D\u5F39\u7A97\u91CC\u7ED9\u6BCF\u53F0\u8BBE\u5907\u9009\u4E00\u4F4D\u5BB6\u5EAD\u6210\u5458\uFF0C\u5207\u6362\u540E\u4E0B\u4E00\u8F6E\u751F\u6548",
     sessionLabel: "\u7ED1\u5B9A\u7684\u4F1A\u8BDD",
     sessionAuto: "\u9996\u6B21\u8BF4\u8BDD\u65F6\u81EA\u52A8\u65B0\u5EFA",
     sessionHint: "\u4E00\u4E2A Bot \u4E00\u6761\u957F\u671F\u4F1A\u8BDD\uFF1A\u8BED\u97F3\u4E0E DSH \u804A\u5929\u9875\u91CC\u7684\u6587\u672C\u6846\u5171\u7528\u540C\u4E00\u6BB5\u4E0A\u4E0B\u6587\u3002\u4E0B\u62C9\u53EA\u5217\u6700\u8FD1\u4F1A\u8BDD\uFF0C\u627E\u4E0D\u5230\u53EF\u624B\u586B session-\u2026",
@@ -971,7 +983,20 @@ var DshXiaozhi = (() => {
     backendFollow: "Follow global",
     backendLlm: "Direct model",
     backendSession: "DSH session",
-    backendHint: "DSH session sends the sentence into a session (with its tools, memory and permissions) and only speaks the final answer",
+    // Family session (2026-11-23): hand the turn to dsh-family's voice session for the
+    // member bound to this device.
+    backendFamily: "Family session",
+    backendHint: "DSH session sends the sentence into a session (with its tools, memory and permissions) and only speaks the final answer; family session hands it to the member bound to this device in dsh-family, where persona/memory/approvals live",
+    // Device → family member binding (dsh-family). Empty = unbound; takes effect next turn.
+    familyLabel: "Family member",
+    familyUnbound: "Not bound",
+    familyLoading: "Loading members\u2026",
+    familyUnavailable: "Family service not ready",
+    familyEmpty: "No family members yet",
+    familyMemberMissing: "Member no longer exists",
+    familyRefresh: "Refresh",
+    familyBindOk: "Family member updated",
+    familyBackendHint: "Family sessions bind a member per device: pick one in the device dialog; a switch takes effect from the next turn",
     sessionLabel: "Bound session",
     sessionAuto: "Create one on first speech",
     sessionHint: "One long-lived session per Bot: voice and the DSH chat box share the same context. Only recent sessions are listed; paste a session-\u2026 if missing",
@@ -2364,7 +2389,9 @@ var DshXiaozhi = (() => {
     const backendOptions = [
       { value: "", label: t("backendFollow") },
       { value: "llm", label: t("backendLlm") },
-      { value: "session", label: t("backendSession") }
+      { value: "session", label: t("backendSession") },
+      // 家庭会话（2026-11-23）：这一轮交给 dsh-family 里该设备绑定的成员。
+      { value: "family", label: t("backendFamily") }
     ];
     const sessionOptions = [{ value: "", label: t("sessionAuto") }].concat(
       (sessionRows && sessionRows.items || []).map((row) => ({
@@ -2416,11 +2443,17 @@ var DshXiaozhi = (() => {
       ),
       h("span", { className: "note" }, t("sessionHint"))
     ) : null;
+    const familyField = draftBackend === "family" ? h(
+      "div",
+      { className: "xz-field" },
+      h("span", { className: "note" }, t("familyBackendHint"))
+    ) : null;
     const modelPane = h(
       "div",
       { key: "model", className: "xz-pane" },
       backendField,
       sessionField,
+      familyField,
       // 直连语义：provider / Base URL / API Key 都在「全局设置 → LLM」里，
       // 这里只覆盖模型名；留空 = 用全局默认模型。模型清单来自全局 LLM 的 /models，
       // 拉不到时退回手填（各厂商模型 id 命名差异大，不硬编码）。
@@ -2549,7 +2582,17 @@ var DshXiaozhi = (() => {
   }
 
   // src/client/agents/AgentDevicesDialog.js
-  function AgentDevicesDialog({ agent, agents = [], devices, busyId, onBind, onUnbind, onDeviceAction, onClose }) {
+  function AgentDevicesDialog({
+    agent,
+    agents = [],
+    devices,
+    busyId,
+    onBind,
+    onUnbind,
+    onDeviceAction,
+    onFamilyBind,
+    onClose
+  }) {
     const bound = agent.devices || [];
     const boundIds = new Set(bound.map((device) => device.deviceId));
     const unbound = devices.filter((device) => !boundIds.has(device.deviceId));
@@ -2597,6 +2640,59 @@ var DshXiaozhi = (() => {
         );
       }
       return h("div", { className: "xz-device-tools" }, body);
+    };
+    const [family, setFamily] = useState2(null);
+    const loadFamily = () => {
+      setFamily({ loading: true, available: true, members: [] });
+      callApi("/family/members").then(
+        (data) => setFamily({
+          loading: false,
+          available: data?.available !== false,
+          members: Array.isArray(data?.members) ? data.members : []
+        })
+      ).catch(() => setFamily({ loading: false, available: false, members: [] }));
+    };
+    useEffect2(() => {
+      loadFamily();
+    }, []);
+    const familyPicker = (device) => {
+      const view = family || { loading: true, available: true, members: [] };
+      const current = device.familyMemberId || "";
+      const options = [{ value: "", label: t("familyUnbound") }].concat(
+        view.members.map((member) => ({
+          value: member.id,
+          label: member.roleLabel && member.roleLabel !== member.name ? `${member.name || member.id} \xB7 ${member.roleLabel}` : member.name || member.id
+        }))
+      );
+      if (current && !view.members.some((member) => member.id === current)) {
+        options.push({ value: current, label: `${t("familyMemberMissing")}\uFF08${current}\uFF09` });
+      }
+      let status = "";
+      if (view.loading) status = t("familyLoading");
+      else if (!view.available) status = t("familyUnavailable");
+      else if (view.members.length === 0) status = t("familyEmpty");
+      return h(
+        "div",
+        {
+          className: "xz-device-family",
+          style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }
+        },
+        h("span", { className: "xz-hint" }, t("familyLabel")),
+        h(PillSelect, {
+          value: current,
+          ariaLabel: t("familyLabel"),
+          options,
+          disabled: view.loading || busyId === device.deviceId,
+          onChange: (memberId) => onFamilyBind(device, memberId)
+        }),
+        h("button", {
+          type: "button",
+          className: "xz-btn",
+          disabled: view.loading,
+          onClick: loadFamily
+        }, t("familyRefresh")),
+        status ? h("span", { className: "xz-hint" }, status) : null
+      );
     };
     const targetName = agent.name || t("unnamed");
     return h(
@@ -2655,6 +2751,7 @@ var DshXiaozhi = (() => {
                 h("span", { className: `xz-dot ${device.online ? "on" : ""}` }),
                 h("span", { className: "xz-devcard-state" }, device.online ? t("online") : t("offline"))
               ),
+              familyPicker(device),
               h(
                 "div",
                 { className: "xz-device-row-actions" },
@@ -3244,6 +3341,22 @@ var DshXiaozhi = (() => {
         setBusyId("");
       }
     };
+    const bindFamilyMember = async (device, memberId) => {
+      if ((device.familyMemberId || "") === String(memberId ?? "")) return;
+      setBusyId(device.deviceId);
+      try {
+        await callApi("/devices/family", {
+          method: "POST",
+          body: { deviceId: device.deviceId, memberId: String(memberId ?? "") }
+        });
+        await onChanged();
+        notify(t("familyBindOk"), "ok");
+      } catch (error) {
+        notify(`${t("actionFailed")}${error.message}`, "bad");
+      } finally {
+        setBusyId("");
+      }
+    };
     const deviceAction = async (action, device, value) => {
       if (action === "rename" && (device.nickName || "") === String(value ?? "")) return;
       setBusyId(device.deviceId);
@@ -3636,6 +3749,7 @@ var DshXiaozhi = (() => {
         onBind: (device) => bindDevice(manageAgent, device),
         onUnbind: (device) => unbindDevice(manageAgent, device),
         onDeviceAction: (action, device, value) => deviceAction(action, device, value),
+        onFamilyBind: (device, memberId) => bindFamilyMember(device, memberId),
         onClose: () => setManaging("")
       }) : null
     );

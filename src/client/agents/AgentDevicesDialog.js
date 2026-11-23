@@ -1,12 +1,18 @@
-import { h, useState } from '../react.js'
+import { h, useState, useEffect } from '../react.js'
 import { t, callApi } from '../core.js'
+import { PillSelect } from '../ui/PillSelect.js'
 
     /**
      * 智能体的「管理设备」弹窗：绑定 / 解绑 / 改名 / OTA / 断开 / 删除设备。
      *
      * 页面单位是智能体，设备的物理操作收在这里，卡片上只留最常用的配置/历史/播报/删除。
+     * 每台设备还有一位「家庭成员」（dsh-family）：Bot 的后端设成 `family` 时，
+     * 这台设备说的话就交给这位成员的语音会话；切换成员下一轮生效。
      */
-    function AgentDevicesDialog({ agent, agents = [], devices, busyId, onBind, onUnbind, onDeviceAction, onClose }) {
+    function AgentDevicesDialog({
+      agent, agents = [], devices, busyId,
+      onBind, onUnbind, onDeviceAction, onFamilyBind, onClose
+    }) {
       const bound = agent.devices || [];
       const boundIds = new Set(bound.map((device) => device.deviceId));
       const unbound = devices.filter((device) => !boundIds.has(device.deviceId));
@@ -56,6 +62,65 @@ import { t, callApi } from '../core.js'
         }
         return h('div', { className: 'xz-device-tools' }, body);
       };
+      // 家庭成员列表（dsh-family）：弹窗打开时拉一次，可手动刷新。
+      // 服务不可用不是错误：`available:false` 时选择器只显示「未绑定」+ 提示。
+      const [family, setFamily] = useState(null);
+      const loadFamily = () => {
+        setFamily({ loading: true, available: true, members: [] });
+        callApi('/family/members')
+          .then((data) =>
+            setFamily({
+              loading: false,
+              available: data?.available !== false,
+              members: Array.isArray(data?.members) ? data.members : []
+            })
+          )
+          .catch(() => setFamily({ loading: false, available: false, members: [] }));
+      };
+      useEffect(() => {
+        loadFamily();
+      }, []);
+      // 一台设备的家庭成员选择器：未绑定 / 各成员 / 刷新。
+      const familyPicker = (device) => {
+        const view = family || { loading: true, available: true, members: [] };
+        const current = device.familyMemberId || '';
+        const options = [{ value: '', label: t('familyUnbound') }].concat(
+          view.members.map((member) => ({
+            value: member.id,
+            label: member.roleLabel && member.roleLabel !== member.name
+              ? `${member.name || member.id} · ${member.roleLabel}`
+              : (member.name || member.id)
+          }))
+        );
+        // 绑定指向已被删除的成员：保留一个「已失效」项，别让下拉假装成未绑定。
+        if (current && !view.members.some((member) => member.id === current)) {
+          options.push({ value: current, label: `${t('familyMemberMissing')}（${current}）` });
+        }
+        let status = '';
+        if (view.loading) status = t('familyLoading');
+        else if (!view.available) status = t('familyUnavailable');
+        else if (view.members.length === 0) status = t('familyEmpty');
+        return h('div', {
+          className: 'xz-device-family',
+          style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }
+        },
+          h('span', { className: 'xz-hint' }, t('familyLabel')),
+          h(PillSelect, {
+            value: current,
+            ariaLabel: t('familyLabel'),
+            options,
+            disabled: view.loading || busyId === device.deviceId,
+            onChange: (memberId) => onFamilyBind(device, memberId)
+          }),
+          h('button', {
+            type: 'button',
+            className: 'xz-btn',
+            disabled: view.loading,
+            onClick: loadFamily
+          }, t('familyRefresh')),
+          status ? h('span', { className: 'xz-hint' }, status) : null
+        );
+      };
       const targetName = agent.name || t('unnamed');
       return h('div', { className: 'xz-modal-mask', onClick: onClose },
         h('div', {
@@ -98,6 +163,7 @@ import { t, callApi } from '../core.js'
                       h('span', { className: `xz-dot ${device.online ? 'on' : ''}` }),
                       h('span', { className: 'xz-devcard-state' }, device.online ? t('online') : t('offline'))
                     ),
+                    familyPicker(device),
                     h('div', { className: 'xz-device-row-actions' },
                       h('button', {
                         type: 'button',

@@ -146,7 +146,20 @@
       backendFollow: 'Follow global',
       backendLlm: 'Direct model',
       backendSession: 'DSH session',
-      backendHint: 'DSH session sends the sentence into a session (with its tools, memory and permissions) and only speaks the final answer',
+      // Family session (2026-11-23): hand the turn to dsh-family's voice session for the
+      // member bound to this device.
+      backendFamily: 'Family session',
+      backendHint: 'DSH session sends the sentence into a session (with its tools, memory and permissions) and only speaks the final answer; family session hands it to the member bound to this device in dsh-family, where persona/memory/approvals live',
+      // Device → family member binding (dsh-family). Empty = unbound; takes effect next turn.
+      familyLabel: 'Family member',
+      familyUnbound: 'Not bound',
+      familyLoading: 'Loading members…',
+      familyUnavailable: 'Family service not ready',
+      familyEmpty: 'No family members yet',
+      familyMemberMissing: 'Member no longer exists',
+      familyRefresh: 'Refresh',
+      familyBindOk: 'Family member updated',
+      familyBackendHint: 'Family sessions bind a member per device: pick one in the device dialog; a switch takes effect from the next turn',
       sessionLabel: 'Bound session',
       sessionAuto: 'Create one on first speech',
       sessionHint: 'One long-lived session per Bot: voice and the DSH chat box share the same context. Only recent sessions are listed; paste a session-… if missing',
