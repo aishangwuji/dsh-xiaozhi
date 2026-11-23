@@ -100,6 +100,47 @@ test('会话桥按 sessionId 分发，退订后不再回调', () => {
   assert.deepEqual(seen, ['turn/start'])
 })
 
+test('会话服务晚于插件 apply 挂载时：订阅照常注册，服务到了就可用（惰性解析）', async () => {
+  let controller
+  const handlers = new Map()
+  const prompts = []
+  const bridge = createSessionBridge({
+    getController: () => controller,
+    on: (name, listener) => {
+      const list = handlers.get(name) ?? []
+      list.push(listener)
+      handlers.set(name, list)
+      return () => {}
+    },
+    logger: silent,
+  })
+  assert.equal(bridge.available, false)
+  // 关键：服务还没挂载，事件订阅也必须已经注册，否则晚到的 session/event 收不到。
+  assert.ok(handlers.has('session/event'))
+  assert.ok(handlers.has('approval/request'))
+  assert.ok(handlers.has('user-questions/request'))
+
+  controller = {
+    async list() {
+      return { items: [{ sessionId: 'session-x', running: true }] }
+    },
+    async create() {
+      return { sessionId: 'session-y' }
+    },
+    async prompt(request) {
+      prompts.push(request)
+    },
+    cancel() {},
+  }
+  assert.equal(bridge.available, true)
+  await bridge.list()
+  await bridge.prompt({ sessionId: 'session-x', text: '你好', requestId: 'r1' })
+  assert.equal(prompts.length, 1)
+  assert.equal(prompts[0].content[0].text, '你好')
+  assert.equal(bridge.statusOf('session-x'), true)
+  bridge.dispose()
+})
+
 test('只念最终结论：工具步骤的文字被丢掉，别的会话不串台', async () => {
   const h = harness()
   const adapter = createDshSessionLlm({ bridge: h.bridge, sessionId: 'session-aaaa', timeoutMs: 5_000, logger: silent })

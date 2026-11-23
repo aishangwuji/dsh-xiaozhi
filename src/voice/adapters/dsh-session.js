@@ -162,8 +162,8 @@ export function createDshSessionLlm({
   heartbeatMs = DEFAULT_HEARTBEAT_MS,
   logger = {},
 } = {}) {
-  if (!bridge || bridge.available !== true) {
-    throw new Error('DSH 会话后端不可用：宿主没有装配 sessionController')
+  if (!bridge) {
+    throw new Error('DSH 会话后端不可用：没有会话桥')
   }
   if (!sessionId) throw new Error('DSH 会话后端：没有绑定会话')
 
@@ -182,6 +182,10 @@ export function createDshSessionLlm({
     const userText = lastUserText(messages).trim()
     if (!userText) return
     if (signal?.aborted) return
+    // 服务可能晚于插件 apply 挂载；真正要发 prompt 时再判断，避免建连期误判。
+    if (bridge.available !== true) {
+      throw new Error('DSH 会话后端不可用：宿主没有装配 sessionController')
+    }
 
     const target = await resolveSessionId()
     if (!target) throw new Error('语音会话未绑定：请先在 Bot 配置里选择会话')

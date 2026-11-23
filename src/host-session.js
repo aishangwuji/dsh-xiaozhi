@@ -8,8 +8,12 @@
  *
  * 为什么不做成 Service：DSH 已经提供了 `ctx.sessionController`（创建/列出/发送/
  * 取消）和 `ctx.on('session/event')`（落库事件），我们再包一层没有意义。这里只是
- * 按 sessionId 做一次事件分发，并吞掉「服务未装配」的情况，让插件在没有会话服务的
- * 旧环境里仍然启动，只是该后端不可用。
+ * 按 sessionId 做一次事件分发。
+ *
+ * **惰性解析**：插件的 `apply()` 可能早于 `sessionController` 挂载（实测 2026-11-23
+ * 桌面版就是如此：apply 时 `ctx.get('sessionController')` 还是 undefined）。因此服务
+ * 句柄不能只在构造时取一次，否则 `available` 永远为 false、设备一说话就报「会话服务
+ * 未装配」。现在每次调用都重新解析；事件订阅与 `available` 解耦，服务晚到也能收到。
  *
  * 语义要点：
  *   - `prompt` 的 `requestId` 会以 `source.rpcId` 落进 `user/message`，这是把
@@ -24,21 +28,37 @@ function sessionIdOf(session) {
   return typeof id === 'string' ? id : ''
 }
 
+function usableController(controller) {
+  return Boolean(controller && typeof controller.prompt === 'function')
+}
+
 /**
  * @param {object} options
- * @param {object} [options.sessionController] 宿主 `ctx.sessionController`
- * @param {(event: string, listener: Function) => (() => void) | void} [options.on]
- *   宿主 `ctx.on`，用于订阅 `session/event`
+ * @param {object} [options.sessionController] 宿主 `ctx.sessionController`（固定句柄，测试/旧调用）
+ * @param {() => object | undefined} [options.getController] 惰性解析器（优先于固定句柄）
+ * @param {(event: string, listener: Function, options?: object) => (() => void) | void} [options.on]
+ *   宿主 `ctx.on`，用于订阅 `session/event`、审批/提问与运行态
  * @param {{ warn?: Function, error?: Function, info?: Function }} [options.logger]
  */
-export function createSessionBridge({ sessionController, on, logger = {} } = {}) {
+export function createSessionBridge({ sessionController, getController, on, logger = {} } = {}) {
   const listeners = new Map()
   // 会话运行态：控制台要显示「这条 Bot 的会话现在有没有在跑」。`api-session/status`
   // 是全局事件（sessionId + running），比逐个订阅 agent/status 便宜；`agent/status`
   // 作为补充，覆盖宿主只发后者的情况。
   const statuses = new Map()
-  const available = Boolean(sessionController && typeof sessionController.prompt === 'function')
   let disposed = false
+
+  /** 每次调用都重新解析：插件 apply 时服务可能还没挂载。 */
+  function resolveController() {
+    if (typeof getController === 'function') {
+      try {
+        return getController() ?? null
+      } catch {
+        return null
+      }
+    }
+    return sessionController ?? null
+  }
 
   function dispatch(sessionId, event) {
     if (disposed || !sessionId) return
@@ -54,15 +74,17 @@ export function createSessionBridge({ sessionController, on, logger = {} } = {})
     }
   }
 
-  const off = available && typeof on === 'function'
+  // 订阅不依赖 `available`：服务晚到时事件照样能收到；没有服务时这些事件也不会发。
+  const canSubscribe = typeof on === 'function'
+  const off = canSubscribe
     ? on('session/event', (session, event) => dispatch(sessionIdOf(session), event))
     : null
-  const offStatus = available && typeof on === 'function'
+  const offStatus = canSubscribe
     ? on('api-session/status', (sessionId, running) => {
         if (typeof sessionId === 'string' && sessionId) statuses.set(sessionId, running === true)
       })
     : null
-  const offAgentStatus = available && typeof on === 'function'
+  const offAgentStatus = canSubscribe
     ? on('agent/status', (payload) => {
         const id = sessionIdOf(payload?.agent?.session)
         if (id) statuses.set(id, payload.status === 'running')
@@ -72,7 +94,7 @@ export function createSessionBridge({ sessionController, on, logger = {} } = {})
   // 注册在宿主 UI 的审批卡之前（prepend）：谁先给出 outcome 谁生效；我们不接时
   // 必须调用 next()，把请求原样让给桌面卡片，不能吞掉。
   let approvalAnswerer = null
-  const offApproval = available && typeof on === 'function'
+  const offApproval = canSubscribe
     ? on('approval/request', async (request, next) => {
         const handler = approvalAnswerer
         if (typeof handler !== 'function') return next()
@@ -88,7 +110,7 @@ export function createSessionBridge({ sessionController, on, logger = {} } = {})
   // 语音结构化提问应答器：`ask_user_question`（选项/多选/计划确认）走同一套前置监听。
   // 只有插件装配层能找到「正在等这一轮的在线设备」时才接；否则把请求交给桌面卡片。
   let questionAnswerer = null
-  const offQuestion = available && typeof on === 'function'
+  const offQuestion = canSubscribe
     ? on('user-questions/request', async (request, next) => {
         const handler = questionAnswerer
         if (typeof handler !== 'function') return next()
@@ -103,12 +125,16 @@ export function createSessionBridge({ sessionController, on, logger = {} } = {})
     : null
 
   function requireController() {
-    if (!available) throw new Error('DSH 会话服务未装配（ctx.sessionController 不可用）')
-    return sessionController
+    const controller = resolveController()
+    if (!usableController(controller)) throw new Error('DSH 会话服务未装配（ctx.sessionController 不可用）')
+    return controller
   }
 
   return {
-    available,
+    /** 当前是否解析到可用的会话服务。用 getter：服务可能晚于插件 apply 挂载。 */
+    get available() {
+      return usableController(resolveController())
+    },
 
     /** 该会话当前是否有活跃 turn；未知/未跑 = false。 */
     statusOf(sessionId) {
@@ -133,7 +159,7 @@ export function createSessionBridge({ sessionController, on, logger = {} } = {})
 
     /** 最近会话，供控制台「绑定会话」下拉使用。失败只返回空数组。 */
     async list({ signal } = {}) {
-      if (!available) return []
+      if (!usableController(resolveController())) return []
       try {
         const value = await requireController().list({}, signal ?? AbortSignal.timeout(5_000))
         const items = Array.isArray(value?.items) ? value.items : []
@@ -175,9 +201,10 @@ export function createSessionBridge({ sessionController, on, logger = {} } = {})
 
     /** 停掉该会话当前这一轮。没有活跃 turn 时是 no-op。 */
     cancel(sessionId) {
-      if (!available || typeof sessionId !== 'string' || !sessionId) return
+      const controller = resolveController()
+      if (!usableController(controller) || typeof sessionId !== 'string' || !sessionId) return
       try {
-        sessionController.cancel({ sessionId })
+        controller.cancel({ sessionId })
       } catch (error) {
         logger.warn?.(`dsh-xiaozhi: 取消会话失败: ${error?.message ?? error}`)
       }

@@ -594,11 +594,11 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 336 项
+node --test "test/*.test.mjs"   # 337 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 
-覆盖：标识归一化/私网判定/存储（待审核、损坏文件隔离）；智能体覆盖合并与越界回落（含「hostProvider 不再强切 host」）；全局设置（人设/静音收口持久化、空值回落插件配置、`applyRuntimeVoiceSettings` 的 hostProvider/backups 叠加回归）；**三段备用服务商持久化/掩码/逐条留空保留/非法整次失败**；**TTS 默认音色**（全局只存凭据、`voice`/`model`/`resourceId` 可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留，2026-11-08）；HTTP 端到端（待审核/批准、`activation: null`、互斥 4001、CSRF、`/test/provider` 参数与回包）；网关（`/health` 免鉴权、`/commands` 401/200、`/exec` 白名单/参数注入 400/超时 124/截断/限流 429/爆破锁定）；语音（分句器边界、VAD、Ogg 往返、真 Opus 整轮、打断、20 轮）；**failover**（LLM 未出字前切换/出字后不切、TTS 整句重试、ASR 回放且不推 partial、abort 不切换、候选构建失败跳过、粘性与 5 分钟回落）；**小米 MiMo**（`api-key` 认证头、`thinking` 开关、SSE 文本/工具调用、模型清单走 /v1/models（无内置兜底））；**联网工具**（Search 带正文/截断预算、web_fetch 正文与 403/404 语义、动态 Key、无 Key 回退）；**对话历史**（会话聚合/标题/旧格式迁移/音频 WAV 读写与路径安全/保留期与容量清理/clear 粒度/4 条 HTTP 路由）；**智能体/设备绑定**（旧设备迁移与记忆复制、多设备绑定/移动/解绑、配置共享、级联删除、历史合并、智能体重名拦截，`test/agents.test.mjs` 9 项）；**DSH 会话后端 / Bot**（原话直送、只念最终结论、工具步骤文字丢弃、工具进度与气泡、摘要与回落、按 sessionId 不串台、`source.rpcId` 对上本轮、打断/超时取消、绑定持久化，`test/session-backend.test.mjs` 12 项；摘要 5 项 `test/spoken-summary.test.mjs`；审批意图与 `next()` 回落 2 项 `test/approval.test.mjs`；语音提问单选/多选/自由文本与 `next()` 回落 5 项 `test/question-voice.test.mjs`；语音提问进程内端到端 2 项 `test/question-voice-session.test.mjs`；Bot 会话视图与换会话 API `test/agents.test.mjs` 10 项）。
+覆盖：标识归一化/私网判定/存储（待审核、损坏文件隔离）；智能体覆盖合并与越界回落（含「hostProvider 不再强切 host」）；全局设置（人设/静音收口持久化、空值回落插件配置、`applyRuntimeVoiceSettings` 的 hostProvider/backups 叠加回归）；**三段备用服务商持久化/掩码/逐条留空保留/非法整次失败**；**TTS 默认音色**（全局只存凭据、`voice`/`model`/`resourceId` 可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留，2026-11-08）；HTTP 端到端（待审核/批准、`activation: null`、互斥 4001、CSRF、`/test/provider` 参数与回包）；网关（`/health` 免鉴权、`/commands` 401/200、`/exec` 白名单/参数注入 400/超时 124/截断/限流 429/爆破锁定）；语音（分句器边界、VAD、Ogg 往返、真 Opus 整轮、打断、20 轮）；**failover**（LLM 未出字前切换/出字后不切、TTS 整句重试、ASR 回放且不推 partial、abort 不切换、候选构建失败跳过、粘性与 5 分钟回落）；**小米 MiMo**（`api-key` 认证头、`thinking` 开关、SSE 文本/工具调用、模型清单走 /v1/models（无内置兜底））；**联网工具**（Search 带正文/截断预算、web_fetch 正文与 403/404 语义、动态 Key、无 Key 回退）；**对话历史**（会话聚合/标题/旧格式迁移/音频 WAV 读写与路径安全/保留期与容量清理/clear 粒度/4 条 HTTP 路由）；**智能体/设备绑定**（旧设备迁移与记忆复制、多设备绑定/移动/解绑、配置共享、级联删除、历史合并、智能体重名拦截，`test/agents.test.mjs` 9 项）；**DSH 会话后端 / Bot**（原话直送、只念最终结论、工具步骤文字丢弃、工具进度与气泡、摘要与回落、按 sessionId 不串台、`source.rpcId` 对上本轮、打断/超时取消、绑定持久化，`test/session-backend.test.mjs` 13 项；摘要 5 项 `test/spoken-summary.test.mjs`；审批意图与 `next()` 回落 2 项 `test/approval.test.mjs`；语音提问单选/多选/自由文本与 `next()` 回落 5 项 `test/question-voice.test.mjs`；语音提问进程内端到端 2 项 `test/question-voice-session.test.mjs`；Bot 会话视图与换会话 API `test/agents.test.mjs` 10 项）。
 
 ## 已知限制
 

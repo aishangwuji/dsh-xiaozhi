@@ -239,6 +239,9 @@
     「绑在有在线设备的 Bot 上、且设备正在 `thinking`/`speaking`」的会话（桌面发起的 turn 不抢）。
     审批念原因、收「允许/拒绝」；提问逐题念题和选项，按标签/序号映射，多选按顿号/和拆开。
     含糊/超时/异常 `next()` 交回桌面卡片。
+  - **会话服务惰性解析（2026-11-23 修）**：插件 `apply()` 早于 `sessionController` 挂载，
+    原来构造时取一次句柄 → `session.available` 永远 false、设备一说话就报「会话服务未装配」。
+    现在每次调用重新 `ctx.get('sessionController')`，事件订阅也不再依赖 `available`。
   - **每个 Bot 一个工作目录**：`~/.dsh-xiaozhi/voice-sessions/<agentId>/`（`voice.session.cwd`
     显式配置时共用）；新建 Bot 默认 `backend=session`。
   - **控制 API**：`POST /agents/session` 的 `new` / `auto` / `bind`；`GET /agents` 带

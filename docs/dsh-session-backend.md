@@ -39,7 +39,9 @@ DSH 的聊天页打开的就是这条会话：在文本框里打字和在手表�
 入口：
 
 - `src/host-session.js` 的 `createSessionBridge`：`list/create/prompt/cancel/subscribe/statusOf`，
-  以及 `setApprovalAnswerer`（语音审批）。
+  以及 `setApprovalAnswerer`（语音审批）/ `setQuestionAnswerer`（语音提问）。
+  **会话服务按调用时惰性解析**：桌面版实测插件 `apply()` 早于 `sessionController` 挂载，
+  构造时取一次会永远 `available:false`；事件订阅与 `available` 解耦，服务晚到也能收到。
 - `src/voice/adapters/dsh-session.js` 的 `createDshSessionLlm`：与直连 LLM 同形状的
   `stream()`，吐文本、`notice`、`progress` 三种事件。
 - `index.js` 的 `ensureVoiceSession` / `voiceSessions.rotate|clear|bind`。
@@ -121,7 +123,7 @@ DS-Bot 的 Bot 也是一条普通 DSH Session，但它的 Bot→当前会话映�
 ## 7. 验收
 
 ```powershell
-node --test "test/session-backend.test.mjs"   # 12 项：原话直送/只念结论/进度/摘要/打断/超时
+node --test "test/session-backend.test.mjs"   # 13 项：原话直送/只念结论/进度/摘要/打断/超时
 node --test "test/spoken-summary.test.mjs"    # 5 项：短回复跳过/清理/超时回落/话术
 node --test "test/approval.test.mjs"          # 2 项：意图分类/桥的 next() 回落
 node --test "test/question-voice.test.mjs"    # 5 项：单选/多选/意图映射/自由文本/桥的 next() 回落

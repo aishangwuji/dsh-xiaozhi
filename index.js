@@ -565,16 +565,13 @@ export function apply(ctx, config = {}) {
     file: join(resolved.dataRoot, 'voice-sessions.json'),
     logger,
   })
-  // 宿主会话桥：DSH 的 sessionController + session/event。没有装配时 available=false，
-  // 只有把某个智能体设成 backend=session 才会在构建期报错，其他链路不受影响。
+  // 宿主会话桥：DSH 的 sessionController + session/event。**惰性解析**会话服务：
+  // 桌面版实测 apply() 早于 sessionController 挂载，构造时取一次会永远 available=false。
   const sessionBridge = createSessionBridge({
-    sessionController: typeof ctx.get === 'function' ? ctx.get('sessionController') : ctx.sessionController,
+    getController: () => (typeof ctx.get === 'function' ? ctx.get('sessionController') : ctx.sessionController),
     on: (event, listener, options) => ctx.on(event, listener, options),
     logger,
   })
-  if (!sessionBridge.available) {
-    logger.info?.('dsh-xiaozhi: 宿主没有 sessionController，voice.backend=session 不可用（默认仍是直连 LLM）')
-  }
   // 卸载插件时退订 session/event：桥自己持有监听器集合，不交给 Loader 猜。
   ctx.effect?.(() => () => sessionBridge.dispose())
 
