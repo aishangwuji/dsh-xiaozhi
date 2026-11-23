@@ -109,6 +109,9 @@ export function createControlHandler({
   firmware,
   sessions,
   voiceSessions,
+  // dsh-family 的语音服务（`familyVoice`）。**惰性 getter**：服务可能晚于本插件 apply
+  // 挂载，构造时取一次会永远是 undefined。
+  familyVoice = () => undefined,
   ready: bootstrapReady,
   logger,
   clock = () => Date.now(),
@@ -145,6 +148,9 @@ export function createControlHandler({
       deviceId: device.deviceId,
       // 绑定的智能体；空串 = 未绑定（旧数据在启动迁移时补上）。
       agentId: device.agentId ?? '',
+      // 绑定的家庭成员（dsh-family）；空串 = 未绑定。成员名册在 family 侧，
+      // 这里只回 id，控制台用 `GET /family/members` 换成名字。
+      familyMemberId: device.familyMemberId ?? '',
       nickName: device.nickName,
       notes: device.notes,
       online: hub.has(device.deviceId),
@@ -245,10 +251,11 @@ export function createControlHandler({
     // 语种会被拼进系统提示词，只放白名单值；不在名单里的一律当“跟随音色”。
     if (typeof body.language === 'string') patch.language = normalizeOutputLanguage(body.language)
     if (typeof body.model === 'string') patch.model = body.model.trim().slice(0, 120)
-    // 回答来源（2026-11-19）：空串 = 跟随全局；llm / session 二选一。
+    // 回答来源（2026-11-19）：空串 = 跟随全局；llm / session / family 三选一。
+    // family（2026-11-23）把这一轮交给 dsh-family 的「语音」会话（成员由设备绑定决定）。
     if (typeof body.backend === 'string') {
       const backend = body.backend.trim()
-      if (backend && backend !== 'llm' && backend !== 'session') {
+      if (backend && backend !== 'llm' && backend !== 'session' && backend !== 'family') {
         throw Object.assign(new Error(`未知的回答来源「${backend}」`), { status: 400, code: 'invalid-backend' })
       }
       patch.backend = backend
@@ -439,6 +446,42 @@ export function createControlHandler({
           cwd: typeof row.cwd === 'string' ? row.cwd : '',
         }))
       sendJson(res, 200, { available: true, items: rows })
+      return
+    }
+
+    // ------------------------------------------------------- 家庭成员（dsh-family）
+    // 只读：给设备弹窗的「家庭成员」选择器提供选项。服务不可用不是错误：
+    // 回 `available:false` + 空列表，控制台显示「家庭服务未就绪」。
+    if (method === 'GET' && path === '/family/members') {
+      let service
+      try {
+        service = familyVoice()
+      } catch (error) {
+        logger.warn?.(`dsh-xiaozhi: familyVoice 解析失败: ${error.message}`)
+        service = undefined
+      }
+      if (!service || typeof service.listMembers !== 'function') {
+        sendJson(res, 200, { available: false, members: [] })
+        return
+      }
+      let members
+      try {
+        members = await service.listMembers()
+      } catch (error) {
+        logger.warn?.(`dsh-xiaozhi: familyVoice.listMembers 失败: ${error.message}`)
+        sendJson(res, 200, { available: false, members: [] })
+        return
+      }
+      // 只认公开字段；脏数据跳过而不是整份 500。
+      const rows = (Array.isArray(members) ? members : [])
+        .filter((member) => member && typeof member.id === 'string' && member.id)
+        .map((member) => ({
+          id: member.id,
+          name: typeof member.name === 'string' ? member.name : '',
+          roleLabel: typeof member.roleLabel === 'string' ? member.roleLabel : '',
+          isAdmin: member.isAdmin === true,
+        }))
+      sendJson(res, 200, { available: true, members: rows })
       return
     }
 
@@ -1240,6 +1283,60 @@ export function createControlHandler({
     if (method === 'POST' && path === '/devices/ota') {
       const body = await readJson(req)
       const device = await store.setOtaEnabled({ deviceId: String(body.deviceId ?? ''), enabled: body.enabled !== false })
+      sendJson(res, 200, { device: publicDevice(device) })
+      return
+    }
+
+    if (method === 'POST' && path === '/devices/family') {
+      // 设备 ↔ 家庭成员（dsh-family）。**不是**引用计数式绑定：一台设备同一时刻
+      // 只替一个成员说话，换成员就是改这一个字段，下一轮生效（适配器每轮重新解析）。
+      if (!requireTrustedMutation(req, res)) return
+      const body = await readJson(req)
+      const deviceId = deviceIdOf(body)
+      if (!store.get(deviceId)) {
+        sendJson(res, 404, { error: { code: 'not-found', message: '设备不存在' } })
+        return
+      }
+      const memberId = typeof body.memberId === 'string' ? body.memberId.trim() : ''
+      // 类型不对时不能当成「解绑」静默处理：写接口宁可 400，也别误清掉绑定。
+      if (body.memberId !== undefined && typeof body.memberId !== 'string') {
+        sendJson(res, 400, { error: { code: 'invalid-member-id', message: 'memberId 必须是字符串' } })
+        return
+      }
+      if (memberId) {
+        // 非空必须是「当前」family 成员：删掉的成员不能再被绑上设备。
+        // 服务不可用时无法确认，明确拒绝而不是先写一个可能失效的 id。
+        let service
+        try {
+          service = familyVoice()
+        } catch {
+          service = undefined
+        }
+        if (!service || typeof service.listMembers !== 'function') {
+          sendJson(res, 409, { error: { code: 'family-unavailable', message: '家庭服务未就绪' } })
+          return
+        }
+        let members
+        try {
+          members = await service.listMembers()
+        } catch (error) {
+          logger.warn?.(`dsh-xiaozhi: familyVoice.listMembers 失败: ${error.message}`)
+          sendJson(res, 409, { error: { code: 'family-unavailable', message: '家庭服务未就绪' } })
+          return
+        }
+        const known = (Array.isArray(members) ? members : []).some(
+          (member) => member && String(member.id ?? '') === memberId,
+        )
+        if (!known) {
+          sendJson(res, 400, { error: { code: 'member-not-found', message: '家庭成员不存在' } })
+          return
+        }
+      }
+      // 空串 = 解绑；不校验服务（family 挂了也必须能解除绑定）。
+      const device = await store.setFamilyMemberId({ deviceId, memberId })
+      logger.info?.(
+        `dsh-xiaozhi: device ${deviceId} ${memberId ? `bound to family member ${memberId}` : 'unbound from family member'}`,
+      )
       sendJson(res, 200, { device: publicDevice(device) })
       return
     }

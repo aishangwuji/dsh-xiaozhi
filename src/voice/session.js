@@ -1025,7 +1025,9 @@ export class VoiceSession {
         const pending = []
         const stream = supportsTools
           ? this.adapters.llm.streamWithTools({ messages, tools, signal: controller.signal })
-          : this.#textOnly(this.adapters.llm.stream({ messages, signal: controller.signal }))
+          // `session: this`：family 适配器要拿 VoiceSession 做语音审批/提问；
+          // 其它适配器（含 dsh-session）忽略这个字段。
+          : this.#textOnly(this.adapters.llm.stream({ messages, signal: controller.signal, session: this }))
         for await (const event of stream) {
           if (controller.signal.aborted) break
           if (event.type === 'tool_calls') {

@@ -41,6 +41,7 @@ import { DeviceStore } from './src/store.js'
 import { PendingStore } from './src/pending.js'
 import { buildLlmAdapter, buildTtsAdapter, buildAsrAdapter, createVoiceAdapters, prioritizeTtsProvider } from './src/voice/adapters/index.js'
 import { createDshSessionLlm } from './src/voice/adapters/dsh-session.js'
+import { createFamilyLlm } from './src/voice/adapters/family.js'
 import { createSpeechSummarizer, DEFAULT_SUMMARY_PROMPT } from './src/voice/spoken-summary.js'
 import { probeAsr } from './src/voice/asr-probe.js'
 import { hostProviderIssue } from './src/voice/host-provider.js'
@@ -309,8 +310,13 @@ export function resolveConfig(config = {}) {
       enabled: field(voiceRaw, ['enabled'], false) === true,
       ffmpegPath: text(field(voiceRaw, ['ffmpegPath', 'ffmpeg_path'], 'ffmpeg'), 'ffmpeg') || 'ffmpeg',
       // 回答来源（2026-11-19）：llm = 插件直连模型（原行为）；session = 把这句话送进
-      // 一条 DSH 会话，只念这一轮的最终结论。全局默认 + 智能体 overrides.backend 覆盖。
-      backend: text(field(voiceRaw, ['backend'], 'llm'), 'llm') === 'session' ? 'session' : 'llm',
+      // 一条 DSH 会话，只念这一轮的最终结论；family（2026-11-23）= 交给 dsh-family 的
+      // 「语音」会话（成员由设备绑定的 familyMemberId 决定）。全局默认 + 智能体
+      // overrides.backend 覆盖。
+      backend: (() => {
+        const backend = text(field(voiceRaw, ['backend'], 'llm'), 'llm')
+        return backend === 'session' || backend === 'family' ? backend : 'llm'
+      })(),
       session: {
         // 固定绑定的会话；留空 = 首次连接时自动建一条并按智能体记住（voice-sessions.json）。
         sessionId: text(field(sessionRaw, ['sessionId', 'session_id'], '')),
@@ -575,6 +581,13 @@ export function apply(ctx, config = {}) {
   // 卸载插件时退订 session/event：桥自己持有监听器集合，不交给 Loader 猜。
   ctx.effect?.(() => () => sessionBridge.dispose())
 
+  /**
+   * dsh-family 的语音服务（`familyVoice`）。**惰性 getter**：family 插件可能晚于本插件
+   * `apply` 挂载，构造时取一次会永远 undefined；每轮/每次请求重新取。
+   * 契约见 `dsh-family/docs/voice-fusion.md`。
+   */
+  const familyVoice = () => (typeof ctx.get === 'function' ? ctx.get('familyVoice') : undefined)
+
   // 零接触入网：新设备第一次连上来就自动建一个属于它的智能体。名字与设备无关
   // （「智能体 N」）；设备保留自己的昵称/别名。之后可以在控制台把多台设备绑到同一个
   // 智能体上；绑定是移动，不会复制配置。
@@ -610,12 +623,14 @@ export function apply(ctx, config = {}) {
     .catch((error) => logger.error?.(`dsh-xiaozhi: agent bootstrap failed: ${error.message}`))
 
   /**
-   * 这个智能体的回答来源：智能体 overrides.backend（llm / session）优先，
+   * 这个智能体的回答来源：智能体 overrides.backend（llm / session / family）优先，
    * 空串 = 跟随全局 `voice.backend`（默认 llm）。
    */
   const backendFor = (device) => {
     const override = String(agentOf(device)?.overrides?.backend ?? '').trim()
-    return override === 'llm' || override === 'session' ? override : resolved.voice.backend
+    return override === 'llm' || override === 'session' || override === 'family'
+      ? override
+      : resolved.voice.backend
   }
 
   /** 智能体显式钉死的会话 id；空串 = 交给自动建/复用。 */
@@ -823,16 +838,19 @@ export function apply(ctx, config = {}) {
           // 几个 TTS 字段，导致在控制台修正 ASR resourceId（或换 ASR 的 Key）之后，设备重连
           // 仍然命中旧缓存，表现为「改了配置不生效、ASR 一直返回空」。
           const effective = mergeDevice(resolvedProfile, device)
-          // 回答来源：session 时 LLM 段完全不建 provider 链，改由会话适配器提供流。
+          // 回答来源：session / family 时 LLM 段完全不建 provider 链，改由外部适配器提供流。
           const backend = backendFor(device)
           const sessionMode = backend === 'session'
+          const familyMode = backend === 'family'
           // 2026-11-08 起配置在智能体上：key 必须带 agent.overrides，否则改完音色/模型后
           // 设备重连仍命中旧 adapter（旧版带的是 device.overrides，现在那只是回滚兜底）。
           const key = JSON.stringify([
             backend,
             // 会话模式下适配器闭包里带着「哪个智能体的会话」：两个智能体即使 overrides
             // 一模一样，也不能共用同一个适配器，否则会把 A 的话送进 B 的会话。
+            // family 模式同理：闭包里带着设备 id（成员每轮解析），不能跨设备复用。
             sessionMode ? agentOf(device)?.id ?? device?.deviceId ?? '' : '',
+            familyMode ? device?.deviceId ?? '' : '',
             agentOf(device)?.overrides ?? {},
             device?.overrides ?? {},
             effective.config.systemPrompt ?? '',
@@ -931,12 +949,41 @@ export function apply(ctx, config = {}) {
                 }
               })()
             : null
+          // family 后端：每轮把「这台设备替谁说话」重新读一次（`setFamilyMemberId` 改完
+          // 下一轮生效，不需要设备重连）；`familyVoice` 同样每轮惰性解析。
+          const familyAdapter = familyMode
+            ? (() => {
+                try {
+                  return createFamilyLlm({
+                    familyVoice,
+                    memberId: () => store.get(device?.deviceId ?? '')?.familyMemberId ?? '',
+                    maxChars: resolved.voice.session.maxChars,
+                    summarize,
+                    summaryMinChars: resolved.voice.session.summaryMinChars,
+                    approvalTimeoutMs: resolved.voice.session.approvalTimeoutMs,
+                    questionTimeoutMs: resolved.voice.session.questionTimeoutMs,
+                    logger,
+                  })
+                } catch (error) {
+                  // 建连不能因为后端不可用就断掉：让设备连上，说第一句时走兜底语音报错。
+                  logger.error?.(
+                    `dsh-xiaozhi: 设备 ${device?.deviceId ?? '?'} 的回答来源是家庭会话，但后端不可用：${error.message}`,
+                  )
+                  return {
+                    name: 'family',
+                    async *stream() {
+                      yield { type: 'notice', text: '家庭服务未就绪' }
+                    },
+                  }
+                }
+              })()
+            : null
           const adapters = createVoiceAdapters(merged, {
             systemPrompt: withShortReplies(withOutputLanguage(withClock(effective.config.systemPrompt), merged.tts.language)),
             ffmpegPath: resolved.voice.ffmpegPath,
             speechToText,
             llm: hostLlm,
-            llmAdapter: sessionAdapter,
+            llmAdapter: sessionAdapter ?? familyAdapter,
             logger,
             deviceId: device?.deviceId ?? '',
           })
@@ -984,12 +1031,17 @@ export function apply(ctx, config = {}) {
             }
           }
           const adapters = adaptersFor(deviceDefaults(), device)
-          const sessionMode = backendFor(device) === 'session'
+          const backend = backendFor(device)
+          const sessionMode = backend === 'session'
+          const familyMode = backend === 'family'
+          // 会话/家庭后端都不建插件侧的提示词与记忆：人设、记忆、工具全在会话或
+          // family 的角色卡里，插件再塞一份会打架（与 session 模式同一套让路规则）。
+          const delegateMode = sessionMode || familyMode
           // 会话每轮都会用 config.systemPrompt 重设 LLM 的提示词（为了把记忆拼进去），
           // 所以这里必须给**同一条**已经拼好时间和语种的字符串，否则人格在第一轮就被
           // 覆盖成空串——面板里改人设「看起来不生效」就是这么来的。
-          // 会话后端不需要：人设/记忆/工具全在绑定的那条 Session 里，插件再塞一份会打架。
-          const sessionPrompt = sessionMode
+          // 外部后端不需要：人设/记忆/工具都在对面，插件再塞一份会打架。
+          const sessionPrompt = delegateMode
             ? ''
             : withShortReplies(
                 withOutputLanguage(withClock(resolvedProfile.config.systemPrompt), effectiveTts.language),
@@ -1000,12 +1052,21 @@ export function apply(ctx, config = {}) {
           try {
             trace('session.build', {
               device: device?.deviceId ?? '',
-              // 这一轮的回答来源：llm = 插件直连；session = 绑定的 DSH 会话。
-              backend: sessionMode ? 'session' : 'llm',
+              // 这一轮的回答来源：llm = 插件直连；session = 绑定的 DSH 会话；family = 家庭成员语音会话。
+              backend,
               sessionId: sessionMode ? pinnedSessionFor(device) || '(auto)' : '',
-              // 会话后端是否启用了语音摘要 / 过程播报；排障时先看这里。
-              summary: sessionMode ? Boolean(summarize) : false,
-              progress: sessionMode ? resolved.voice.session.progress !== false : false,
+              // family 的成员归属每轮解析，这里只是建连时的快照。
+              familyMemberId: familyMode ? String(device?.familyMemberId ?? '') : '',
+              // 外部后端是否启用了语音摘要 / 过程播报；排障时先看这里。
+              // 摘要是否真的可用还要看 LLM 段有没有非 mock 的模型（与 adaptersFor 里的
+              // 构建条件一致）；旧代码这里引用了 adaptersFor 闭包里的 `summarize`，
+              // 实际是越界的 ReferenceError，被下面的 try/catch 吞掉，trace 一直是空的。
+              summary: delegateMode
+                ? resolved.voice.session.summary !== false &&
+                  Boolean(effectiveLlm.provider) &&
+                  effectiveLlm.provider !== 'mock'
+                : false,
+              progress: delegateMode ? resolved.voice.session.progress !== false : false,
               ttsProvider: effectiveTts.provider,
               // 记录实际生效的音色（设备选的 / 厂商默认 / 跨厂商回落后的），排障才有据可查。
               voice: effectiveTtsVoice,
@@ -1045,14 +1106,14 @@ export function apply(ctx, config = {}) {
               // 判停模式随会话下发：device 时以固件 listen stop 收口。
               vadMode: resolved.voice.vadMode,
               // 每轮都会被 session 重新写进 LLM 的提示词（记忆拼在后面），必须是完整版本。
-              // 会话后端留空：它自己的 system prompt 由 DSH 按 preset 装配。
+              // 外部后端留空：提示词由对面装配（DSH preset / family 的角色卡）。
               systemPrompt: sessionPrompt,
-              // 会话自带工具与记忆：插件这边必须让路，否则两套工具表/两段记忆会互相打架。
-              toolsEnabled: sessionMode ? false : resolved.voice.toolsEnabled !== false,
-              memoryEnabled: sessionMode ? false : agentOf(device)?.memoryEnabled !== false,
+              // 外部后端自带工具与记忆：插件这边必须让路，否则两套工具表/两段记忆会互相打架。
+              toolsEnabled: delegateMode ? false : resolved.voice.toolsEnabled !== false,
+              memoryEnabled: delegateMode ? false : agentOf(device)?.memoryEnabled !== false,
               // 记忆按智能体存：同一智能体绑定的多台设备共用一份记忆；历史仍按设备落盘。
-              // 会话后端把记忆交给 DSH，这里留空，免得两套记忆各记一半。
-              memoryKey: sessionMode ? '' : agentOf(device)?.id ?? device?.deviceId ?? '',
+              // 会话/家庭后端把记忆交给对面，这里留空，免得两套记忆各记一半。
+              memoryKey: delegateMode ? '' : agentOf(device)?.id ?? device?.deviceId ?? '',
               dumpPcm: resolved.voice.dumpPcm === true,
               // 历史对话每轮落 user/assistant 文本 + 两段 WAV；与 dumpPcm 解耦。
               historyAudio: resolved.voice.historyAudio !== false,
@@ -1114,6 +1175,8 @@ export function apply(ctx, config = {}) {
     llm: hostLlm,
     sessions: sessionBridge,
     voiceSessions,
+    // dsh-family 的语音服务：控制台的成员列表与设备绑定校验都用它（惰性 getter）。
+    familyVoice,
     tools: toolRegistry,
     memory,
     history,
