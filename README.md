@@ -6,6 +6,8 @@
 2. **局域网自入网（待审核）**：手表在配网页面填本机 OTA 地址，上电后先进入控制台的「待审核设备」；管理员选择智能体并批准后才建档、连上。没有激活码、没有绑定台；
 3. **设备侧网关**：手表用固件内置的 `self.server.exec` / `self.server.commands` 调本机的 `/exec`、`/commands`，Bearer token 鉴权、命令白名单执行；
 4. **实时语音管道**：VAD → ASR → LLM 流式 → 分句 → TTS → Opus 定速下发，带代际打断。
+5. **可选的 dsh-family 融合（2026-11-23）**：Bot 的回答来源可以选「家庭会话」——设备替哪一位
+   家庭成员说话，就把这一轮交给 dsh-family 里该成员的「语音」会话（人设/记忆/工具/审批都归家庭）。
 
 两端怎么各自验证、怎么联动、踩过的坑长什么样，记在 [AGENTS.md](AGENTS.md)（现状笔记，不是规范）。
 
@@ -99,7 +101,7 @@ Bot（配置单位）──overrides──> 生效配置 <──全局默认─�
 ```
 
 - **在哪里配**：新建 Bot 默认走 DSH 会话；「Bot → 配置 → 模型与记忆 → 回答来源」可切
-  `跟随全局` / `直连模型` / `DSH 会话`。选会话后可从「最近会话」挑一条，或留空让它在
+  `跟随全局` / `直连模型` / `DSH 会话` / `家庭会话`。选会话后可从「最近会话」挑一条，或留空让它在
   首次说话时自动建一条（记在 `~/.dsh-xiaozhi/voice-sessions.json`，按 Bot 复用）。
   会话行有 **新建会话** 按钮；每个 Bot 的会话工作目录是 `~/.dsh-xiaozhi/voice-sessions/<Bot>/`。
 - **和文本框同一段上下文**：在 DSH 的聊天页打开这条会话，看到的就是手表说的原话与完整回复；
@@ -121,6 +123,27 @@ Bot（配置单位）──overrides──> 生效配置 <──全局默认─�
 - **限制**：不是流式首字（要等最终消息落库才能摘要）；摘要多一次模型调用（默认开，
   主用 LLM 不可用时自动回落）；语音提问只覆盖标签/序号/简单多选，复杂说法会交回桌面。
   真实手表到会话的端到端延迟、审批/提问语音**未实测**。
+
+## 家庭语音：设备替谁说话（dsh-family，2026-11-23）
+
+装了 [dsh-family](../dsh-family) 之后，Bot 的回答来源可以再选一种 **家庭会话**：
+这一轮不建 DSH 会话，而是交给 family 里某位成员的「语音」会话。分工是
+**family 是大脑**（成员、工作区、会话、角色卡、记忆、用量、审批归属），
+**xiaozhi 是耳朵和嘴**（设备、ASR/TTS、摘要、打断、历史音频）。
+
+- **设备绑定成员**：「Bot → 设备(N)」弹窗里，每台设备多一行「家庭成员」
+  （未绑定 / 成员列表 / 刷新）。一台设备同一时刻只替一位成员说话，切换后**下一轮生效**，
+  不用让设备重连。成员被删掉后下拉会显示「成员已失效」，设备说话会看到对应提示气泡。
+- **家庭服务未就绪**：没装 family、或它还没加载时，成员下拉显示「家庭服务未就绪」，
+  设备说话看到「家庭服务未就绪」的气泡，不会崩、也不会写错误历史。
+- **审批/提问仍可语音答**：family 这一轮弹出的审批/提问先给设备；说不清或超时返回
+  `null`，由 family 把卡片放行到 PWA（手机/手表谁先答谁生效）。桌面发起的对话不受影响。
+- **人设/记忆/工具让路**：与 `DSH 会话` 相同的规则——记忆、工具、提示词全部交给 family；
+  摘要、TTS、语速、音色仍按 Bot 配置装配。
+- **限制（未实测）**：真机端到端延迟、审批/提问语音、多设备同时说话时的归属都还没实测；
+  「家庭服务未就绪 / 上一条还在想」这类提示会同时上屏并朗读（手表常常不看屏）。
+  契约见 [`docs/family-backend.md`](docs/family-backend.md) 与
+  [`dsh-family/docs/voice-fusion.md`](../dsh-family/docs/voice-fusion.md)。
 
 ## 设备怎么接进来（这是正确的那条路）
 
@@ -184,8 +207,9 @@ Bot（配置单位）──overrides──> 生效配置 <──全局默认─�
 | GET | `/devices` | 已批准设备列表 |
 | GET | `/agents` | 智能体列表（每条带绑定设备、在线、最近在线） |
 | GET | `/sessions` | 只读：宿主最近会话（`available` + `items`），供「回答来源 = DSH 会话」下拉选择；没有会话服务时 `available:false` |
+| GET | `/family/members` | 只读：dsh-family 的成员列表（`available` + `members`），供设备弹窗「家庭成员」选择；家庭服务未就绪时 `available:false` |
 | POST | `/agents` | `{name}` 新建智能体 |
-| POST | `/agents/update` | `{agentId, name?, systemPrompt?, voice?, language?, model?, silenceMs?, backend?, sessionId?}`：智能体级配置（空串 = 删掉该覆盖）；`backend` 只收 `llm` / `session`，`sessionId` 必须形如 `session-…`（坏值 400） |
+| POST | `/agents/update` | `{agentId, name?, systemPrompt?, voice?, language?, model?, silenceMs?, backend?, sessionId?}`：智能体级配置（空串 = 删掉该覆盖）；`backend` 只收 `llm` / `session` / `family`，`sessionId` 必须形如 `session-…`（坏值 400） |
 | POST | `/agents/bind` | `{agentId, deviceId}` 绑定设备（已在别的智能体上 = 移动） |
 | POST | `/agents/unbind` | `{agentId, deviceId}` 解绑 |
 | POST | `/agents/remove` | `{agentId}` 删智能体，**级联删除绑定设备、历史与记忆** |
@@ -200,6 +224,7 @@ Bot（配置单位）──overrides──> 生效配置 <──全局默认─�
 | POST | `/devices/rename` | `{deviceId, nickName}` |
 | GET | `/devices/tools` | `?deviceId=`：只读返回该设备侧 MCP 上报的工具（离线时 `online:false` + 空数组） |
 | POST | `/devices/config` | 兼容入口：按设备反查智能体后写同一份配置（新页面用 `/agents/update`） |
+| POST | `/devices/family` | `{deviceId, memberId}`：设备绑定/切换家庭成员（空串 = 解绑）；非空必须是当前成员（否则 400），家庭服务不可用 → 409 |
 | POST | `/devices/disconnect` | 踢掉当前连接 |
 | POST | `/devices/remove` | 删记录（下次上电会重新自入网） |
 | GET | `/history/agent-conversations` | `?agentId=&limit=50`：智能体绑定设备的会话合并列表（每条带 `deviceId`/`deviceName`） |
@@ -420,7 +445,7 @@ initialize/tools/list/tools/call，客户端回 result；工具按 `agentId` 聚
 
 ```
 ~/.dsh-xiaozhi/agents.json                              # 智能体（配置单位）+ 绑定关系在 devices.json
-~/.dsh-xiaozhi/devices.json                             # 已批准设备名册（0600，版本 2）
+~/.dsh-xiaozhi/devices.json                             # 已批准设备名册（0600，版本 2；含 agentId / familyMemberId 绑定）
 ~/.dsh-xiaozhi/pending.json                             # 待审核设备队列（0600，版本 1）
 ~/.dsh-xiaozhi/memory/<agentId>.json                    # 记忆按智能体（同一智能体的设备共用）
 ~/.dsh-xiaozhi/history/<deviceId>.jsonl                 # 每行一条消息：{at,session,role,content,audioId}
@@ -526,7 +551,7 @@ TTS 段的全局配置只有「厂商 + 凭据」，音色（= TTS 模型族）�
 
 智能体「角色」页选「跟随音色」会删除该智能体的 `language` 覆盖、撤掉语种指令；如果只在 `cordis.patch.yml` 里写过默认语种，需要智能体上显式选一次别的值再选回来，才能覆盖掉它。
 
-实测（`node --test "test/*.test.mjs"`，275 项）：
+实测（`node --test "test/*.test.mjs"`，350 项）：
 
 | 指标 | 结果 | 条件 |
 |---|---|---|
@@ -594,11 +619,11 @@ npm run smoke    # 真实 React SSR 渲染主要页面 + slot 注册校验
 ## 测试
 
 ```powershell
-node --test "test/*.test.mjs"   # 337 项
+node --test "test/*.test.mjs"   # 350 项
 npm run build && npm run smoke  # 控制台构建 + 冒烟
 ```
 
-覆盖：标识归一化/私网判定/存储（待审核、损坏文件隔离）；智能体覆盖合并与越界回落（含「hostProvider 不再强切 host」）；全局设置（人设/静音收口持久化、空值回落插件配置、`applyRuntimeVoiceSettings` 的 hostProvider/backups 叠加回归）；**三段备用服务商持久化/掩码/逐条留空保留/非法整次失败**；**TTS 默认音色**（全局只存凭据、`voice`/`model`/`resourceId` 可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留，2026-11-08）；HTTP 端到端（待审核/批准、`activation: null`、互斥 4001、CSRF、`/test/provider` 参数与回包）；网关（`/health` 免鉴权、`/commands` 401/200、`/exec` 白名单/参数注入 400/超时 124/截断/限流 429/爆破锁定）；语音（分句器边界、VAD、Ogg 往返、真 Opus 整轮、打断、20 轮）；**failover**（LLM 未出字前切换/出字后不切、TTS 整句重试、ASR 回放且不推 partial、abort 不切换、候选构建失败跳过、粘性与 5 分钟回落）；**小米 MiMo**（`api-key` 认证头、`thinking` 开关、SSE 文本/工具调用、模型清单走 /v1/models（无内置兜底））；**联网工具**（Search 带正文/截断预算、web_fetch 正文与 403/404 语义、动态 Key、无 Key 回退）；**对话历史**（会话聚合/标题/旧格式迁移/音频 WAV 读写与路径安全/保留期与容量清理/clear 粒度/4 条 HTTP 路由）；**智能体/设备绑定**（旧设备迁移与记忆复制、多设备绑定/移动/解绑、配置共享、级联删除、历史合并、智能体重名拦截，`test/agents.test.mjs` 9 项）；**DSH 会话后端 / Bot**（原话直送、只念最终结论、工具步骤文字丢弃、工具进度与气泡、摘要与回落、按 sessionId 不串台、`source.rpcId` 对上本轮、打断/超时取消、绑定持久化，`test/session-backend.test.mjs` 13 项；摘要 5 项 `test/spoken-summary.test.mjs`；审批意图与 `next()` 回落 2 项 `test/approval.test.mjs`；语音提问单选/多选/自由文本与 `next()` 回落 5 项 `test/question-voice.test.mjs`；语音提问进程内端到端 2 项 `test/question-voice-session.test.mjs`；Bot 会话视图与换会话 API `test/agents.test.mjs` 10 项）。
+覆盖：标识归一化/私网判定/存储（待审核、损坏文件隔离）；智能体覆盖合并与越界回落（含「hostProvider 不再强切 host」）；全局设置（人设/静音收口持久化、空值回落插件配置、`applyRuntimeVoiceSettings` 的 hostProvider/backups 叠加回归）；**三段备用服务商持久化/掩码/逐条留空保留/非法整次失败**；**TTS 默认音色**（全局只存凭据、`voice`/`model`/`resourceId` 可清空、只带凭据的主用/备用条目可构建、空音色→厂商默认、跨厂商残留→本厂商默认、自定义 ID 原样保留，2026-11-08）；HTTP 端到端（待审核/批准、`activation: null`、互斥 4001、CSRF、`/test/provider` 参数与回包）；网关（`/health` 免鉴权、`/commands` 401/200、`/exec` 白名单/参数注入 400/超时 124/截断/限流 429/爆破锁定）；语音（分句器边界、VAD、Ogg 往返、真 Opus 整轮、打断、20 轮）；**failover**（LLM 未出字前切换/出字后不切、TTS 整句重试、ASR 回放且不推 partial、abort 不切换、候选构建失败跳过、粘性与 5 分钟回落）；**小米 MiMo**（`api-key` 认证头、`thinking` 开关、SSE 文本/工具调用、模型清单走 /v1/models（无内置兜底））；**联网工具**（Search 带正文/截断预算、web_fetch 正文与 403/404 语义、动态 Key、无 Key 回退）；**对话历史**（会话聚合/标题/旧格式迁移/音频 WAV 读写与路径安全/保留期与容量清理/clear 粒度/4 条 HTTP 路由）；**智能体/设备绑定**（旧设备迁移与记忆复制、多设备绑定/移动/解绑、配置共享、级联删除、历史合并、智能体重名拦截，`test/agents.test.mjs` 9 项）；**DSH 会话后端 / Bot**（原话直送、只念最终结论、工具步骤文字丢弃、工具进度与气泡、摘要与回落、按 sessionId 不串台、`source.rpcId` 对上本轮、打断/超时取消、绑定持久化，`test/session-backend.test.mjs` 13 项；摘要 5 项 `test/spoken-summary.test.mjs`；审批意图与 `next()` 回落 2 项 `test/approval.test.mjs`；语音提问单选/多选/自由文本与 `next()` 回落 5 项 `test/question-voice.test.mjs`；语音提问进程内端到端 2 项 `test/question-voice-session.test.mjs`；Bot 会话视图与换会话 API `test/agents.test.mjs` 10 项）；**家庭语音后端（2026-11-23）**（`devices.json` 的 `familyMemberId` 持久化与坏值容错、`/family/members` 只透传公开字段且服务不可用回 `available:false`、`/devices/family` 绑定/解绑/无效成员 400/服务未就绪 409/CSRF 403、`backend` 收 `family`、适配器把 `ask` 的 text 转成 text 事件、busy/成员失效/服务未就绪上屏并朗读、`onApproval`/`onQuestion` 接到 `VoiceSession` 并在返回 null 时回落 null、摘要与打断取消，`test/family.test.mjs` 13 项）。
 
 ## 已知限制
 
@@ -620,6 +645,10 @@ npm run build && npm run smoke  # 控制台构建 + 冒烟
 - **会话模式的三项代价**：不是流式首字（等最终消息落库才摘要+合成）；摘要多一次模型调用
   （默认开，主用 LLM 不可用时自动回落截断）；语音提问只覆盖标签/序号/简单多选，复杂说法
   会交回桌面。真实手表到会话的端到端延迟、审批/提问语音均**未实测**。
+- **家庭模式（dsh-family）**：失败提示同时上屏并朗读；一轮的超时由 family 内部 120s 负责
+  （插件没加本地看门狗）；成员被删后设备上的孤儿 `familyMemberId` 不自动清理；
+  真机端到端、审批/提问语音、多设备归属均**未实测**。详见
+  [`docs/family-backend.md`](docs/family-backend.md)。
 - **空回合**：ASR 空结果不再回 tts（回 tts 会让环境音触发的假句尾把设备弹一下，像“自己触发对话”）；
   收到「没有进行中 utterance 的 `listen stop`」时服务端直接 `#beginCapture()` 重开捕获，
   否则设备不会重发 `listen start`、后续话音会被整段丢弃。固件侧短于 400ms 的假片段不发 stop。

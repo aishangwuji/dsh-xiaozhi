@@ -27,4 +27,9 @@
 | 手表上 `ask_user_question` 没念选项 / 说了没选中 | `voice.log` 没有 `question.answer`；或只有 `question.retry` | 选项按「精确标签 > 标签包含 > 序号（第2个/2/二）」匹配；多选要按顿号/逗号/和/与拆开说。多个选项同时命中、没选项且识别为空、超时（`questionTimeoutMs`）都会 `next()` 交回桌面，不猜答案。桌面发起的 turn 也不会被手表抢答 |
 | 手表说了「允许/拒绝」但会话没继续 | `voice.log` 有 `approval.retry` 或没有 `approval.answer` | 只认明确的允许/拒绝；否定词优先。说「行吧」「可以可以」通常能识别，说「嗯…那个」会被判为说不清并交回桌面（`approvalTimeoutMs` 后）。审批语音**未真机实测** |
 | 控制台点了「新建会话」，下一轮还在旧上下文 | `voice-sessions.json` 已换成新 id；`session.build` 的 `sessionId` 仍是旧值 | 新建会话是**下一轮**生效（适配器每轮重新解析会话），不需要重连；如果下一轮仍是旧 id，看是不是该 Bot 的 `overrides.sessionId` 被旧页面覆盖了（刷新控制台再保存一次） |
+| 家庭模式设备只显示「家庭服务未就绪」/「成员已失效」气泡，没有回答 | `voice.log` 里没有 family 的 ask 记录；`GET /family/members` 回 `available:false`；或设备记录的 `familyMemberId` 指向已删成员 | ① dsh-family 没装/没加载（`ctx.get('familyVoice')` 取不到）——装好并**重启 DSH**；② 设备没绑成员，去「设备」弹窗选一位；③ 成员被删了，重新绑定。这些提示是 `%` 系统气泡（不朗读），设备不会念出来。契约 `docs/family-backend.md` |
+| 家庭模式下控制台点「家庭成员」保存失败 | 前端提示「家庭服务未就绪」或「家庭成员不存在」 | 绑非空成员时服务端会先 `listMembers()` 校验：family 不可用回 409、成员不存在回 400。解绑（空串）不校验服务，family 挂了也能解绑 |
+| 家庭模式改了成员，设备下一轮还是旧成员 | 控制台 `GET /state` 的 `devices[].familyMemberId` 已是新值 | 成员是每轮重新解析的，正常下一轮就生效；若仍不对，确认设备连的是这个插件实例（`session.build` 的 `familyMemberId` 是建连快照，只用于排障） |
+| 家庭模式的「回答来源」改了但设备没换后端 | `session.build` 的 `backend` 仍是旧值 | `backend` 是**建连时**装配的，改完要让设备重连（与音色/服务商一样）；成员切换不需要重连 |
+| `voice.log` 里 `session.build` 整条缺失（只有 llm 直连模式有） | 设备连接正常、能说话，但排障时找不到这次建连的音色/模型/候选链记录 | 2026-11-23 修：旧代码在 `voice.build` 里引用 `adaptersFor` 闭包内的 `summarize`，`session` 模式求值该三元表达式时抛 ReferenceError，被 trace 的 try/catch 吞掉，于是 `session.build` 从未写出（`llm` 模式因短路不受影响）。现在按 `voice.session.summary` + LLM provider 推算，不再引用闭包变量。**必须重启 DSH** 后才会写出 |
 

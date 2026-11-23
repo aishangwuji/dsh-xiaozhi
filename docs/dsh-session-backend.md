@@ -81,7 +81,8 @@ DSH 的聊天页打开的就是这条会话：在文本框里打字和在手表�
 
 ```yaml
 voice:
-  backend: session          # session = Bot 会话（主推）；llm = 直连模型（兼容）
+  backend: session          # session = Bot 会话（主推）；llm = 直连模型（兼容）；
+                            # family = 交给 dsh-family 的成员语音会话（见 docs/family-backend.md）
   session:
     sessionId: ''           # 固定绑定；空 = 首次说话自动建
     instruction: ''         # 可选前缀；空 = 原话直送
@@ -99,8 +100,12 @@ voice:
     cwd: ''                 # 自动建会话的根目录；空 = dataRoot/voice-sessions/<agentId>
 ```
 
-Bot 级（`agents.json` 的 `overrides`）：`backend`（`llm` / `session` / 空）、
+Bot 级（`agents.json` 的 `overrides`）：`backend`（`llm` / `session` / `family` / 空）、
 `sessionId`（空 = 自动建）、人设、模型、音色、语种、TTS 服务商等。
+
+> 第三种回答来源 `family`（2026-11-23）不在本文范围：会话从「一条 DSH Session」换成
+> 「dsh-family 里该成员的语音会话」，让路规则与此处 `session` 相同，细节见
+> [`family-backend.md`](family-backend.md)。
 
 ## 5. 控制台 / 控制 API
 

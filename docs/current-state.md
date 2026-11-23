@@ -249,3 +249,22 @@
   - **未实测**：真实手表端到端延迟、摘要耗时、审批/提问语音。
   - **取舍**：不读 DS-Bot `state.json`；以后若启用 DS-Bot，用「绑定已有会话」手工接，
     或补只读适配器。
+- **家庭语音后端（2026-11-23，dsh-family M1 融合）**：回答来源多第三种 `family`——这一轮交给
+  dsh-family 里某位成员的「语音」会话（family 是大脑：成员/工作区/会话/角色卡/记忆/用量/审批归属；
+  xiaozhi 是耳朵和嘴）。四件事：
+  - **是什么**：`voice.backend` 增加 `family`；Bot `overrides.backend` 也可选。设备级
+    `devices.json.familyMemberId`（空串 = 未绑定）决定替谁说话，一台设备同一时刻只属于一个成员。
+  - **入口**：`src/voice/adapters/family.js` 的 `createFamilyLlm`（与 `dsh-session.js` 同形状
+    `stream({ messages, signal, session })`）、`index.js` 的 `familyVoice`（惰性
+    `ctx.get('familyVoice')`）/ `backendFor` / `adaptersFor` / `voice.build`、`src/control.js` 的
+    `GET /family/members` 与 `POST /devices/family`、控制台「设备」弹窗的家庭成员选择器。
+  - **生效条件**：装并加载 dsh-family；Bot 后端设为 `family`；设备绑定成员。**`backend` 是建连时
+    装配（改后设备重连）**，而成员切换与 `familyVoice` 上下线是**每轮重新解析**（下一轮生效）。
+    让路规则与 `backend=session` 相同：`memoryEnabled` / `sessionPrompt` / 工具开关全部关掉，
+    摘要/TTS/语速/音色仍由 Bot 配置装配。
+  - **失败与取舍**：busy/成员失效/未绑成员/服务未就绪/无工作区同时发 `notice`（设备 `%` 气泡）
+    与 `text`（朗读、进设备历史）——手表常常不看屏，只留气泡会让人以为死机。其它错误抛给会话层
+    播通用兜底。成员被删后孤儿绑定不自动清理（M2）。
+    契约 `dsh-family/docs/voice-fusion.md`，本侧 `docs/family-backend.md`。
+  - **未实测**：真机端到端延迟、审批/提问语音、多设备同时说话时的成员归属；family 内部 120s
+    超时未在本侧加看门狗。

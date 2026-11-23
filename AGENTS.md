@@ -56,7 +56,7 @@ systemmap/overview.md    代码级认知地图
 ## 4. 命令与验证
 
 ```powershell
-node --test "test/*.test.mjs"   # 337 项
+node --test "test/*.test.mjs"   # 350 项
 npm run build
 npm run smoke
 node --check client.js
@@ -96,6 +96,7 @@ node --check client.js
 | `docs/voice-role-language.md` | 角色/音色/语种对照 |
 | `docs/config-diff-vs-official.md` | 与官方配置的逐项审计 |
 | `docs/dsh-session-backend.md` | 回答来源走 DSH Session |
+| `docs/family-backend.md` | 回答来源走 dsh-family（`backend=family`，M1 融合契约与验收） |
 | `docs/protocol.md` | 对话链路、判停、mDNS |
 | `docs/testing.md` | 服务端/端侧测试与探针 |
 | `docs/troubleshooting.md` | 联动排障表 |

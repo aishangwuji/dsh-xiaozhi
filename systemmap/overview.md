@@ -31,6 +31,7 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 | 服务商描述符 | `src/providers.js` | 控制台元数据唯一来源：`GET /providers` 下发；`settings.js` 的备用白名单由它派生；加厂商只改这里 + 适配器 |
 | 运行时设置 | `src/settings.js` | `settings.json`（0600）：端点、固件、网关、语音 provider、**静音收口与语音默认参数**；全局人设字段仍在（API 保留），控制台不再编辑、改为按智能体配置；TTS 段只存「厂商 + 凭据」，音色归智能体级（2026-11-08）；无任何登录凭据；**主用/备用互换在服务端 `promote()` 完成**（密钥不过 HTTP，2026-11-14） |
 | 设备工具目录 | `src/voice/device-mcp.js` / `src/control.js` | 在线 `VoiceSession` 的 `DeviceMcpClient.catalog()` 只读快照；控制台 `GET /devices/tools?deviceId=` 按需读取，离线/未握手明确返回状态 |
+| 家庭语音服务 | `index.js:familyVoice()` / `src/voice/adapters/family.js` | 进程内消费 dsh-family 的 `familyVoice`（惰性 `ctx.get`，不晚于调用时解析）；`backend=family` 时由 `createFamilyLlm` 提供 `stream()`，设备绑定 `devices.json.familyMemberId`（每轮重新解析）。契约 `docs/family-backend.md` |
 | 待审核存储 | `src/pending.js` | `pending.json`（0600，版本 1）：陌生设备身份/最近 IP/固件/尝试次数；批准后转 `devices.json`，拒绝即移除 |
 | 地址发现 | `src/network.js` | 枚举本机 IPv4 私网地址，虚拟网卡（WSL/Hyper-V/VMware）排最后；`/state` 用它算 OTA/WS/网关的真实 URL |
 | 浏览器面板 | `src/client/console/*.js` | `main` key `xiaozhi` + `sidebar.panellist` id `xiaozhi`：概览 / 智能体（卡片 + 配置弹窗 + 设备绑定弹窗 + 历史对话）/ 全局设置（服务商三张概览卡 + 二级弹窗，表单由 `src/providers.js` 描述符驱动；语音默认参数；接入与网关；TTS 只配厂商 + 凭据，音色在智能体「角色」页选，2026-11-08）/ 能力 |
@@ -54,6 +55,7 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 | `deviceId` | 主键，MAC 归一化为 `AA:BB:CC:DD:EE:FF` | 同一物理设备只有一行 |
 | `notes` | 备注 | 控制台设备弹窗可编辑 |
 | `agentId` | 绑定的智能体 | 空串 = 未绑定（启动迁移给旧设备补建）；绑定是移动，不复制配置 |
+| `familyMemberId` | 绑定的 dsh-family 成员（2026-11-23） | 空串 = 未绑定；一台设备同一时刻只替一位成员说话；切换下一轮生效；成员删掉后不自动清理（M2） |
 | `overrides` | **已废弃**（迁移到智能体）：保留只为回滚，运行时只在没有绑定关系时才回落 | 新代码不要再读写它 |
 | `nickName` / `notes` | 操作者标注 | 仅本机操作台可改 |
 | `lastIp` / `lastSeenAt` / `lastConnectedAt` / `connectionCount` | 审计 | 只前进，不倒流 |
@@ -66,7 +68,7 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 |---|---|---|
 | `id` | randomUUID，服务端生成 | 一台智能体可绑定 0..N 台设备 |
 | `name` | 卡片标题 | 空串显示「未命名」 |
-| `overrides` | 智能体级配置：`systemPrompt` / `voice` / `language` / `model` / `hostProvider` / `speed` / `silenceMs` / `ttsProvider` / `backend` / `sessionId` | 空值即删除该覆盖，回落到全局默认；`language` 只收白名单；同一智能体的设备共用；`backend` 只收 `llm` / `session`，`sessionId` 只收 `session-…` |
+| `overrides` | 智能体级配置：`systemPrompt` / `voice` / `language` / `model` / `hostProvider` / `speed` / `silenceMs` / `ttsProvider` / `backend` / `sessionId` | 空值即删除该覆盖，回落到全局默认；`language` 只收白名单；同一智能体的设备共用；`backend` 只收 `llm` / `session` / `family`，`sessionId` 只收 `session-…` |
 | `memoryEnabled` / `toolDisabled` | 记忆开关 / 工具开关 | 记忆按智能体存（`memory/<agentId>.json`），历史仍按设备 |
 | `createdAt` / `updatedAt` | 审计 | 改名/改配置只动 updatedAt |
 
@@ -140,7 +142,25 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
     - **语音审批 / 提问**：`host-session.js` 以 `{prepend:true}` 注册 `approval/request` 与 `user-questions/request`，只接绑在有在线设备、且设备正 `thinking`/`speaking`（语音发起）的 Bot 会话；`VoiceSession.askApproval` 念原因并收「允许/拒绝」，`askUserQuestions` 逐题念题和选项、按标签/序号映射（多选按顿号/和拆开），含糊/超时/异常 `next()` 交回桌面。
     - **工作目录**：每个 Bot 一个 `voice-sessions/<agentId>/`；新建 Bot 默认 `backend=session`。
     会话模式下插件的 `toolsEnabled` / `memoryEnabled` / `memoryKey` / `sessionPrompt` 全部让路。**DS-Bot 不是依赖**：不读它的 `state.json`，不调 `/api/bot`；以后可用「绑定已有会话」手工接。契约 `docs/dsh-session-backend.md`。
-    **未实测**：真实手表端到端延迟、摘要耗时、审批语音；`ask_user_question` 尚未接语音。
+    **未实测**：真实手表端到端延迟、摘要耗时、审批语音；`ask_user_question` 语音未真机验证。
+
+20. **家庭语音后端 = 把一轮交给 dsh-family（2026-11-23，M1）**：第三种回答来源 `backend=family`。
+    family 是大脑（成员/工作区/会话/角色卡/记忆/用量/审批归属），xiaozhi 是耳朵和嘴。
+    `index.js` 的 `familyVoice` 是**惰性 getter**（`ctx.get('familyVoice')`，family 可能晚于本插件
+    apply 挂载）；`adaptersFor` 在 family 模式不建 provider 候选链，改由 `src/voice/adapters/family.js`
+    的 `createFamilyLlm` 提供同形状 `stream({messages,signal,session})`；`voice.build` 的让路规则与
+    `session` 完全一致（`sessionPrompt`/`toolsEnabled`/`memoryEnabled`/`memoryKey` 全让位）。
+    设备级绑定 `devices.json.familyMemberId`（空串 = 未绑定，非字符串/超长按未绑定容错），
+    **每轮重新解析**，所以切成员下一轮生效、不用重连；`backend` 本身仍是建连时装配。
+    控制 API：`GET /family/members`（只透传 id/name/roleLabel/isAdmin；服务不可用回
+    `available:false` 而不是 500）、`POST /devices/family`（空串解绑；非空必须是当前成员否则 400；
+    family 不可用且要绑非空成员 → 409；CSRF 头照旧）。失败提示（busy/成员失效/服务未就绪）
+    同时发 `notice` 气泡和 `text`（上屏并朗读，进设备历史）；其它错误抛给 `VoiceSession` 播通用兜底。
+    审批/提问把 family 的 `onApproval`/`onQuestion` 接到 `VoiceSession.askApproval` /
+    `askUserQuestions`（为此 `#answer` 调 `adapters.llm.stream` 时多传 `session: this`），
+    说不清返回 `null` 由 family 放行 PWA。契约 `dsh-family/docs/voice-fusion.md`，
+    本侧细节 `docs/family-backend.md`，测试 `test/family.test.mjs`（13 项）。
+    **未实测**：真机端到端延迟/审批语音/多设备归属；family 内部 120s 超时未加本地看门狗。
 
 ## 语音管道（src/voice/）
 
@@ -153,6 +173,7 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 | `ws-client.js` | Edge 需要自定义头，故不依赖 Node 内置 WebSocket |
 | `adapters/failover.js` | 主用 + 备用候选链：LLM 未出字前切换、TTS 首包前切换（出音频后 `dshNoSwitch`）、ASR 60s PCM 回放且回放不推 partial；abort 不算失败；粘性 5 分钟回落；切换记 `*.failover` trace |
 | `adapters/dsh-session.js` | 会话后端：原话直送（可选 instruction 前缀）、只念最终结论（跳过带 `tool-call` 的消息）、`tool/call` → `notice` + `progress`、心跳、摘要（可注入 `summarize`，`summaryMinChars` 以下跳过）、`source.rpcId` 定位本轮、`turn/end` 收口、abort/超时 → `cancel`；不实现 `streamWithTools` |
+| `adapters/family.js` | 家庭语音后端（2026-11-23）：每轮从 `familyVoice` 惰性取服务、从设备记录重新解析 `familyMemberId`，`ask({memberId,text,onApproval,onQuestion})` → 摘要 → `text`；busy/成员失效/未绑成员/服务未就绪/无工作区 → `notice` + `text`（上屏并朗读），其它错误抛给会话层兜底；abort → `familyVoice.cancel`；审批/提问接 `session.askApproval` / `askUserQuestions`，说不清返回 `null` 交给 family 放行 PWA |
 | `../host-session.js` | `ctx.sessionController` + `ctx.on('session/event')` 的薄桥：`list/create/prompt/cancel/subscribe/statusOf`（服务按调用时惰性解析；插件 apply 可能早于 sessionController 挂载），`approval/request` 与 `user-questions/request` 语音应答器（prepend，`setApprovalAnswerer` / `setQuestionAnswerer`），服务未装配时 `available:false`（插件照常启动） |
 | `spoken-summary.js` | 语音摘要：无工具、有超时，失败/空/太短返回 `''` 让调用方回落 `toSpeech`；提示词只描述播报方式，不碰 Bot 人设 |
 | `language.js` | 输出语种白名单（普通话/英语/日语/粤语/韩语）+ `<output_language_directive>`；非白名单值一律退化为空，因为该文本会拼进系统提示词 |
@@ -165,10 +186,10 @@ ESP32 小智设备（固件 v2.5.3 分支）接进 Harness 的三件事：**局�
 
 历史/记忆（`src/history.js` / `src/memory.js`）：`HistoryStore` 管「说过什么」的只读流水（会话/消息/WAV 音频，30 天音频保留）；`MemoryStore` 管「要记住的信息」（facts + 最近 8 轮，注入 prompt）。两者都按 deviceId 隔离，`VoiceSession` 在每轮收尾时分别写入，互不阻塞语音。
 
-实测（`node --test "test/*.test.mjs"`，337 项全绿）：真 Opus 整轮 277ms；mock 供应商首帧 40–100ms；打断 <100ms 且无幽灵帧；20 轮无泄漏；TTS 流式首帧 254ms（真实 ffmpeg + 20ms/包模拟 TTS，2026-11-16；旧整句路径要等整句合成）；真实 Edge 首包 1.3–1.5s（若 provider 仍整句到达，瓶颈在厂商侧），是端到端预算的主要项。
+实测（`node --test "test/*.test.mjs"`，350 项全绿）：真 Opus 整轮 277ms；mock 供应商首帧 40–100ms；打断 <100ms 且无幽灵帧；20 轮无泄漏；TTS 流式首帧 254ms（真实 ffmpeg + 20ms/包模拟 TTS，2026-11-16；旧整句路径要等整句合成）；真实 Edge 首包 1.3–1.5s（若 provider 仍整句到达，瓶颈在厂商侧），是端到端预算的主要项。
 
 ## 验证
 
-- 单测/集成：`test/unit.test.mjs`、`test/http.test.mjs`（含网关 8 项、设备级语种白名单）、`test/settings.test.mjs`（人设/静音收口持久化与空值回落、备用服务商持久化/掩码/留空保留/整次失败/`/test/provider`、「全局 TTS 只存凭据、可清空 voice/model/resourceId」）、`test/failover.test.mjs`（三段候选链 26 项）、`test/tts-defaults.test.mjs`（4 项：凭证-only 主用/备用构建、空音色→厂商默认、跨厂商回落与自定义保留）、`test/voice*.test.mjs`、`test/voice-language.test.mjs`（白名单/指令/音色语种/豆包 additions）、`test/history.test.mjs`（13 项：会话聚合/标题/旧格式迁移/裁剪/音频 WAV 与路径安全/保留期清理）、`test/history-http.test.mjs`（5 项：4 条路由 + CSRF/404/400）、`test/agents.test.mjs`（10 项：旧设备迁移与记忆复制 / 多设备绑定与移动 / 配置共享 / 级联删除 / 历史合并 / 回答来源与 `/sessions` / Bot 会话视图与换会话 API）、`test/session-backend.test.mjs`（12 项：原话直送 / 只念最终结论 / 工具进度 / 摘要与回落 / 不串台 / rpcId 对上本轮 / 打断与超时取消 / 已中止不发 prompt / 绑定持久化）、`test/spoken-summary.test.mjs`（5 项：短回复跳过 / 清理与截断 / 失败与超时回落 / 提示词 / 进度话术）、`test/approval.test.mjs`（2 项：意图分类 / 桥的 next() 回落）、`test/question-voice.test.mjs`（5 项：单选标签/序号、多选拆分、意图映射、自由文本、桥的 next() 回落）、`test/question-voice-session.test.mjs`（2 项：审批/提问进程内真跑 TTS/player 与短捕获）。
+- 单测/集成：`test/unit.test.mjs`、`test/http.test.mjs`（含网关 8 项、设备级语种白名单）、`test/settings.test.mjs`（人设/静音收口持久化与空值回落、备用服务商持久化/掩码/留空保留/整次失败/`/test/provider`、「全局 TTS 只存凭据、可清空 voice/model/resourceId」）、`test/failover.test.mjs`（三段候选链 26 项）、`test/tts-defaults.test.mjs`（4 项：凭证-only 主用/备用构建、空音色→厂商默认、跨厂商回落与自定义保留）、`test/voice*.test.mjs`、`test/voice-language.test.mjs`（白名单/指令/音色语种/豆包 additions）、`test/history.test.mjs`（13 项：会话聚合/标题/旧格式迁移/裁剪/音频 WAV 与路径安全/保留期清理）、`test/history-http.test.mjs`（5 项：4 条路由 + CSRF/404/400）、`test/agents.test.mjs`（10 项：旧设备迁移与记忆复制 / 多设备绑定与移动 / 配置共享 / 级联删除 / 历史合并 / 回答来源与 `/sessions` / Bot 会话视图与换会话 API）、`test/session-backend.test.mjs`（12 项：原话直送 / 只念最终结论 / 工具进度 / 摘要与回落 / 不串台 / rpcId 对上本轮 / 打断与超时取消 / 已中止不发 prompt / 绑定持久化）、`test/spoken-summary.test.mjs`（5 项：短回复跳过 / 清理与截断 / 失败与超时回落 / 提示词 / 进度话术）、`test/approval.test.mjs`（2 项：意图分类 / 桥的 next() 回落）、`test/question-voice.test.mjs`（5 项：单选标签/序号、多选拆分、意图映射、自由文本、桥的 next() 回落）、`test/question-voice-session.test.mjs`（2 项：审批/提问进程内真跑 TTS/player 与短捕获）、`test/family.test.mjs`（13 项：`familyMemberId` 持久化与坏值容错 / `/family/members` 透传与不可用降级 / `/devices/family` 绑定·解绑·无效成员·CSRF / `backend` 收 `family` / 适配器 text·notice·摘要·审批提问接线·打断取消）。
 - 已安装实例：`/healthz` 报 devices/connections/gateway/voice；操作台 `/state` 面板可改名/删除。
 - 字体：`npm run check:fonts`（`scripts/check-fonts.mjs`，需 Edge/Chrome，真浏览器 + CDP `CSS.getPlatformFontsForNode`）断言「中文不落宋体族 + 空态/设备行与正文同字体 + MAC 仍等宽」，故意改回 `ui-monospace` 会 exit 1。

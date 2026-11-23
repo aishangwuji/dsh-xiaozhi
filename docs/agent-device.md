@@ -20,10 +20,11 @@
 智能体 agent（agents.json）        设备 device（devices.json）
 ├─ id                              ├─ deviceId (MAC，主键)
 ├─ name                            ├─ agentId → 指向智能体
-├─ overrides {人设/模型/音色/…}      ├─ nickName（设备别名）
-├─ memoryEnabled                   ├─ notes / otaEnabled
-├─ toolDisabled[]                  ├─ lastSeenAt / lastConnectedAt / firmwareVersion
-└─ createdAt / updatedAt           └─ createdAt / updatedAt
+├─ overrides {人设/模型/音色/…}      ├─ familyMemberId（dsh-family 成员，空=未绑定）
+├─ memoryEnabled                   ├─ nickName（设备别名）
+├─ toolDisabled[]                  ├─ notes / otaEnabled
+└─ createdAt / updatedAt           ├─ lastSeenAt / lastConnectedAt / firmwareVersion
+                                   └─ createdAt / updatedAt
 ```
 
 - **记忆按智能体**（`memory/<agentId>.json`）：换一块表说话，它还记得你。
@@ -31,6 +32,9 @@
   智能体页的「历史」把绑定设备的会话合并展示（每条带 `deviceId` / `deviceName`）。
 - **工具开关按智能体**：`toolDisabled` 在 agent 上，同一智能体的设备共享。
 - **OTA / 断开 / 删除设备** 仍是设备级（物理属性）。
+- **家庭成员按设备**（2026-11-23，dsh-family 融合）：`familyMemberId` 是设备级字段
+  （一台设备同一时刻只替一位家庭成员说话），Bot 的后端设成 `family` 时用它决定把这一轮
+  交给谁；切换成员下一轮生效。契约见 [`family-backend.md`](family-backend.md)。
 
 ## 2. 存储与迁移
 
@@ -60,7 +64,8 @@
 }
 ```
 
-`devices.json` 只新增一个字段：`agentId`（空串 = 未绑定）。
+`devices.json` 只新增两个绑定字段：`agentId`（空串 = 未绑定智能体）、
+`familyMemberId`（空串 = 未绑定 dsh-family 成员；非字符串/超长在加载时按未绑定容错）。
 
 **名字模型**：智能体与设备各自命名，**不共用**（对齐参考服务端 `ai_agent.agent_name` /
 `ai_device.alias`）。智能体名要求**唯一**（trim 后精确比较，改名排除自己），重名由
@@ -97,7 +102,7 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
 |---|---|---|
 | GET | `/agents` | 列表；每条带 `devices` / `deviceCount` / `online` / `lastSeenAt` / `session {id, available, running}` |
 | POST | `/agents` | `{name, ...overrides}` 新建；控制台新建默认 `backend=session` |
-| POST | `/agents/update` | `{agentId, name?, systemPrompt?, voice?, ttsProvider?, language?, model?, speed?, silenceMs?, backend?, sessionId?}`；空串 = 删掉该覆盖。`ttsProvider` 只能是全局已配置的 TTS 主用/备用（否则 400 `invalid-tts-provider`），空 = 跟随全局主用（2026-11-14）；`backend` 只收 `llm` / `session`，`sessionId` 只收 `session-…` |
+| POST | `/agents/update` | `{agentId, name?, systemPrompt?, voice?, ttsProvider?, language?, model?, speed?, silenceMs?, backend?, sessionId?}`；空串 = 删掉该覆盖。`ttsProvider` 只能是全局已配置的 TTS 主用/备用（否则 400 `invalid-tts-provider`），空 = 跟随全局主用（2026-11-14）；`backend` 只收 `llm` / `session` / `family`（坏值 400 `invalid-backend`），`sessionId` 只收 `session-…` |
 | POST | `/agents/session` | `{agentId, action}`：`new` 立即新建并钉死会话；`auto` 解除钉死；`bind` + `sessionId` 绑定已有会话 |
 | POST | `/agents/bind` | `{agentId, deviceId}` 绑定（设备已在别的智能体上 = 移动） |
 | POST | `/agents/unbind` | `{agentId, deviceId}` 解绑；设备不属于该智能体 → 400 |
@@ -107,6 +112,8 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
 | GET | `/pending` | 待审核设备列表 |
 | POST | `/pending/approve` | `{deviceId, agentId?}`：批准；`agentId` 为空则自动新建智能体 |
 | POST | `/pending/reject` | `{deviceId}`：拒绝并移出待审核队列 |
+| GET | `/family/members` | `{available, members}`：dsh-family 的成员列表（`available:false` = 家庭服务未就绪）；只读、不缓存 |
+| POST | `/devices/family` | `{deviceId, memberId}`：设备绑定/切换家庭成员（空串 = 解绑）；非空必须是当前成员（否则 400），family 不可用 → 409。绑定属于设备，不是智能体 |
 
 兼容入口：`POST /devices/config` 按设备反查智能体后写同一份配置（旧页面/脚本不会 404）；
 `/devices/ota|disconnect|remove|rename` 不变（设备封禁已于 2026-11-09 删除）。
@@ -130,6 +137,10 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
   `createDshSessionLlm` 提供 `stream()`；`toolsEnabled` / `memoryEnabled` / `memoryKey` /
   `sessionPrompt` 一律让路（工具、记忆、人设归会话），TTS/ASR 仍按 Bot 的音色/语种装配。
   会话 id 是「每轮重新解析」的，所以控制台换会话下一轮生效，不需要重连。
+- **家庭模式（2026-11-23）**：`backend=family` 时由 `src/voice/adapters/family.js` 的
+  `createFamilyLlm` 提供 `stream()`，让路规则与 `session` 完全相同（`sessionPrompt=''`、
+  工具/记忆关掉）；`familyMemberId` 每轮重新解析，切成员下一轮生效。详见
+  [`family-backend.md`](family-backend.md)。
 
 ## 5. 控制台
 
@@ -142,6 +153,8 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
   用 PillSelect 选择智能体后「批准」，或「拒绝」。批准后设备下一次连接即通过。
 - 「设备(N)」弹窗：已绑定到本智能体的设备（改名 / OTA / 断开 / 解绑；**没有「删除设备」入口**（2026-11-13 用户要求，误操作代价大；`POST /devices/remove` 仍保留给脚本/API））+
   其他设备（显示「当前：<智能体>」，按钮「移入本智能体」；移入是移动，会从原智能体移走）。
+  **每台已绑定设备还有一行「家庭成员」**（2026-11-23）：未绑定 / 各成员 / 刷新；
+  `available:false` 显示「家庭服务未就绪」，成员为空显示「家庭里还没有成员」。
   **语义是 N 台设备 : 1 个智能体**——多台设备绑同一智能体即不同区域的麦克风/扬声器矩阵；
   一台设备同一时刻只属于一个智能体，不做设备↔智能体多对多。布局：头部标题块可收缩、关闭按钮
   固定右上，弹窗高度随内容（最大 560px），其他设备单行展示、操作靠右；设备名用透明内联
@@ -154,7 +167,7 @@ index.js 建一个属于它的智能体并绑定——手表第一次连上来�
 
 ```powershell
 cd D:\Demo\esp-xiaozhi\dsh-xiaozhi
-node --test "test/*.test.mjs"      # 全量 275 项必须全绿（2026-11-14）
+node --test "test/*.test.mjs"      # 全量 350 项必须全绿（2026-11-23）
 npm run build && npm run smoke      # 控制台构建 + 冒烟（src/client/** → client.js）
 node --check client.js
 ```
@@ -166,3 +179,7 @@ node --check client.js
 - 智能体配置共享与改名；记忆/工具接口接受 `agentId`；
 - 删智能体级联删设备 + 历史 + 记忆，未绑定设备不受影响；
 - 智能体历史合并（每条带 `deviceId`，详情仍按设备取）。
+
+`test/family.test.mjs` 覆盖（2026-11-23）：`familyMemberId` 持久化与坏值容错、
+`/family/members` 透传与不可用降级、`/devices/family` 绑定/解绑/无效成员/CSRF、
+`backend` 收 `family`、以及 family 适配器的 text/notice/审批/提问/打断语义。
